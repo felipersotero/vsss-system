@@ -1,0 +1,63 @@
+"I010": {
+    "name": "Calibração das Cores",
+    "value": [
+        ""
+    ],
+    "children": {
+        "I011": {
+            "name": "Cor principal",
+            "value": [
+                "[106 237 190]"
+            ],
+            "children": {}
+        },
+        "I012": {
+            "name": "J1 Cor 1",
+            "value": [
+                "[152  80 234]"
+            ],
+            "children": {}
+        },
+        "I013": {
+            "name": "J1 Cor 2",
+            "value": [
+                "[179 198 210]"
+            ],
+            "children": {}
+        },
+        "I014": {
+            "name": "J2 Cor 1",
+            "value": [
+                "[ 87 128 152]"
+            ],
+            "children": {}
+        },
+        "I015": {
+            "name": "J2 Cor 2",
+            "value": [
+                "[ 30  93 236]"
+            ],
+            "children": {}
+        },
+        "I016": {
+            "name": "J3 Cor 1",
+            "value": [
+                "[150  90 235]"
+            ],
+            "children": {}
+        },
+        "I017": {
+            "name": "J3 Cor 2",
+            "value": [
+                "[ 87 111 146]"
+            ],
+            "children": {}
+        },
+        "I018": {
+            "name": "Cor inimigos",
+            "value": [
+                "[ 27 113 238]"
+            ],
+            "children": {}
+        }
+    }

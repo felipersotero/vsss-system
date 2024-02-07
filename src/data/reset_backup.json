@@ -1,0 +1,182 @@
+{
+    "I001": {
+        "name": "Entrada de dados",
+        "value": [
+            ""
+        ],
+        "children": {
+            "I002": {
+                "name": "Câmera USB",
+                "value": [
+                    "---"
+                ],
+                "children": {}
+            },
+            "I003": {
+                "name": "Imagem Path",
+                "value": [
+                    "---"
+                ],
+                "children": {}
+            },
+            "I004": {
+                "name": "Vídeo Path",
+                "value": [
+                    "---"
+                ],
+                "children": {}
+            },
+            "I005": {
+                "name": "Modo de Uso",
+                "value": [
+                    "Camera"
+                ],
+                "children": {}
+            }
+        }
+    },
+    "I006": {
+        "name": "Calibração do algorítmo",
+        "value": [
+            ""
+        ],
+        "children": {
+            "I007": {
+                "name": "Borda da janela",
+                "value": [
+                    "10"
+                ],
+                "children": {}
+            },
+            "I008": {
+                "name": "offSet da Erosão",
+                "value": [
+                    "3"
+                ],
+                "children": {}
+            },
+            "I009": {
+                "name": "Binarização Threshold",
+                "value": [
+                    "245"
+                ],
+                "children": {}
+            },
+            "I00A": {
+                "name": "Dim. Matriz TOPHAT",
+                "value": [
+                    "25"
+                ],
+                "children": {}
+            },
+            "I00B": {
+                "name": "Debug do Algorítmo",
+                "value": [
+                    "False"
+                ],
+                "children": {}
+            }
+        }
+    },
+    "I00C": {
+        "name": "Calibração da Câmera",
+        "value": [
+            ""
+        ],
+        "children": {
+            "I00D": {
+                "name": "Extremos do Campo",
+                "value": [
+                    "- , -, -, -"
+                ],
+                "children": {}
+            },
+            "I00E": {
+                "name": "Deformações",
+                "value": [
+                    "N°,3"
+                ],
+                "children": {}
+            }
+        }
+    },
+    "I00F": {
+        "name": "Calibração das Cores",
+        "value": [
+            ""
+        ],
+        "children": {
+            "I010": {
+                "name": "Cor principal",
+                "value": [
+                    "Azul"
+                ],
+                "children": {}
+            },
+            "I011": {
+                "name": "J1 Cor 1",
+                "value": [
+                    "Azul"
+                ],
+                "children": {}
+            },
+            "I012": {
+                "name": "J1 Cor 2",
+                "value": [
+                    "Azul"
+                ],
+                "children": {}
+            },
+            "I013": {
+                "name": "J2 Cor 1",
+                "value": [
+                    "Azul"
+                ],
+                "children": {}
+            },
+            "I014": {
+                "name": "J2 Cor 2",
+                "value": [
+                    "Azul"
+                ],
+                "children": {}
+            },
+            "I015": {
+                "name": "J3 Cor 1",
+                "value": [
+                    "Azul"
+                ],
+                "children": {}
+            },
+            "I016": {
+                "name": "J3 Cor 2",
+                "value": [
+                    "Azul"
+                ],
+                "children": {}
+            }
+        }
+    },
+    "I017": {
+        "name": "Configurações do Emulador",
+        "value": [
+            ""
+        ],
+        "children": {
+            "I018": {
+                "name": "Debug",
+                "value": [
+                    "False"
+                ],
+                "children": {}
+            },
+            "I019": {
+                "name": "Estado de Execução",
+                "value": [
+                    "Parado"
+                ],
+                "children": {}
+            }
+        }
+    }
+}

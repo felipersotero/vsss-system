@@ -1,0 +1,204 @@
+{
+    "I001": {
+        "name": "Sistema de Visão",
+        "value": [
+            ""
+        ],
+        "children": {
+            "I002": {
+                "name": "Entrada de dados",
+                "value": [
+                    ""
+                ],
+                "children": {
+                    "I003": {
+                        "name": "Câmera USB",
+                        "value": [
+                            "---"
+                        ],
+                        "children": {}
+                    },
+                    "I004": {
+                        "name": "Imagem Path",
+                        "value": [
+                            "src/vision/campoOBJ3.jpg"
+                        ],
+                        "children": {}
+                    },
+                    "I005": {
+                        "name": "Vídeo Path",
+                        "value": [
+                            "---"
+                        ],
+                        "children": {}
+                    },
+                    "I006": {
+                        "name": "Modo de Uso",
+                        "value": [
+                            "camera"
+                        ],
+                        "children": {}
+                    }
+                }
+            },
+            "I007": {
+                "name": "Calibração do algorítmo",
+                "value": [
+                    ""
+                ],
+                "children": {
+                    "I008": {
+                        "name": "Borda da janela",
+                        "value": [
+                            "10"
+                        ],
+                        "children": {}
+                    },
+                    "I009": {
+                        "name": "offSet da Erosão",
+                        "value": [
+                            "4"
+                        ],
+                        "children": {}
+                    },
+                    "I00A": {
+                        "name": "Binarização Threshold",
+                        "value": [
+                            "245"
+                        ],
+                        "children": {}
+                    },
+                    "I00B": {
+                        "name": "Dim. Matriz TOPHAT",
+                        "value": [
+                            "80"
+                        ],
+                        "children": {}
+                    },
+                    "I00C": {
+                        "name": "Debug do Algorítmo",
+                        "value": [
+                            "True"
+                        ],
+                        "children": {}
+                    }
+                }
+            },
+            "I00D": {
+                "name": "Calibração da Câmera",
+                "value": [
+                    ""
+                ],
+                "children": {
+                    "I00E": {
+                        "name": "Extremos do Campo",
+                        "value": [
+                            "- , -, -, -"
+                        ],
+                        "children": {}
+                    },
+                    "I00F": {
+                        "name": "Deformações",
+                        "value": [
+                            "N°,3"
+                        ],
+                        "children": {}
+                    }
+                }
+            },
+            "I010": {
+                "name": "Calibração das Cores",
+                "value": [
+                    ""
+                ],
+                "children": {
+                    "I011": {
+                        "name": "Cor principal",
+                        "value": [
+                            "[ 90 128 128]"
+                        ],
+                        "children": {}
+                    },
+                    "I012": {
+                        "name": "J1 Cor 1",
+                        "value": [
+                            "[ 90 128 128]"
+                        ],
+                        "children": {}
+                    },
+                    "I013": {
+                        "name": "J1 Cor 2",
+                        "value": [
+                            "[ 90 128 128]"
+                        ],
+                        "children": {}
+                    },
+                    "I014": {
+                        "name": "J2 Cor 1",
+                        "value": [
+                            "[ 90 128 128]"
+                        ],
+                        "children": {}
+                    },
+                    "I015": {
+                        "name": "J2 Cor 2",
+                        "value": [
+                            "[ 90 128 128]"
+                        ],
+                        "children": {}
+                    },
+                    "I016": {
+                        "name": "J3 Cor 1",
+                        "value": [
+                            "[ 90 128 128]"
+                        ],
+                        "children": {}
+                    },
+                    "I017": {
+                        "name": "J3 Cor 2",
+                        "value": [
+                            "[ 90 128 128]"
+                        ],
+                        "children": {}
+                    },
+                    "I018": {
+                        "name": "Cor inimigos",
+                        "value": [
+                            "[ 90 128 128]"
+                        ],
+                        "children": {}
+                    },
+                    "I019": {
+                        "name": "Cor da boola",
+                        "value": [
+                            "[9 93 220]"
+                        ],
+                        "children": {}
+                    }
+                }
+            },
+            "I01A": {
+                "name": "Configurações do Emulador",
+                "value": [
+                    ""
+                ],
+                "children": {
+                    "I01B": {
+                        "name": "Debug",
+                        "value": [
+                            "False"
+                        ],
+                        "children": {}
+                    },
+                    "I01C": {
+                        "name": "Estado de Execução",
+                        "value": [
+                            "Parado"
+                        ],
+                        "children": {}
+                    }
+                }
+            }
+        }
+    }
+}
