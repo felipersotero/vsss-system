@@ -43,7 +43,10 @@ class settingsMenu(Frame):
                 self.open_mode_window(self.tree, item)
 
             elif self.tree.item(item, 'text') == 'Imagem Path':
-                self.load_image(self.tree, item)
+                self.load_file(self.tree, item)
+
+            elif self.tree.item(item, 'text') == 'Vídeo Path':
+                self.load_file(self.tree, item)
 
             elif self.tree.item(item, 'text') in editable_items:
                 self.tree.item(item, tags=('edit',))
@@ -59,7 +62,7 @@ class settingsMenu(Frame):
                 
                 #Modifica à variável de estado para colocar os dados
 
-    def load_image(self, tree, item):
+    def load_file(self, tree, item):
         file_path = filedialog.askopenfilename()
         if file_path:
             self.tree.set(item,'Valor', file_path)
@@ -90,7 +93,6 @@ class settingsMenu(Frame):
 
         select_button = Button(new_window, text="Confirmar", command=update_value)
         select_button.pack(pady=10)
-
 
     def open_color_pick_window(self, item):
         # self.item = item

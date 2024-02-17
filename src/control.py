@@ -41,8 +41,14 @@ def angle_player_ball(ball_coord, player_coord, player_direction):
     angle_rad = np.arccos(np.clip(cosine_theta, -1.0, 1.0))
     angle_deg = np.degrees(angle_rad)
 
-    return angle_deg
+   # Calcular o produto vetorial para determinar a direção
+    cross_product = np.cross(v1, v2)
 
+    # Se o produto vetorial for negativo, a bola está à esquerda
+    if cross_product < 0:
+        angle_deg *= -1
+
+    return angle_deg
 
 # Verfificar se o jogador está e posse da bola
 def possession_ball(ball_coord, player_coord, player_direction):
@@ -56,7 +62,7 @@ def possession_ball(ball_coord, player_coord, player_direction):
     print(f"Distância: {distance} cm")
     print(f"Ângulo: {angle}°")
 
-    if distance < 10 and angle < 20:
+    if distance < 10 and abs(angle) < 20:
         return True
     else:
         return False
@@ -78,14 +84,14 @@ def team_with_possession(ball_coord, allies_coord, allies_direction, enemies_coo
                 enemy_possession = True
 
 
-    if ally_possession and not enemy_possession:
-        print("ATACAR!")
-    elif enemy_possession and not ally_possession:
-        print("DEFENDER!")
-    elif ally_possession and enemy_possession:
-        print("BOLA DIVIDIDA!")
-    else:
-        print("BOLA LIVRE!")
+    # if ally_possession and not enemy_possession:
+    #     print("ATACAR!")
+    # elif enemy_possession and not ally_possession:
+    #     print("DEFENDER!")
+    # elif ally_possession and enemy_possession:
+    #     print("BOLA DIVIDIDA!")
+    # else:
+    #     print("BOLA LIVRE!")
 
 
 # Verificar aliado mais próximo da bola 
@@ -113,7 +119,7 @@ def calculate_distance_to_ball(xb, yb, coord_allies):
 ################################################################
 # Função principal que recebe os dados das coordenadas dos objetos
 def recieve_data(self, ball, allies, enemies, clientMQTT):
-    print("Dados recebidos")
+    # print("Dados recebidos")
 
     if ball is not None:
         ball_coord = np.array([ball.position[0], ball.position[1]])
@@ -152,4 +158,26 @@ def recieve_data(self, ball, allies, enemies, clientMQTT):
     ally_closest = calculate_distance_to_ball(xb, yb, allies_coord)
 
     # O retorno desta função deverá conter um array ou json com todos os comandos dos robôs
-    return ally_closest
+    # return ally_closest
+
+    angle = angle_player_ball(ball_coord, allies_coord[0], allies_direction[0])
+    
+    if(abs(angle) > 60):
+        velocity = '200'
+    elif(abs(angle) > 45):
+        velocity = '180'
+    elif(abs(angle) > 20):
+        velocity = '160'
+    else:
+        velocity = '150'
+
+    command = 's164015'
+
+    if(angle < -10):
+        command = 'l'+velocity+'015'
+    elif(angle > 10):
+        command = 'r'+velocity+'015'
+    else:
+        command = 's'+velocity+'015'
+    
+    return command

@@ -90,7 +90,7 @@ class Emulator:
 
         self.DEBUG = self.settingsTree.tree.item('I01B','value')[0]
         self.EXECMode = self.settingsTree.tree.item('I01C','value')[0]
-        
+
 
         self.UseMode = self.format_var(self.UseMode)
 
@@ -170,30 +170,34 @@ class Emulator:
         while True:
             item = queue.get()
             # print(f"Trabalhando com {item}")
-            send_data(self, self.clientMQTT, item)
+            #send_data(self, self.clientMQTT, item)
+            result = publish_data(self.clientMQTT, "vsss-ifal-pin/robots", item)
+            # self.clientMQTT.loop_forever()
+
+            # print(f"publicando mensagem. Resultado: {result} ====================")
             queue.task_done()
             
-            time.sleep(2)
+            time.sleep(0.015)
             
     #Método para o emulador exibir as imagens
     def init(self):
         print("[EMULADOR] Configurando variaveis")
         self.viewer.config()
         self.debugFieldViewer.config()
-        # self.clientMQTT = conect_to_broker()
+        self.clientMQTT = connect_to_broker("broker.hivemq.com", 1883)
         
         #Inicializa o viewer
         if(self.Mode== MODE_USB_CAM): #Modo camera
             print('[EMULADOR] Emulador em modo de processamento de imagem da Camera USB')
             #Configurando Viewer para modo de exibição de câmera            
             #Entrada do vídeo
-            self.capture = cv2.VideoCapture(self.CamUSB)
             self.btn_run.pack_forget() # torna o botão "run" invisível
             self.btn_stop.pack(fill=BOTH, expand=1) # torna o botão "stop" visível
+
+            self.capture = cv2.VideoCapture(self.CamUSB)
             self.cameraIsRunning = True #Camera Não pausada
             self.delay = 14 #14ms
             # self.firstExecution = True
-
             self.processUSB()
 
             #Trabalhando com filas e threads
@@ -212,9 +216,13 @@ class Emulator:
         elif(self.Mode == MODE_VIDEO_CAM):
             print('[EMULADOR] Emulador em modo de processamento de Video')
             #configurar viewer para modo de exibição de vídeo
+            self.btn_run.pack_forget() # torna o botão "run" invisível
+            self.btn_stop.pack(fill=BOTH, expand=1) # torna o botão "stop" visível
+            
+            video_path = '/home/felipersotero/Documentos/Codigos/interface-vsss/src/videos/jogadores-movimento.mp4'
+            self.capture = cv2.VideoCapture(self.VideoPath)
             self.cameraIsRunning = False
-            self.btn_stop.pack_forget() # torna o botão "run" invisível
-            self.btn_run.pack(fill=BOTH, expand=1) # torna o botão "stop" visível
+            self.delay = 14 #14ms
             self.processVideo()
             
         else:
@@ -228,6 +236,10 @@ class Emulator:
     def stop(self):
         print('[EMULADOR] Emulador teve sua execução parada.')
         if(self.capture): self.capture.release() #Libera a câmera
+
+        if (self.clientMQTT):
+            self.clientMQTT.loop_stop()
+            self.clientMQTT.disconnect()
         #Inicializa o viewer
         if(self.Mode== MODE_USB_CAM): #Modo camera
             #Configurando Viewer para modo de exibição de câmera
@@ -250,6 +262,7 @@ class Emulator:
             self.btn_run.pack(fill=BOTH, expand=1) # torna o botão "stop" visível
             
         else:
+            print("################### MODE DEFAULT ############################")
             self.Mode = MODE_DEFAULT
             self.btn_stop.pack_forget() # torna o botão "run" invisível
             self.btn_run.pack(fill=BOTH, expand=1) # torna o botão "stop" visível
@@ -277,9 +290,9 @@ class Emulator:
         ballColor = string_to_int_array(self.ballColor)
 
         #Chamando funções de detecção de campo, bola e jogadores
-        binary_treat, frame, rect_vertices, frame_reduce, prop_px_cm = detect_field(self.frame, self.DEBUGA, fieldDimensions, self.OffSetBord,self.OffSetErode, self.MatrixTop, self.BINThresh)
+        binary_treat, frame, rect_vertices, frame_reduce, prop_px_cm = detect_field(self.frame, self.DEBUGA, fieldDimensions, self.OffSetBord, self.OffSetErode, self.MatrixTop, self.BINThresh)
         ballImg, ball_object, binaryBall = detect_ball(frame_reduce, ballColor, self.ball, prop_px_cm, True)
-        imgDebug, binaryPlayers, binaryTeam, amountOfPlayers, amountOfAlslies, amountOfEnemies, playersWindows, alliesWindows, enimiesWindows, allies_list, enemies_list, robots = detect_players(frame_reduce, ballImg, binaryBall, binary_treat, teamMainColor, enemiesMainColor, playersAllColors, prop_px_cm, ball_object, self.allies, self.enemies, True)
+        imgDebug, binaryPlayers, binaryTeam, amountOfPlayers, amountOfAlslies, amountOfEnemies, playersWindows, alliesWindows, enimiesWindows, allies_list, enemies_list, robots = detect_players(frame_reduce, ballImg, binaryBall, binary_treat, teamMainColor, enemiesMainColor, playersAllColors, prop_px_cm, ball_object, self.allies, self.enemies, self.OffSetBord, rect_vertices, True)
 
         self.ball = ball_object
         self.allies = allies_list
@@ -325,5 +338,15 @@ class Emulator:
         print("[EMULADOR] Processando imagem: ",self.ImgPath)
 
         self.frame = load_image(self.ImgPath)
-
         self.call_detection_system()
+
+    def processVideo(self):
+        print(self.VideoPath)
+        print("[EMULADOR] Processando vídeo")
+
+        ret, self.frame = self.capture.read()
+
+        if ret:
+            self.call_detection_system()
+
+        self.viewer.window.after(self.delay, self.processVideo)

@@ -201,9 +201,10 @@ def reduce_field(BinImg, Img, fieldWidth, prop_px_cm, d=10):
     #     img_Reduce = Img
 
     try:
-        #Obtendo os vértices do retângulo
+        #Obtendo os vértices do retângulo'
         x,y,w,h = cv2.boundingRect(objT) #Coordenadas da noav imagem
         # print(f"Coordenadas da nova imagem: {x},  {y},  {w}, {h}")
+        # print(f"offset: {d}")
         #Vetor das coordenadas
         cooVetor = [x,y,w,h]
         pontosIniciais = np.float32([[x-d,y-d],[x+w+d,y-d],[x-d,y+h+d],[x+w+d,y+h+d]])
@@ -228,6 +229,9 @@ def reduce_field(BinImg, Img, fieldWidth, prop_px_cm, d=10):
     if w > threshold and h > threshold:
         pixelWidth = min(w, h)
         prop_px_cm = convert_measures(fieldWidth, pixelWidth)
+        # print(f"Largura do campo: {w}. Largura da imagem: {wImg}")
+        # print(f"Altura do campo: {h}. Altura da imagem: {hImg}")
+
     else:
         prop_px_cm = prop_px_cm
 
@@ -279,7 +283,6 @@ def list_players(teamList):
     
     print("====================")
 
-    
 #Função para identificar equipe
 def find_team(windowsCar, colorTeam, colorEnemy):
     #Irá a partir da imagem descobrir se é ou não um carro aliado e inimigo
@@ -339,9 +342,9 @@ def draw_player_circle(imgDegub, robot, prop_px_cm=1):
     else:
         color = (0, 200, 200)
 
-    cv2.circle(imgDegub, (xi, yi), (ri + 5), color, 2)
-    text = f"{team} {id}: {str(x)}, {str(y)}"
-    cv2.putText(imgDegub, text , (int(xi),int(yi+ri+20)), cv2.FONT_HERSHEY_SIMPLEX, 0.4, color, 1)
+    # cv2.circle(imgDegub, (xi, yi), (ri + 5), color, 2)
+    # text = f"{team} {id}: {str(x)}, {str(y)}"
+    # cv2.putText(imgDegub, text , (int(xi),int(yi+ri+20)), cv2.FONT_HERSHEY_SIMPLEX, 0.4, color, 1)
 
 #======================|| FUNÇÕES MODULARES ||=========================#
 '''
@@ -369,10 +372,6 @@ def draw_player_circle(imgDegub, robot, prop_px_cm=1):
 '''
 #Função para detectar o campo e retornar os pontos extremos dele
 def detect_field(img, debug, fieldDimensions, offSetWindow=10, offSetErode=0, dimMatrix=25, Trashhold = 235):
-
-    # fieldWidth = 130 #largura do campo em cm
-    # fieldHeight = 150 #altura do campo em cm
-
 
     fieldWidth = fieldDimensions[0] #largura do campo em cm
     fieldHeight = fieldDimensions[1] #altura do campo em cm
@@ -435,15 +434,16 @@ def detect_field(img, debug, fieldDimensions, offSetWindow=10, offSetErode=0, di
                         #coor vetor: [x,y,w,h]
                         dd = offSetWindow
                         #Vértices reais na imagem real
-                        rect_vertices_true =rect_vertices+np.array([[coorVetor[0]-dd,coorVetor[1]-dd], [coorVetor[0]-dd,coorVetor[1]+dd], [coorVetor[0]+dd,coorVetor[1]+dd], [coorVetor[0]+dd,coorVetor[1]-dd]], dtype=np.int32)
+                        rect_vertices_true = rect_vertices+np.array([[coorVetor[0]-dd,coorVetor[1]-dd], [coorVetor[0]-dd,coorVetor[1]+dd], [coorVetor[0]+dd,coorVetor[1]+dd], [coorVetor[0]+dd,coorVetor[1]-dd]], dtype=np.int32)
                     
                         if(debug == True):
                             # Desenhar os vértices do retângulo na imagem original
                             cv2.polylines(frameOrig, [rect_vertices_true], True, (0, 0, 255), 4)
-
+                            print("Vértices:")
                             # Desenhar círculos nos vértices do retângulo
                             for vertex in rect_vertices_true:
                                 x, y = vertex
+                                # print(f"x = {x}, y = {y}")
                                 cv2.circle(frameOrig, (x, y), 4, (0, 255, 0), -1)
 
                     except:
@@ -505,10 +505,11 @@ def detect_ball(img, color, ball, prop_px_cm, debug=False):
             xb = int(xb)
             yb = int(yb)
 
-            cv2.circle(frameOrig, (xb, yb), (rb + 2), (0, 0, 255), 2)
-            text = f"Bola: {str(ball.position[0])}, {str(ball.position[1])}"
-            cv2.putText(frameOrig, text, (int(xb),int(yb+rb+15)), cv2.FONT_HERSHEY_SIMPLEX,0.4,(0,0,255), 1)
-            cv2.arrowedLine(frameOrig, (xb, yb), ((xb + int(ball.direction[0])), (yb + int(ball.direction[1]))), (0, 255, 0), 2)
+            # Circulando bola
+            # cv2.circle(frameOrig, (xb, yb), (rb + 2), (0, 0, 255), 2)
+            # text = f"Bola: {str(ball.position[0])}, {str(ball.position[1])}"
+            # cv2.putText(frameOrig, text, (int(xb),int(yb+rb+15)), cv2.FONT_HERSHEY_SIMPLEX,0.4,(0,0,255), 1)
+            # cv2.arrowedLine(frameOrig, (xb, yb), ((xb + int(ball.direction[0])), (yb + int(ball.direction[1]))), (0, 255, 0), 2)
             
     else:
         ball = Ball(0, 0, 0)
@@ -516,11 +517,17 @@ def detect_ball(img, color, ball, prop_px_cm, debug=False):
     return frameOrig, ball, binaryBall
 
 #Função para detectar carros
-def detect_players(img, ballImg, binaryBall, binaryField, alliesColor, enemiesColor, playersAllColors, prop_px_cm, ball_object, allies_list, enemies_list, debug=False):
+def detect_players(img, ballImg, binaryBall, binaryField, alliesColor, enemiesColor, playersAllColors, prop_px_cm, ball_object, allies_list, enemies_list, d, rect_vertices, debug=False):
     
     #==========================================================================================
     #Cria uma cópia da imagem reduzida para debug 
     imgDegub = ballImg
+
+    # print(rect_vertices)
+    # cv2.circle(imgDegub, (rect_vertices[0][0], rect_vertices[0][1]), (5), (0, 0, 255), 2)
+    # cv2.circle(imgDegub, (d, d), (5), (0, 0, 255), 2)
+    # cv2.circle(imgDegub, (d, d), (5), (0, 0, 255), 2)
+    # cv2.circle(imgDegub, (d, d), (5), (0, 0, 255), 2)
 
     #==========================================================================================
     #Cria variáveis e vetores de contagem dos jogadores 
@@ -547,7 +554,7 @@ def detect_players(img, ballImg, binaryBall, binaryField, alliesColor, enemiesCo
                 
     #==========================================================================================
     #Carrega os vetores de cores claras e escuras de objetos gerais 
-    objectsDarkColor = np.array([0,10,150]) #[0,5,120]
+    objectsDarkColor = np.array([0,10,130]) #[0,10,150]
     objectsLightColor = np.array([179,255,255])
 
     #==========================================================================================
@@ -750,8 +757,8 @@ def detect_players(img, ballImg, binaryBall, binaryField, alliesColor, enemiesCo
 
                         draw_player_circle(imgDegub, robot, prop_px_cm)
 
-                        cv2.circle(imgDegub, (xci, yci), (rc + 5), (0, 255, 0), 2)
-                        cv2.putText(imgDegub,"Cor", (int(xci+5),int(yci+5)), cv2.FONT_HERSHEY_SIMPLEX,0.4,(0,255,0), 1)
+                        # cv2.circle(imgDegub, (xci, yci), (rc + 5), (0, 255, 0), 2)
+                        # cv2.putText(imgDegub,"Cor", (int(xci+5),int(yci+5)), cv2.FONT_HERSHEY_SIMPLEX,0.4,(0,255,0), 1)
 
                         # xb = ball_object.position[0]
                         # yb = ball_object.position[1]
@@ -785,8 +792,8 @@ def detect_players(img, ballImg, binaryBall, binaryField, alliesColor, enemiesCo
                         yi = int(yi)
                         ri = int(ri)
 
-                        cv2.arrowedLine(imgDegub, (xi, yi), (xi+int(Dx), yi+int(Dy)), (0,255,0), 2)
-                        cv2.circle(imgDegub, (xi, yi), (ri + 5), (255, 0, 0), 2)
+                        # cv2.arrowedLine(imgDegub, (xi, yi), (xi+int(Dx), yi+int(Dy)), (0,255,0), 2)
+                        # cv2.circle(imgDegub, (xi, yi), (ri + 5), (255, 0, 0), 2)
 
                         alliesCount += 1
 

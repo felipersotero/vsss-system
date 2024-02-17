@@ -163,7 +163,7 @@ class App:
         self.menu.add_node(CalColor,'j2Color2','J2 Cor 2', value='[ 90 128 128]')
         self.menu.add_node(CalColor,'j3Color1','J3 Cor 1', value='[ 90 128 128]')
         self.menu.add_node(CalColor,'j3Color2','J3 Cor 2', value='[ 90 128 128]')
-        self.menu.add_node(CalColor,'enemyColor','Cor inimigos', value='[ 90 128 128]')
+        self.menu.add_node(CalColor,'enemyColor','Cor inimigos', value='[ 90 128 128]')   
         self.menu.add_node(CalColor,'ballColor','Cor da bola', value='[9 93 220]')
         
         ConfigEmulator=self.menu.add_node(SysVision,'EmulatorConfig','Configurações do Emulador', value='')
