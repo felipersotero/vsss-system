@@ -217,3 +217,5 @@ pyrightconfig.json
 .ionide
 
 # End of https://www.toptal.com/developers/gitignore/api/visualstudiocode,python,linux,opencv
+
+src/communication_secure.py

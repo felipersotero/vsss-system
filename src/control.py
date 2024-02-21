@@ -119,7 +119,8 @@ def calculate_distance_to_ball(xb, yb, coord_allies):
 ################################################################
 # Função principal que recebe os dados das coordenadas dos objetos
 def recieve_data(self, ball, allies, enemies, clientMQTT):
-    # print("Dados recebidos")
+
+    ball_coord = None
 
     if ball is not None:
         ball_coord = np.array([ball.position[0], ball.position[1]])
@@ -134,50 +135,49 @@ def recieve_data(self, ball, allies, enemies, clientMQTT):
         if allies[i] is not None:
             allies_direction[i] = np.array([allies[i].direction[0], allies[i].direction[1]])
 
-    enemies_coord = [None, None, None]
-    enemies_direction = [None, None, None]
+    command = 's164015'
 
-    for i in range(3):
-        if enemies[i] is not None:
-            enemies_coord[i] = np.array([enemies[i].position[0], enemies[i].position[1]])
-    for i in range(3):
-        if enemies[i] is not None:
-            enemies_direction[i] = np.array([enemies[i].direction[0], enemies[i].direction[1]])
+    if allies_coord[0] is not None and allies_direction[0] is not None:
+        
+        angle = angle_player_ball(ball_coord, allies_coord[0], allies_direction[0])
+    
+        if(abs(angle) > 60):
+            velocity = '200'
+        elif(abs(angle) > 45):
+            velocity = '180'
+        elif(abs(angle) > 20):
+            velocity = '160'
+        else:
+            velocity = '150'
+
+        if(angle < -10):
+            command = 'l'+velocity+'015'
+        elif(angle > 10):
+            command = 'r'+velocity+'015'
+        else:
+            command = 's'+velocity+'015'
+    # enemies_coord = [None, None, None]
+    # enemies_direction = [None, None, None]
+
+    # for i in range(3):
+    #     if enemies[i] is not None:
+    #         enemies_coord[i] = np.array([enemies[i].position[0], enemies[i].position[1]])
+    # for i in range(3):
+    #     if enemies[i] is not None:
+    #         enemies_direction[i] = np.array([enemies[i].direction[0], enemies[i].direction[1]])
 
 
-    if ball_coord is not None:
-        team_with_possession(ball_coord, allies_coord, allies_direction, enemies_coord, enemies_direction)
-    # angle = angle_player_ball(ball_coord, allies_coord[0], allies_direction[0])
-    # print(f"Ângulo jogador/bola: {angle}°")
-    # print(f"Jogador com a posse da bola: {possession_ball(ball_coord, allies_coord[0], angle)}")
+    # if ball_coord is not None:
+    #     team_with_possession(ball_coord, allies_coord, allies_direction, enemies_coord, enemies_direction)
 
-
-    xb = ball.position[0]
-    yb = ball.position[1]
-    # Chamada de outras funções
-    ally_closest = calculate_distance_to_ball(xb, yb, allies_coord)
+    # xb = ball.position[0]
+    # yb = ball.position[1]
+    # # Chamada de outras funções
+    # ally_closest = calculate_distance_to_ball(xb, yb, allies_coord)
 
     # O retorno desta função deverá conter um array ou json com todos os comandos dos robôs
     # return ally_closest
 
-    angle = angle_player_ball(ball_coord, allies_coord[0], allies_direction[0])
-    
-    if(abs(angle) > 60):
-        velocity = '200'
-    elif(abs(angle) > 45):
-        velocity = '180'
-    elif(abs(angle) > 20):
-        velocity = '160'
-    else:
-        velocity = '150'
 
-    command = 's164015'
-
-    if(angle < -10):
-        command = 'l'+velocity+'015'
-    elif(angle > 10):
-        command = 'r'+velocity+'015'
-    else:
-        command = 's'+velocity+'015'
     
     return command
