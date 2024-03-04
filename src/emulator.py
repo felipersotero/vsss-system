@@ -67,7 +67,7 @@ class Emulator:
         self.allies = [None, None, None]
         self.enemies = [None, None, None]
 
-        #Temporizador
+        # Temporizador
         self.timer_running = False
         self.start_time = 0
     
@@ -96,8 +96,9 @@ class Emulator:
         self.enemiesMainColor = self.settingsTree.tree.item('I018','value')[0]
         self.ballColor = self.settingsTree.tree.item('I019','value')[0]
 
-        self.DEBUG = self.settingsTree.tree.item('I01B','value')[0]
-        self.EXECMode = self.settingsTree.tree.item('I01C','value')[0]
+        self.debug_view = self.settingsTree.tree.item('I01B','value')[0]
+        self.mqttConection = self.settingsTree.tree.item('I01C','value')[0]
+        self.EXECMode = self.settingsTree.tree.item('I01D','value')[0]
 
 
         self.UseMode = self.format_var(self.UseMode)
@@ -113,7 +114,8 @@ class Emulator:
         self.ballColor = self.format_var(self.ballColor)
 
         self.EXECMode = self.format_var(self.EXECMode)
-        self.DEBUG = self.format_var(self.DEBUG)
+        self.debug_view = self.format_var(self.debug_view)
+        self.mqttConection = self.format_var(self.mqttConection)
         self.DEBUGalg = self.format_var(self.DEBUGalg)
         
         if(self.DEBUGalg == 'true'):
@@ -168,7 +170,7 @@ class Emulator:
         enemiesMainColor: {self.enemiesMainColor}
         ballColor: {self.ballColor}
         
-        DEBUG: {self.DEBUG}
+        debug_view: {self.debug_view}
         EXECMode: {self.EXECMode}
         """.encode('utf-8')
 
@@ -187,9 +189,9 @@ class Emulator:
         print("[EMULADOR] Configurando variaveis")
         self.viewer.config()
         self.debugFieldViewer.config()
-        self.clientMQTT = connect_to_broker("broker.hivemq.com", 1883)
-        
 
+        if (self.mqttConection == 'true'): self.clientMQTT = connect_to_broker("broker.hivemq.com", 1883)
+        
         def string_to_int_array(array):
             values = array.strip("[]").split()
             int_array = list(map(int, values))
@@ -222,9 +224,10 @@ class Emulator:
             self.processUSB()
 
             #Trabalhando com filas e threads
-            communication_thread = threading.Thread(target=self.send_mqtt_data, args=(self.commands_queue,), daemon=True)
-            communication_thread.start()
-            
+            if (self.mqttConection == 'true'):
+                communication_thread = threading.Thread(target=self.send_mqtt_data, args=(self.commands_queue,), daemon=True)
+                communication_thread.start()
+
         elif(self.Mode ==  MODE_IMAGE): #Modo Imagem
             print('[EMULADOR] Emulador em modo de processamento de Imagem')
             #Configurar viewer para modo de exibição imagem
@@ -252,7 +255,7 @@ class Emulator:
             self.btn_stop.pack_forget() # torna o botão "run" invisível
             self.btn_run.pack(fill=BOTH, expand=1) # torna o botão "stop" visível
             self.stop() #Para o emulador.
-        
+ 
     #Método para Parar a Emulação.
     def stop(self):
         print('[EMULADOR] Emulador teve sua execução parada.')
@@ -309,12 +312,12 @@ class Emulator:
         #self.start_timer()
         received_data = input_queue.get()
 
-        frame, DEBUGA, fieldDimensions, OffSetBord, OffSetErode, MatrixTop, BINThresh, ballColor, ball, teamMainColor, enemiesMainColor, playersAllColors, allies, enemies, OffSetBord = received_data
+        frame, debug, fieldDimensions, OffSetBord, OffSetErode, MatrixTop, BINThresh, ballColor, ball, teamMainColor, enemiesMainColor, playersAllColors, allies, enemies, OffSetBord = received_data
 
         #Chamando funções de detecção de campo, bola e jogadores
-        binary_treat, frame, rect_vertices, frame_reduce, prop_px_cm = detect_field(frame, DEBUGA, fieldDimensions, OffSetBord, OffSetErode, MatrixTop, BINThresh)
-        ballImg, ball_object, binaryBall = detect_ball(frame_reduce, ballColor, ball, prop_px_cm, True)
-        imgDebug, binaryPlayers, binaryTeam, amountOfPlayers, amountOfAlslies, amountOfEnemies, playersWindows, alliesWindows, enemiesWindows, allies_list, enemies_list, robots = detect_players(frame_reduce, ballImg, binaryBall, binary_treat, teamMainColor, enemiesMainColor, playersAllColors, prop_px_cm, ball_object, allies, enemies, OffSetBord, rect_vertices, True)
+        binary_treat, frame, rect_vertices, frame_reduce, prop_px_cm = detect_field(frame, debug, fieldDimensions, OffSetBord, OffSetErode, MatrixTop, BINThresh)
+        ballImg, ball_object, binaryBall = detect_ball(frame_reduce, ballColor, ball, prop_px_cm, debug)
+        imgDebug, binaryPlayers, binaryTeam, amountOfPlayers, amountOfAlslies, amountOfEnemies, playersWindows, alliesWindows, enemiesWindows, allies_list, enemies_list, robots = detect_players(frame_reduce, ballImg, binaryBall, binary_treat, teamMainColor, enemiesMainColor, playersAllColors, prop_px_cm, ball_object, allies, enemies, OffSetBord, rect_vertices, debug)
 
         sending_data = (ball_object, allies_list, enemies_list, frame, binary_treat, binaryBall, binaryPlayers, binaryTeam, imgDebug, alliesWindows, enemiesWindows)
         output_queue.queue.clear()
@@ -326,7 +329,7 @@ class Emulator:
     def processUSB(self):
         ret, self.frame = self.capture.read()
 
-        field_data_structure = (self.frame, self.DEBUGA, self.fieldDimensions, self.OffSetBord, self.OffSetErode, self.MatrixTop, self.BINThresh)
+        field_data_structure = (self.frame, self.debug_view, self.fieldDimensions, self.OffSetBord, self.OffSetErode, self.MatrixTop, self.BINThresh)
         ball_data_structure = (self.ballColor, self.ball)
         players_data_structure = (self.teamMainColor, self.enemiesMainColor, self.playersAllColors, self.allies, self.enemies, self.OffSetBord)
         
@@ -389,7 +392,58 @@ class Emulator:
         print("[EMULADOR] Processando imagem: ",self.ImgPath)
 
         self.frame = load_image(self.ImgPath)
-        self.call_detection_system()
+
+        field_data_structure = (self.frame, self.debug_view, self.fieldDimensions, self.OffSetBord, self.OffSetErode, self.MatrixTop, self.BINThresh)
+        ball_data_structure = (self.ballColor, self.ball)
+        players_data_structure = (self.teamMainColor, self.enemiesMainColor, self.playersAllColors, self.allies, self.enemies, self.OffSetBord)
+        
+        data_structure = field_data_structure + ball_data_structure + players_data_structure
+
+        # Chamando a função para detecção e enviando os parâmetros necessários
+        self.sent_data_queue.queue.clear()
+        self.sent_data_queue.put(data_structure)
+
+        video_processor_thread = threading.Thread(target=self.call_detection_system, args=(self.sent_data_queue, self.received_data_queue))
+        video_processor_thread.daemon = True
+        video_processor_thread.start()
+
+        # Salvando dados recebidos
+        received_data = self.received_data_queue.get()
+        ball_object, allies_list, enemies_list, frame, binary_treat, binaryBall, binaryPlayers, binaryTeam, imgDebug, alliesWindows, enemiesWindows = received_data
+
+        self.ball = ball_object
+        self.allies = allies_list
+        self.enemies = enemies_list
+
+        # Enviando dados para o processamento
+        # self.commands = recieve_data(self, self.ball, self.allies, self. enemies, self.clientMQTT)
+        # self.commands_queue.queue.clear()
+        # self.commands_queue.put(self.commands)
+
+        #Exibindo dados em tela
+        self.viewer.show(frame)
+        self.debugFieldViewer.show(binary_treat)
+        self.debugObjectsViewer.show(binaryBall)
+        self.debugPlayersViewer.show(binaryPlayers)
+        self.debugTeamViewer.show(binaryTeam)
+        self.resultViewer.show(imgDebug)
+
+        playersWindowsSeparated = alliesWindows[:3] + enemiesWindows[:3]
+        self.playersWindows.show(playersWindowsSeparated)
+
+        #Exibindo dados nos cards
+        for i in range(3):
+            if self.allies[i] is not None:
+                self.cards[i].set_content(self.allies[i].id, self.allies[i].detected, self.allies[i].position, self.allies[i].radius, self.allies[i].image)
+            else:
+                self.cards[i].set_content("#", " ", [" ", " "], " ", None)
+        for i in range(3):
+            if self.enemies[i] is not None:
+                self.cards[i+3].set_content(self.enemies[i].id, self.enemies[i].detected, self.enemies[i].position, self.enemies[i].radius, self.enemies[i].image)
+            else:
+                self.cards[i+3].set_content("#", " ", [" ", " "], " ", None)
+
+        # self.call_detection_system()
 
     def processVideo(self):
         print(self.VideoPath)

@@ -27,7 +27,7 @@ class settingsMenu(Frame):
         self.tree.item(id,tags=())
 
     def on_double_click  (self, event):
-        editable_items = ['Câmera USB','Vídeo Path','Cor','Cor Principal T1', 'Cor Principal T2','T1_robo 1','T1_robo 2','T1_robo 3','T2_robo 1','T2_robo 2','T2_robo 3','Debug','Borda da janela','offSet da Erosão','Debug do Algorítmo','Binarização Threshold','Dim. Matriz TOPHAT', 'Largura (menor)', 'Comprimento (maior)']
+        editable_items = ['Câmera USB','Vídeo Path','Cor','Cor Principal T1', 'Cor Principal T2','T1_robo 1','T1_robo 2','T1_robo 3','T2_robo 1','T2_robo 2','T2_robo 3','Borda da janela','offSet da Erosão','Debug do Algorítmo','Binarização Threshold','Dim. Matriz TOPHAT', 'Largura (menor)', 'Comprimento (maior)']
         #color_editables = ["Calibração das Cores"]
         color_editables = ['Cor principal', 'J1 Cor 1', 'J1 Cor 2', 'J2 Cor 1', 'J2 Cor 2', 'J3 Cor 1', 'J3 Cor 2', 'Cor inimigos', 'Cor da bola']
         item = self.tree.focus()
@@ -47,6 +47,12 @@ class settingsMenu(Frame):
 
             elif self.tree.item(item, 'text') == 'Vídeo Path':
                 self.load_file(self.tree, item)
+
+            elif self.tree.item(item, 'text') == 'Debug':
+                self.open_select_window(self.tree, item)
+            
+            elif self.tree.item(item, 'text') == 'MQTT':
+                self.open_select_window(self.tree, item)
 
             elif self.tree.item(item, 'text') in editable_items:
                 self.tree.item(item, tags=('edit',))
@@ -88,6 +94,32 @@ class settingsMenu(Frame):
         pick_var = StringVar()
 
         for i in range(3):
+            radiobutton = ttk.Radiobutton(new_window, text=texts[i], variable=pick_var, value=options[i])
+            radiobutton.pack(padx=10, pady=5)
+
+        select_button = Button(new_window, text="Confirmar", command=update_value)
+        select_button.pack(pady=10)
+
+    def open_select_window(self, tree, item):
+        self.item = item
+        self.tree = tree
+
+        new_window = Toplevel(self.tree)
+        new_window.title("Seleção de modo")
+        self.root = new_window
+
+        def update_value():
+            mode_picked = pick_var.get()
+            self.tree.set(item,'Valor',mode_picked)
+            self.nodes[item] = mode_picked
+            new_window.destroy()
+
+        options = ['true', 'false']
+        texts = ['Ativado', 'Desativado']
+
+        pick_var = StringVar()
+
+        for i in range(2):
             radiobutton = ttk.Radiobutton(new_window, text=texts[i], variable=pick_var, value=options[i])
             radiobutton.pack(padx=10, pady=5)
 
