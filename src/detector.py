@@ -1,6 +1,7 @@
 # ==========================================================================================
-# MÓDULO DE FUNÇÕES PARA ALGORÍTMO DE DETECÇÃO VSS
-#===========================================================================================
+# MÓDULO DE FUNÇÕES PARA ALGORÍTMO DE DETECÇÃO VSS (V1.2)
+# Obs:
+#==========================================================================================
 '''
     Obs: O módulo é divido em três tipos de funções de identificação, em ordem de Hierarquia:
     1- Funções Principais
@@ -16,13 +17,17 @@
     
     Além da definição dos módulo, também é definido os objetos que irão funcionar como abstração
     com o mundo real: robôs, bola e campo.
+
+    Obs: Atualmente o módulo não tem a versão para utilizar o cuda em seu processamento
 '''
 #importando bibliotecas necessárias para o código
 import cv2
 import numpy as np
 
 #======================|| DEFINIÇÕES DE CLASSES ||======================================#
-
+'''
+Classe robô que será utilizada no algorítmo de detecção
+'''
 class Robot:
     def __init__(self, id, team, x, y, r, image):
         self.id = id
@@ -100,6 +105,9 @@ class Robot:
         
         
 #classe que identifica a bola
+'''
+A classe bola é responsável por pegar informações do objeto bola que será utilizado no campo
+'''
 class Ball:
     def __init__(self, x, y, r):
         self.position = np.array([int(x), int(y)])
@@ -114,6 +122,10 @@ class Ball:
         self.direction = np.array([10*(current_position[0] - last_position[0]), 10*(current_position[1] - last_position[1])])
 
 #Definição da classe campo
+'''
+A classe campo é responsável por dar uma visão geral ao sistema de detecção, para poder enquadrar o campo dentro da lógica
+O objeto field terá informações dos jogadores e dos extremos do campoa
+'''
 class Field:
 
     #Métodos
@@ -123,6 +135,17 @@ class Field:
     #mudar a posição
     def updatePosition(self, ):
         return 0
+
+#======================|| CLASSE PARA REPRESENTAR O DETECTOR ||======================================#
+'''
+    Obs: Essa classe tem a função de incorporar as funções necessárias e deixar o código mais "visível"
+    Ele utiliza com base o OpenCV para realizar o necessário.
+'''
+class detector:
+    def __init(self):
+        self.Id = 0
+
+
 
 #======================|| FUNÇÕES AUXILIARES ||=========================================#
 '''

@@ -1,6 +1,7 @@
 from modules import *
 
 class settingsMenu(Frame):
+    
     def __init__(self, master=None, **kwargs):
         super().__init__(master, **kwargs)
 

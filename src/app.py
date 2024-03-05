@@ -11,12 +11,14 @@ class App:
         root = Tk()
         self.root = root
         self.menu = None
+        self.root.iconbitmap('src\data\icon.ico')
 
         self.configure_window() #self.window()
 
         self.create_main_frames() #self.frame_window()
         self.create_settings_frame() #self.frame_config()
 
+        self.IdFrame = 2
         self.widgets_settings_frame()
         self.widgets_emulate_frame()
         self.widgets_images_frame()
@@ -37,7 +39,14 @@ class App:
         for i, card in enumerate(self.cards):
             card.frame.grid(row=i // 3, column=i % 3, padx=10, pady=10)
 
-        self.emulator = Emulator(self.menu, self.viewer, self.debugField, self.debugObject, self.debugPlayers, self.debugTeam, self.playersWindows, self.result, self.cards, 2, self.btn_run, self.btn_stop)
+        self.emulator = Emulator(self)
+
+
+
+        #Configurando menu para controle do jogador e retornar aos valores iniciais
+        menu = Menu(self.root)
+        
+ 
 
         root.mainloop()
 
@@ -45,7 +54,7 @@ class App:
         self.root.title("PINBOT - VSSS")
         self.root.configure(background="#dfe3ee")
         self.root.geometry("1100x750")
-        self.root.resizable(True, True)
+        self.root.resizable(False, True)
     
     def create_main_frames(self):
         self.settings_frame = Frame(self.root, bg="white")

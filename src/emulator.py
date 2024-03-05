@@ -2,7 +2,7 @@ from modules import *
 from settingsMenu import *
 from viewer import MyViewer, WindowsViewer
 from cards import Card
-
+from objects import *
 from control import *
 from communication import *
 
@@ -12,29 +12,25 @@ import time
 
 import ast
 
-MODE_DEFAULT:int = 1
-MODE_USB_CAM: int= 2
-MODE_VIDEO_CAM:int = 3
-MODE_IMAGE:int = 4
 
 class Emulator:
-    def __init__(self, settingsMenu: settingsMenu, viewer: MyViewer, debugFieldViewer: MyViewer, debugObjectsViewer: MyViewer, debugPlayersViewer: MyViewer, debugTeamViewer: MyViewer, playersWindows: WindowsViewer, resultViewer: MyViewer, cards: Card, IdCap: int, btn_run: Button, btn_stop: Button):
+    def __init__(self,App):
         print("Emulador foi construído")
 
-        self.settingsTree = settingsMenu
-        self.viewer = viewer
-        self.debugFieldViewer = debugFieldViewer
-        self.debugObjectsViewer = debugObjectsViewer
-        self.debugPlayersViewer = debugPlayersViewer
-        self.debugTeamViewer = debugTeamViewer
-        self.playersWindows = playersWindows
-        self.resultViewer = resultViewer
+        self.settingsTree = App.menu
+        self.viewer = App.viewer
+        self.debugFieldViewer = App.debugField
+        self.debugObjectsViewer = App.debugObject
+        self.debugPlayersViewer = App.debugPlayers
+        self.debugTeamViewer = App.debugTeam
+        self.playersWindows = App.playersWindows
+        self.resultViewer = App.result
 
-        self.cards = cards
+        self.cards = App.cards
 
-        self.IdCap = IdCap
-        self.btn_run = btn_run
-        self.btn_stop = btn_stop
+        self.IdCap = App.IdFrame
+        self.btn_run = App.btn_run
+        self.btn_stop = App.btn_stop
         
         #Variáveis de controle
         self.Mode = MODE_DEFAULT
@@ -187,9 +183,7 @@ class Emulator:
         print("[EMULADOR] Configurando variaveis")
         self.viewer.config()
         self.debugFieldViewer.config()
-        self.clientMQTT = connect_to_broker("broker.hivemq.com", 1883)
-        
-
+        #self.clientMQTT = connect_to_broker("broker.hivemq.com", 1883)
         def string_to_int_array(array):
             values = array.strip("[]").split()
             int_array = list(map(int, values))
@@ -210,7 +204,8 @@ class Emulator:
         #Inicializa o viewer
         if(self.Mode== MODE_USB_CAM): #Modo camera
             print('[EMULADOR] Emulador em modo de processamento de imagem da Camera USB')
-            #Configurando Viewer para modo de exibição de câmera            
+            #Configurando Viewer para modo de exibição de câmera   
+            self.clientMQTT = connect_to_broker("broker.hivemq.com", 1883)         
             #Entrada do vídeo
             self.btn_run.pack_forget() # torna o botão "run" invisível
             self.btn_stop.pack(fill=BOTH, expand=1) # torna o botão "stop" visível
@@ -389,7 +384,7 @@ class Emulator:
         print("[EMULADOR] Processando imagem: ",self.ImgPath)
 
         self.frame = load_image(self.ImgPath)
-        self.call_detection_system()
+        self.call_detection_system(self.sent_data_queue, self.received_data_queue)
 
     def processVideo(self):
         print(self.VideoPath)
@@ -398,6 +393,6 @@ class Emulator:
         ret, self.frame = self.capture.read()
 
         if ret:
-            self.call_detection_system()
+            self.call_detection_system(self.sent_data_queue, self.received_data_queue)
 
         self.viewer.window.after(self.delay, self.processVideo)
