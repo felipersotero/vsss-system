@@ -1,7 +1,6 @@
 # ==========================================================================================
-# MÓDULO DE FUNÇÕES PARA ALGORÍTMO DE DETECÇÃO VSS (V1.2)
-# Obs:
-#==========================================================================================
+# MÓDULO DE FUNÇÕES PARA ALGORÍTMO DE DETECÇÃO VSS
+#===========================================================================================
 '''
     Obs: O módulo é divido em três tipos de funções de identificação, em ordem de Hierarquia:
     1- Funções Principais
@@ -17,17 +16,13 @@
     
     Além da definição dos módulo, também é definido os objetos que irão funcionar como abstração
     com o mundo real: robôs, bola e campo.
-
-    Obs: Atualmente o módulo não tem a versão para utilizar o cuda em seu processamento
 '''
 #importando bibliotecas necessárias para o código
 import cv2
 import numpy as np
 
 #======================|| DEFINIÇÕES DE CLASSES ||======================================#
-'''
-Classe robô que será utilizada no algorítmo de detecção
-'''
+
 class Robot:
     def __init__(self, id, team, x, y, r, image):
         self.id = id
@@ -105,9 +100,6 @@ class Robot:
         
         
 #classe que identifica a bola
-'''
-A classe bola é responsável por pegar informações do objeto bola que será utilizado no campo
-'''
 class Ball:
     def __init__(self, x, y, r):
         self.position = np.array([int(x), int(y)])
@@ -119,13 +111,16 @@ class Ball:
         self.radius = r
 
     def set_direction(self, last_position, current_position):
-        self.direction = np.array([10*(current_position[0] - last_position[0]), 10*(current_position[1] - last_position[1])])
+        dx = current_position[0] - last_position[0]
+        dy = current_position[1] - last_position[1]
+        mod = np.sqrt(dx**2 + dy**2)
+
+        dx = dx/mod
+        dy = dy/mod
+
+        self.direction = np.array([dx, dy])
 
 #Definição da classe campo
-'''
-A classe campo é responsável por dar uma visão geral ao sistema de detecção, para poder enquadrar o campo dentro da lógica
-O objeto field terá informações dos jogadores e dos extremos do campoa
-'''
 class Field:
 
     #Métodos
@@ -135,17 +130,6 @@ class Field:
     #mudar a posição
     def updatePosition(self, ):
         return 0
-
-#======================|| CLASSE PARA REPRESENTAR O DETECTOR ||======================================#
-'''
-    Obs: Essa classe tem a função de incorporar as funções necessárias e deixar o código mais "visível"
-    Ele utiliza com base o OpenCV para realizar o necessário.
-'''
-class detector:
-    def __init(self):
-        self.Id = 0
-
-
 
 #======================|| FUNÇÕES AUXILIARES ||=========================================#
 '''
@@ -262,9 +246,9 @@ def reduce_field(BinImg, Img, fieldWidth, prop_px_cm, d=10):
     #Retornando a imagem binária e a imagem original já reduzida.
     # print(f"Altura da imagem reduzida: {hImg}")
     # print(f"Largura da imagem reduzida: {wImg}")    
-    # print("########################################")
-    # print("w = ", wImg, "h = ", hImg)
-    # print("Proporção: ", prop_px_cm, " px/cm")
+    print("########################################")
+    print("w = ", wImg, "h = ", hImg)
+    print("Proporção: ", prop_px_cm, " px/cm")
     # print("Altura: ", hImg/prop_px_cm, " cm (28 cm)")
 
     return bin_Reduce, img_Reduce, cooVetor, prop_px_cm
@@ -365,9 +349,9 @@ def draw_player_circle(imgDegub, robot, prop_px_cm=1):
     else:
         color = (0, 200, 200)
 
-    # cv2.circle(imgDegub, (xi, yi), (ri + 5), color, 2)
-    # text = f"{team} {id}: {str(x)}, {str(y)}"
-    # cv2.putText(imgDegub, text , (int(xi),int(yi+ri+20)), cv2.FONT_HERSHEY_SIMPLEX, 0.4, color, 1)
+    cv2.circle(imgDegub, (xi, yi), (ri + 5), color, 2)
+    text = f"{team} {id}: {str(x)}, {str(y)}"
+    cv2.putText(imgDegub, text , (int(xi),int(yi+ri+20)), cv2.FONT_HERSHEY_SIMPLEX, 0.4, color, 1)
 
 #======================|| FUNÇÕES MODULARES ||=========================#
 '''
@@ -405,9 +389,9 @@ def detect_field(img, debug, fieldDimensions, offSetWindow=10, offSetErode=0, di
     pixelWidth = min(w, h)
     prop_px_cm = convert_measures(fieldWidth, pixelWidth)
     
-    # print("################## Antes da função de redução ######################")
-    # print("w = ", w, "h = ", h)
-    # print("Proporção: ", prop_px_cm, " px/cm")
+    print("################## Antes da função de redução ######################")
+    print("w = ", w, "h = ", h)
+    print("Proporção: ", prop_px_cm, " px/cm")
     # print("Altura: ", h/prop_px_cm, " cm (28 cm)")
 
     while offSetErode <20:
@@ -459,10 +443,10 @@ def detect_field(img, debug, fieldDimensions, offSetWindow=10, offSetErode=0, di
                         #Vértices reais na imagem real
                         rect_vertices_true = rect_vertices+np.array([[coorVetor[0]-dd,coorVetor[1]-dd], [coorVetor[0]-dd,coorVetor[1]+dd], [coorVetor[0]+dd,coorVetor[1]+dd], [coorVetor[0]+dd,coorVetor[1]-dd]], dtype=np.int32)
                     
-                        if(debug == True):
+                        if(debug == 'true'):
                             # Desenhar os vértices do retângulo na imagem original
                             cv2.polylines(frameOrig, [rect_vertices_true], True, (0, 0, 255), 4)
-                            print("Vértices:")
+                            # print("Vértices:")
                             # Desenhar círculos nos vértices do retângulo
                             for vertex in rect_vertices_true:
                                 x, y = vertex
@@ -481,7 +465,7 @@ def detect_field(img, debug, fieldDimensions, offSetWindow=10, offSetErode=0, di
             return binary_treat, frameOrig, np.array([-1,-1,-1,-1],dtype=np.int32), img, prop_px_cm
 
 #Função para detectar bola
-def detect_ball(img, color, ball, prop_px_cm, debug=False):
+def detect_ball(img, color, ball, prop_px_cm, debug):
     
     frameOrig = img.copy()
 
@@ -522,17 +506,17 @@ def detect_ball(img, color, ball, prop_px_cm, debug=False):
             ball.set_direction(ball.position, np.array([xcm, ycm]))
             ball.update_position(xcm, ycm, rcm)
 
-        if (debug == True):
+        if (debug == 'true'):
 
             rb = int(rb)
             xb = int(xb)
             yb = int(yb)
 
             # Circulando bola
-            # cv2.circle(frameOrig, (xb, yb), (rb + 2), (0, 0, 255), 2)
-            # text = f"Bola: {str(ball.position[0])}, {str(ball.position[1])}"
-            # cv2.putText(frameOrig, text, (int(xb),int(yb+rb+15)), cv2.FONT_HERSHEY_SIMPLEX,0.4,(0,0,255), 1)
-            # cv2.arrowedLine(frameOrig, (xb, yb), ((xb + int(ball.direction[0])), (yb + int(ball.direction[1]))), (0, 255, 0), 2)
+            cv2.circle(frameOrig, (xb, yb), (rb + 2), (0, 0, 255), 2)
+            text = f"Bola: {str(ball.position[0])}, {str(ball.position[1])}"
+            cv2.putText(frameOrig, text, (int(xb),int(yb+rb+15)), cv2.FONT_HERSHEY_SIMPLEX,0.4,(0,0,255), 1)
+            cv2.arrowedLine(frameOrig, (xb, yb), ((xb + int(ball.direction[0])), (yb + int(ball.direction[1]))), (0, 255, 0), 2)
             
     else:
         ball = Ball(0, 0, 0)
@@ -540,7 +524,7 @@ def detect_ball(img, color, ball, prop_px_cm, debug=False):
     return frameOrig, ball, binaryBall
 
 #Função para detectar carros
-def detect_players(img, ballImg, binaryBall, binaryField, alliesColor, enemiesColor, playersAllColors, prop_px_cm, ball_object, allies_list, enemies_list, d, rect_vertices, debug=False):
+def detect_players(img, ballImg, binaryBall, binaryField, alliesColor, enemiesColor, playersAllColors, prop_px_cm, ball_object, allies_list, enemies_list, d, rect_vertices, debug):
     
     #==========================================================================================
     #Cria uma cópia da imagem reduzida para debug 
@@ -552,6 +536,10 @@ def detect_players(img, ballImg, binaryBall, binaryField, alliesColor, enemiesCo
     # cv2.circle(imgDegub, (d, d), (5), (0, 0, 255), 2)
     # cv2.circle(imgDegub, (d, d), (5), (0, 0, 255), 2)
 
+    initial = [30*prop_px_cm, 30*prop_px_cm]
+    final = [30*prop_px_cm, 37.5*prop_px_cm]
+
+    cv2.line(imgDegub, (int(initial[0]), int(initial[1])), (int(final[0]), int(final[1])), (255, 0, 0), 2)
     #==========================================================================================
     #Cria variáveis e vetores de contagem dos jogadores 
     #Janela dos jogadores
@@ -639,10 +627,13 @@ def detect_players(img, ballImg, binaryBall, binaryField, alliesColor, enemiesCo
         # playerRadius = 24
         # secColorRadius = playerRadius/2
 
-        # print("Raio encontrado: ", ri)
+        # print("Raio do jogador: ", playerRadius)
+        # print("Raio encontrado: ", ri/prop_px_cm)
+
 
         #Objetos com raios maiores que certo valor serão considerados como jogadores
         if(ri > 0.75*playerRadius and ri < 1.5*playerRadius and playersCount < 6): #4*prop_px_cm
+            cv2.circle(imgDegub, (int(xi), int(yi)), (int(ri) + 5), (0, 255, 0), 2)
 
             #Traçando janelas (winSize x winSize)
             # winSize = int(200) #18*prop_px_cm
@@ -673,7 +664,7 @@ def detect_players(img, ballImg, binaryBall, binaryField, alliesColor, enemiesCo
                     yc = int(yc)
                     rc = int(rc)
 
-                    if(rc >= 0.75*mainColorRadius and enemiesCount < 3):
+                    if(rc >= 0.5*mainColorRadius and enemiesCount < 3):
 
                         xcm = xi/prop_px_cm
                         ycm = yi/prop_px_cm
@@ -709,7 +700,7 @@ def detect_players(img, ballImg, binaryBall, binaryField, alliesColor, enemiesCo
                         # text = "Inimigo: " + str(xi) + ", " + str(yi)
                         # cv2.putText(imgDegub, text , (int(xi),int(yi+ri+20)), cv2.FONT_HERSHEY_SIMPLEX,0.4,(0, 0, 255), 1)
 
-                        draw_player_circle(imgDegub, robot, prop_px_cm)
+                        if(debug == 'true'): draw_player_circle(imgDegub, robot, prop_px_cm)
 
                         enemiesCount += 1
 
@@ -725,7 +716,9 @@ def detect_players(img, ballImg, binaryBall, binaryField, alliesColor, enemiesCo
                 yc = int(yc)
                 rc = int(rc)
 
-                if(rc >= 0.75*mainColorRadius and alliesCount < 3):
+                print(f"Raio da cor principal: {mainColorRadius} - {rc}")
+
+                if(rc >= 0.5*mainColorRadius and alliesCount < 3):
                     #Aqui deve se iniciar a busca por jogadores únicos, verificando suas cores secundárias
                     ally_id = 0
                     for i in range(3):
@@ -737,16 +730,16 @@ def detect_players(img, ballImg, binaryBall, binaryField, alliesColor, enemiesCo
                         if firstColorContours:
                             firstColorContour = max(firstColorContours, key=cv2.contourArea)
                             (xc1, yc1), rc1 = cv2.minEnclosingCircle(firstColorContour)
-                            # print(f"rc1: {rc1}")
-                            # print(f"seccolorradiu: {secColorRadius}")
-                            if rc1 >= 0.7*secColorRadius: firstColorFound = True
+                            print(f"rc1: {rc1}")
+                            print(f"seccolorradiu: {secColorRadius}")
+                            if rc1 >= 0.4*secColorRadius: firstColorFound = True
 
                         second_lower_bound, second_upper_bound = create_color_bounds(playersAllColors[i][1])
                         secondColorContours = find_binary_contours(playersWindows[playersCount], second_lower_bound, second_upper_bound)
                         if secondColorContours:
                             secondColorContour = max(secondColorContours, key=cv2.contourArea)
                             (xc2, yc2), rc2 = cv2.minEnclosingCircle(secondColorContour)
-                            if rc2 >= 0.7*secColorRadius: secondColorFound = True
+                            if rc2 >= 0.4*secColorRadius: secondColorFound = True
 
                         if firstColorFound and secondColorFound: ally_id = (i+1)
 
@@ -778,7 +771,7 @@ def detect_players(img, ballImg, binaryBall, binaryField, alliesColor, enemiesCo
                         xci = int(xi - (winSize/2) + xc)
                         yci = int(yi - (winSize/2) + yc)
 
-                        draw_player_circle(imgDegub, robot, prop_px_cm)
+                        if(debug == 'true'): draw_player_circle(imgDegub, robot, prop_px_cm)
 
                         # cv2.circle(imgDegub, (xci, yci), (rc + 5), (0, 255, 0), 2)
                         # cv2.putText(imgDegub,"Cor", (int(xci+5),int(yci+5)), cv2.FONT_HERSHEY_SIMPLEX,0.4,(0,255,0), 1)
@@ -815,8 +808,9 @@ def detect_players(img, ballImg, binaryBall, binaryField, alliesColor, enemiesCo
                         yi = int(yi)
                         ri = int(ri)
 
-                        # cv2.arrowedLine(imgDegub, (xi, yi), (xi+int(Dx), yi+int(Dy)), (0,255,0), 2)
-                        # cv2.circle(imgDegub, (xi, yi), (ri + 5), (255, 0, 0), 2)
+                        if(debug == 'true'):
+                            cv2.arrowedLine(imgDegub, (xi, yi), (xi+int(Dx), yi+int(Dy)), (0,255,0), 2)
+                            # cv2.circle(imgDegub, (xi, yi), (ri + 5), (255, 0, 0), 2)
 
                         alliesCount += 1
 
@@ -832,7 +826,7 @@ def detect_players(img, ballImg, binaryBall, binaryField, alliesColor, enemiesCo
                         yc = int(yc)
                         rc = int(rc)
 
-                        if(rc >= 0.75*mainColorRadius and enemiesCount < 3):
+                        if(rc >= 0.5*mainColorRadius and enemiesCount < 3):
 
                             id = "1"+str(enemiesCount+1)
                             xcm = xi/prop_px_cm
@@ -868,7 +862,7 @@ def detect_players(img, ballImg, binaryBall, binaryField, alliesColor, enemiesCo
                             # text = "Inimigo: " + str(xi) + ", " + str(yi)
                             # cv2.putText(imgDegub, text , (int(xi),int(yi+ri+20)), cv2.FONT_HERSHEY_SIMPLEX,0.4,(0, 0, 255), 1)
 
-                            draw_player_circle(imgDegub, robot, prop_px_cm)
+                            if(debug == 'true'): draw_player_circle(imgDegub, robot, prop_px_cm)
 
                             enemiesCount += 1
             
