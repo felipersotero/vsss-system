@@ -177,6 +177,7 @@ class App:
         
         ConfigEmulator=self.menu.add_node(SysVision,'EmulatorConfig','Configurações do Emulador', value='')
         self.menu.add_node(ConfigEmulator,'Debug','Debug', value='False')
+        self.menu.add_node(ConfigEmulator,'MQTT','MQTT', value='False')
         self.menu.add_node(ConfigEmulator,'ExectState','Estado de Execução', value='Parado')
 
     def save_config(self):
@@ -194,7 +195,7 @@ class App:
         self.menu.save_to_json('config')
 
         self.emulator.init()
-        self.menu.att_node_id('I01C','Em execução.')
+        self.menu.att_node_id('I01D','Em execução.')
         self.menu.save_to_json('config')
 
     def stop_emulate(self):
@@ -202,7 +203,7 @@ class App:
         self.btn_stop.pack_forget()
         self.btn_run.pack(fill=BOTH, expand=1)
         
-        self.menu.att_node_id('I01C','Parado')
+        self.menu.att_node_id('I01D','Parado')
         self.menu.save_to_json('config')
 
 if __name__ == "__main__":
