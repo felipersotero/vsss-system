@@ -36,44 +36,167 @@ As características do robô são:
 
 #Classe do robô
 class Robot:
-    def __init__(self, id:ID_Robots, team:ID_Team, x, y, r, image=cv2.imread('src/images/dark_screen.png')):
+    def __init__(self, id:ID_Robots, team:ID_Team, x, y, r, image=cv2.imread('src/images/dark_screen.png'),colorTeam = None,colorCar = None):
+        #informando identificador
         self.id = id
+        self.dimMatrix = 100
+        #informando time
         self.team = team
         self.position = np.array([round(x, 2), round(y, 2)])
-        self.radius = round(r, 2)
-        self.direction = np.array([0, 0])
-        self.detected = False
-        self.image = image
 
-    def update_position(self, x, y, r, image):
+        #informações de posição para cálculo da velocidade
+        self.lastPosition = self.position
+        self.newPosition = self.position 
+        self.direction = np.array([round(x, 2), round(y, 2)])
+        self.velocity = np.array([0,0])
+
+        #Janela que informa a posição do jogador
+        #informando raio de border box 
+        self.viewRect = ViewBot(Point2D(self.position[0],self.position[1]), self.dimMatrix)
+
+        #"raio" associado à borda do jogador
+        self.radius = round(r, 2)
+
+        #Gerando objeto de informações
+        self.objLimit = Circle(self.radius,Point2D(x,y))
+
+        #Gerando uma bbox para sistema de colisões
+        self.bbox = BorderBox(GeometryType.CIRCLE,self.objLimit)
+        self.ObjType = ObjTypeMove.MOVING
+        self.objTypeSystem = ObjTypeVision.ROBOT
+
+
+        #informa se foi detectado pelo sistema
+        self.detected = False
+
+        #informa se o carro detem a bola
+        self.possessionBall = False
+
+        #imagem de detecção do carro
+        self.botViewImg = image
+
+        #informando cor (Em código HSV, falta converter)
+        self.colorTeam = colorTeam
+        self.colorCar = colorCar
+
+    #Atualizar posição do robô
+    def updatePosition(self, x, y, r, image):
+        #Atualiza ultima posição
+        self.lastPosition = self.position
+
         self.position = np.array([round(x, 2), round(y, 2)])
         self.radius = round(r, 2)
         self.image = image
 
-    def update_direction(self, dirX, dirY):
-        self.direction = np.array([dirX, dirY])
+        #Atualiza nova posição
+        self.newPosition = self.position 
 
-    def set_status(self, status):
+        #Calcula o vetor deslocamento (direção)
+        self.direction = self.newPosition - self.lastPosition
+        
+        #Atualizando posição da borderbox
+        self.updateBbox()
+
+    #Atualizar informações do robÕ
+    def setStatus(self, status):
         self.detected = status
 
-    def set_Radius(self, radius):
+    #informando cores do carro
+    def setColor(self, colorTeam, colorCar):
+        self.colorTeam = colorTeam
+        self.colorCar = colorCar
+
+    #informando raio da borda do carro
+    def setRadius(self, radius):
         self.radio = radius
 
+    #informando qual a velocidade do objeto
+    def getVelocity(self, timestamp):
+        if timestamp != 0: self.velocity = self.direction / timestamp
+        else:
+            self.velocity = 0
+
+        return self.velocity
+    
+    #Atualiza borderbox
+    def updateBbox(self):
+        #Gerando objeto de informações
+        self.objLimit = Circle(Point2D(self.position[0],self.position[1]),self.radius)
+
+        #Gerando uma bbox para sistema de colisões
+        self.bbox = BorderBox(GeometryType.CIRCLE,self.objLimit)
+
+    # prever posição do carro com base na velocidade dele
+    # timestamp é o tempo que se passou do ultimo processamento até agora
+    # necessário uma classe time para realizar essa lógica
+        
+    #atualiza quadro de predição do robô
+    def predictPosition(self, timestamp):
+        #passo para transport a tela que representa a posição do robô
+        stepPosition = self.velocity * timestamp
+
+        #transfiro os pontos de identificação para a posição prevista
+        self.viewRect.translateViewBot(Point2D(stepPosition[0],stepPosition[1]))
+
+    #recupera o ponto que devo procurar na imagem para encontrar o carro
+    # levando em consideração o passo interno do viewRect (dimMatrix)
+    def getPredictPosition(self):
+        return self.viewRect.Pe1
+    
+    
 '''
 @GNOMIO:A classe bola é responsável por pegar informações do objeto bola que será utilizado no processo de detecção
 '''
 class Ball:
     def __init__(self, x, y, r):
+        #posição, raio e direção da boal
         self.position = np.array([int(x), int(y)])
         self.radius = int(r)
         self.direction = np.array([0, 0])
 
-    def update_position(self, x, y, r):
-        self.position = np.array([int(x), int(y)])
-        self.radius = r
+        #gerando bbox para sistema de colisão
+        self.objLimit = Circle(Point2D(x,y),self.radius)
+        self.bbox = BorderBox(GeometryType.CIRCLE, self.objLimit)
 
-    def set_direction(self, last_position, current_position):
-        self.direction = np.array([10*(current_position[0] - last_position[0]), 10*(current_position[1] - last_position[1])])
+        #Informações do tipo de objeto no sistema
+        self.ObjType = ObjTypeMove.MOVING
+        self.objTypeSystem = ObjTypeVision.BALL
+        
+        #informações de posição para cálculo da velocidade
+        self.lastPosition = self.position
+        self.newPosition = self.position 
+
+    #atualizando posição da bola
+    def updatePosition(self, x, y,r):
+        #Atualizando raio
+        self.radius = int(r)
+
+        #Atualizando posições do sistema
+        self.lastPosition = self.position
+        self.newPosition = np.array([int(x), int(y)])
+
+        #atualizando direção
+        self.direction = self.newPosition - self.lastPosition
+
+        #Atualizando posição da borderbox
+        self.updateBbox()
+
+    #recuperando a velocidade da bola
+    def getVelocity(self, timestamp):
+        if timestamp != 0: self.velocity = self.direction / timestamp
+        else:
+            self.velocity = np.array[0,0]
+
+        return self.velocity
+    
+    #Atualiza borderbox
+    def updateBbox(self):
+        #Gerando objeto de informações
+        self.objLimit = Circle(Point2D(self.position[0],self.position[1]),self.radius)
+
+        #Gerando uma bbox para sistema de colisões
+        self.bbox = BorderBox(GeometryType.CIRCLE,self.objLimit)
+
 
 #Definição da classe campo
 '''
@@ -86,6 +209,7 @@ class Field:
         #pontos importantes no campo
         self.pivots = [Pivot(id=ID_Pivots.CENTER),Pivot(id=ID_Pivots.PA1),Pivot(id=ID_Pivots.PA2),Pivot(id=ID_Pivots.PA3),Pivot(id=ID_Pivots.PE1),Pivot(id=ID_Pivots.PE3)]
         
+
         #áreas dos gols dos jogadores
         self.goalArea =[AreaField(id=ID_Field.GOAL_ALLY),AreaField(id=ID_Field.GOAL_ENEMY)]
 
@@ -96,6 +220,10 @@ class Field:
 
         #Setando parâmetros do campo
         self.extrems = np.array([[0,0], [0, 0], [0,0], [0,0]])             
+
+        #Informações do tipo de objeto
+        self.ObjType = ObjTypeMove.STATIC
+        self.objTypeSystem = ObjTypeVision.FIELD
         
     #Atualizar extremos do campo, para realizar cálculos
     def updatePos(self,pos,width,height):
@@ -125,15 +253,44 @@ class Field:
 '''
 #Vista capturada pelo processamento, que contem a imagem base
 class ViewCapture: 
-    def __init__(self, Extremes:Rectangle, capture):
-        self.Extremes = Extremes
-        self.img = capture
+    def __init__(self, Extremes:Rectangle, capture:Capture):
+        self.Extremes = Extremes        # Extremos da view
+        self.img = capture.img          # Imagem de origem
 
+    #Modificando os extremos em relação à imagem original
+    def setViewCapture(self, Extremes:Rectangle):
+        self.Extremes = Extremes
+
+    #Retornar os extremos do ViewCapture
+    def getExtremes(self):
+        return self.Extremes
 
 #Classe principal do sistema de visão que irá executar as funções
 class VisionSystem:
     #Inicializando objeto do sistema de detecção
-    def __init__(self,config: EConfig, capture):
+    def __init__(self,config: EConfig, capture: Capture, UseCuda:bool, GPUType:GPUType):
+        #Configurando objetos
+        self.createObjs()
+
+        #Carregando as configurações do sistema de visão
+        self.config = config
+
+        #Pegando a imagem de origem
+        self.imgOrigim = capture.getImage()
+
+        #váriaveis que serão utilizadas pelo compilador
+
+
+        #verifica se existe suporte ao CUDA
+        self.hasCuda = UseCuda 
+        self.GPUType = GPUType
+
+    #Métodos (método run e o método stop)
+    def init(self):
+        a = 1
+
+#Criando os objetos
+    def createObjs(self):
         #Construção dos objetos necessários para realizar a análise
         #Objeto da bola
         self.ball = Ball()
@@ -158,18 +315,19 @@ class VisionSystem:
 
         #gerando objeto para representar o campo
         self.field = Field()
+    #Método para retornar o processamento
+    def getResult(self):
+        b = 1
 
-        #Carregando as configurações do sistema de visão
-        self.config = config
-
-        #Pegando a imagem de origem
-        self.imgOrigin = capture
-
-        #Variáveis que serão utilizadas pelo Emulador
-        
-        
-    #Métodos (método run e o método stop)
-    def run(self):
-        a = 1
-    def stop(self):
-        b = 2
+    #Verifica se o computador tem GPU compatível
+    def hasGPUDevice(self):
+        return True
+    
+    #verifica se o computador tem suporte CUDA
+    def hasCUDADevice(self):
+        return False
+    
+    #método para retornar o processamento
+    def getViewCapture(self):
+        return 0
+    
