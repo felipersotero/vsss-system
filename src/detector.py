@@ -632,8 +632,8 @@ def detect_players(img, ballImg, binaryBall, binaryField, alliesColor, enemiesCo
 
 
         #Objetos com raios maiores que certo valor serão considerados como jogadores
-        if(ri > 0.75*playerRadius and ri < 1.5*playerRadius and playersCount < 6): #4*prop_px_cm
-            # cv2.circle(imgDegub, (int(xi), int(yi)), (int(ri) + 5), (0, 255, 0), 2)
+        if(ri > 0.5*playerRadius and ri < 1.5*playerRadius and playersCount < 6): #4*prop_px_cm
+            cv2.circle(imgDegub, (int(xi), int(yi)), (int(ri) + 5), (0, 255, 0), 2)
 
             #Traçando janelas (winSize x winSize)
             # winSize = int(200) #18*prop_px_cm
