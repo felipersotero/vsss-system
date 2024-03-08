@@ -23,7 +23,7 @@ class App:
         self.widgets_emulate_frame()
         self.widgets_images_frame()
 
-        self.viewer  = MyViewer(self.tab1)  
+        self.viewer  = MyViewer(self.tab1)
         self.debugField = MyViewer(self.tab2)
         self.debugObject = MyViewer(self.tab3)
         self.debugPlayers = MyViewer(self.tab4)

@@ -191,6 +191,13 @@
                         "children": {}
                     },
                     "I01C": {
+                        "name": "MQTT",
+                        "value": [
+                            "False"
+                        ],
+                        "children": {}
+                    },
+                    "I01D": {
                         "name": "Estado de Execução",
                         "value": [
                             "Parado"
