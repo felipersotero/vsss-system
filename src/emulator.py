@@ -180,7 +180,10 @@ class Emulator:
         while True:
             item = queue.get()
             result = publish_data(self.clientMQTT, "vsss-ifal-pin/robots", item)
+
             # print(f"Mensagem publicada! Resultado: {result}.")
+
+            print(item)
             queue.task_done()
             time.sleep(0.015)
             
