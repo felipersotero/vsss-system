@@ -246,9 +246,9 @@ def reduce_field(BinImg, Img, fieldWidth, prop_px_cm, d=10):
     #Retornando a imagem binária e a imagem original já reduzida.
     # print(f"Altura da imagem reduzida: {hImg}")
     # print(f"Largura da imagem reduzida: {wImg}")    
-    print("########################################")
-    print("w = ", wImg, "h = ", hImg)
-    print("Proporção: ", prop_px_cm, " px/cm")
+    # print("########################################")
+    # print("w = ", wImg, "h = ", hImg)
+    # print("Proporção: ", prop_px_cm, " px/cm")
     # print("Altura: ", hImg/prop_px_cm, " cm (28 cm)")
 
     return bin_Reduce, img_Reduce, cooVetor, prop_px_cm
@@ -389,9 +389,9 @@ def detect_field(img, debug, fieldDimensions, offSetWindow=10, offSetErode=0, di
     pixelWidth = min(w, h)
     prop_px_cm = convert_measures(fieldWidth, pixelWidth)
     
-    print("################## Antes da função de redução ######################")
-    print("w = ", w, "h = ", h)
-    print("Proporção: ", prop_px_cm, " px/cm")
+    # print("################## Antes da função de redução ######################")
+    # print("w = ", w, "h = ", h)
+    # print("Proporção: ", prop_px_cm, " px/cm")
     # print("Altura: ", h/prop_px_cm, " cm (28 cm)")
 
     while offSetErode <20:
@@ -716,7 +716,7 @@ def detect_players(img, ballImg, binaryBall, binaryField, alliesColor, enemiesCo
                 yc = int(yc)
                 rc = int(rc)
 
-                print(f"Raio da cor principal: {mainColorRadius} - {rc}")
+                # print(f"Raio da cor principal: {mainColorRadius} - {rc}")
 
                 if(rc >= 0.5*mainColorRadius and alliesCount < 3):
                     #Aqui deve se iniciar a busca por jogadores únicos, verificando suas cores secundárias
@@ -730,8 +730,8 @@ def detect_players(img, ballImg, binaryBall, binaryField, alliesColor, enemiesCo
                         if firstColorContours:
                             firstColorContour = max(firstColorContours, key=cv2.contourArea)
                             (xc1, yc1), rc1 = cv2.minEnclosingCircle(firstColorContour)
-                            print(f"rc1: {rc1}")
-                            print(f"seccolorradiu: {secColorRadius}")
+                            # print(f"rc1: {rc1}")
+                            # print(f"seccolorradiu: {secColorRadius}")
                             if rc1 >= 0.4*secColorRadius: firstColorFound = True
 
                         second_lower_bound, second_upper_bound = create_color_bounds(playersAllColors[i][1])

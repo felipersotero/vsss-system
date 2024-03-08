@@ -50,6 +50,13 @@ def angle_player_ball(ball_coord, player_coord, player_direction):
 
     return angle_deg
 
+def distance_player_ball(ball_coord, player_coord):
+    dx = abs(ball_coord[0] - player_coord[0])
+    dy = abs(ball_coord[1] - player_coord[1])
+    distance = np.sqrt((dx**2)+(dy**2))
+
+    return distance
+
 # Verfificar se o jogador está e posse da bola
 def possession_ball(ball_coord, player_coord, player_direction):
 
@@ -116,6 +123,21 @@ def calculate_distance_to_ball(xb, yb, coord_allies):
 
     return closer
 
+
+def format_angle(value):
+    formatted_value = "{:.2f}".format(value)
+    if value >= 0:
+        formatted_value = "+" + formatted_value
+    formatted_value = formatted_value.zfill(7)
+
+    return formatted_value
+
+def format_distance(value):
+    formatted_value = "{:.2f}".format(value)
+    formatted_value = formatted_value.zfill(6)
+
+    return formatted_value
+
 ################################################################
 # Função principal que recebe os dados das coordenadas dos objetos
 def recieve_data(self, ball, allies, enemies, clientMQTT):
@@ -135,27 +157,47 @@ def recieve_data(self, ball, allies, enemies, clientMQTT):
         if allies[i] is not None:
             allies_direction[i] = np.array([allies[i].direction[0], allies[i].direction[1]])
 
-    command = 's164015'
+    # command = 's164015'
+
+    # command = 'c+045.25025.13' #'c+aaa.aaddd.dd'
+            
+    command = 's+000.00000.00'
 
     if allies_coord[0] is not None and allies_direction[0] is not None:
         
         angle = angle_player_ball(ball_coord, allies_coord[0], allies_direction[0])
-    
-        if(abs(angle) > 60):
-            velocity = '200'
-        elif(abs(angle) > 45):
-            velocity = '180'
-        elif(abs(angle) > 20):
-            velocity = '160'
-        else:
-            velocity = '150'
+        distance = distance_player_ball(ball_coord, allies_coord[0])
 
-        if(angle < -10):
-            command = 'l'+velocity+'015'
-        elif(angle > 10):
-            command = 'r'+velocity+'015'
-        else:
-            command = 's'+velocity+'015'
+        print(f"Ângulo: {angle} °")
+        print(f"Distância: {distance} cm")
+        
+        angle_string = format_angle(angle)
+        distance_string = format_distance(distance)
+
+        command_mode = 'c'
+
+        if(((abs(angle) < 10) and distance < 8) or not(allies[0].detected)):
+            command_mode = 's'
+
+        command = command_mode + angle_string + distance_string
+
+        # print(command)
+        # if(abs(angle) > 60):
+        #     velocity = '200'
+        # elif(abs(angle) > 45):
+        #     velocity = '180'
+        # elif(abs(angle) > 20):
+        #     velocity = '160'
+        # else:
+        #     velocity = '150'
+
+        # if(angle < -10):
+        #     command = 'l'+velocity+'015'
+        # elif(angle > 10):
+        #     command = 'r'+velocity+'015'
+        # else:
+        #     command = 's'+velocity+'015'
+
     # enemies_coord = [None, None, None]
     # enemies_direction = [None, None, None]
 
