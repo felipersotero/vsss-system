@@ -3,7 +3,7 @@ from settingsMenu import *
 from viewer import MyViewer, WindowsViewer
 from cards import Card
 from objects import *
-from control import *
+from control import Control
 from communication import *
 
 import threading
@@ -62,6 +62,8 @@ class Emulator:
         self.ball = None
         self.allies = [None, None, None]
         self.enemies = [None, None, None]
+
+        self.control = Control(self)
 
         #Temporizador
         self.timer_running = False
@@ -356,7 +358,8 @@ class Emulator:
             self.enemies = enemies_list
 
             # Enviando dados para o processamento
-            self.commands = recieve_data(self, self.ball, self.allies, self. enemies, self.clientMQTT)
+            self.control.updateObjectsValues(self.field, self.ball, self.allies, self.enemies)
+            self.commands = self.control.receive_data()
             self.commands_queue.queue.clear()
             self.commands_queue.put(self.commands)
 
