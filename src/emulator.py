@@ -359,7 +359,7 @@ class Emulator:
 
             # Enviando dados para o processamento
             self.control.updateObjectsValues(self.field, self.ball, self.allies, self.enemies)
-            self.commands = self.control.receive_data()
+            self.commands = self.control.processControl()
             self.commands_queue.queue.clear()
             self.commands_queue.put(self.commands)
 
