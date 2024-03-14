@@ -17,6 +17,8 @@ class Emulator:
     def __init__(self,App):
         print("Emulador foi construído")
 
+        self.app = App
+
         self.settingsTree = App.menu
         self.viewer = App.viewer
         self.debugFieldViewer = App.debugField
@@ -64,8 +66,8 @@ class Emulator:
         self.enemies = [None, None, None]
 
         #Temporizador
-        self.timer_running = False
-        self.start_time = 0
+        self.timer_running = [False, False, False]
+        self.start_time = [0, 0, 0] # [tempo de processamento, tempo entre processamento, tempo para exibição]
     
     def load_vars(self):
         self.CamUSB = int(self.settingsTree.tree.item('I003','value')[0])
@@ -223,6 +225,8 @@ class Emulator:
             # self.firstExecution = True
             self.processUSB()
 
+            # Chamando thread para processamento de vídeo
+
             #Trabalhando com filas e threads
             if (self.mqttConection == 'true'):
                 communication_thread = threading.Thread(target=self.send_mqtt_data, args=(self.commands_queue,), daemon=True)
@@ -296,20 +300,24 @@ class Emulator:
         self.viewer.default_mode()
         self.debugFieldViewer.default_mode()
 
-    def start_timer(self):
-        if not self.timer_running:
-            self.start_time = time.time()
-            self.timer_running = True
+    def start_timer(self, i):
+        if not self.timer_running[i]:
+            self.start_time[i] = time.time()
+            self.timer_running[i] = True
             
-    def stop_timer(self):
-        if self.timer_running:
-            elapsed_time = time.time() - self.start_time
-            self.timer_running = False
-            print(f"Tempo decorrido: {elapsed_time*1000} milisegundos")
+    def stop_timer(self, i):
+        if self.timer_running[i]:
+            elapsed_time = time.time() - self.start_time[i]
+            self.timer_running[i] = False
+            # print(f"Tempo decorrido: {elapsed_time*1000} milisegundos")
+            
+            elapsed_time_formated = round(elapsed_time*1000, 3)
+            return elapsed_time_formated
     
     def call_detection_system(self, input_queue, output_queue):
 
-        #self.start_timer()
+        self.start_timer(0)
+
         received_data = input_queue.get()
 
         frame, debug, fieldDimensions, OffSetBord, OffSetErode, MatrixTop, BINThresh, ballColor, ball, teamMainColor, enemiesMainColor, playersAllColors, allies, enemies, OffSetBord = received_data
@@ -323,10 +331,15 @@ class Emulator:
         output_queue.queue.clear()
         output_queue.put(sending_data)
         
-        #self.stop_timer()
-
+        time_of_processing = self.stop_timer(0)
+        self.app.update_timer(time_of_processing, mode="tp")
+ 
     #Funções que executam os processos (execução por USB, por imagem ou )
     def processUSB(self):
+
+        # self.start_timer()
+       
+
         ret, self.frame = self.capture.read()
 
         field_data_structure = (self.frame, self.debug_view, self.fieldDimensions, self.OffSetBord, self.OffSetErode, self.MatrixTop, self.BINThresh)
@@ -335,10 +348,11 @@ class Emulator:
         
         data_structure = field_data_structure + ball_data_structure + players_data_structure
 
-        # print(data_structure)
-
         if self.cameraIsRunning and ret:
             
+            time_between = self.stop_timer(1)
+            self.app.update_timer(time_between, mode="tb")
+
             # Chamando a função para detecção e enviando os parâmetros necessários
             self.sent_data_queue.queue.clear()
             self.sent_data_queue.put(data_structure)
@@ -346,6 +360,8 @@ class Emulator:
             video_processor_thread = threading.Thread(target=self.call_detection_system, args=(self.sent_data_queue, self.received_data_queue))
             video_processor_thread.daemon = True
             video_processor_thread.start()
+
+            self.start_timer(1)
 
             # Salvando dados recebidos
             received_data = self.received_data_queue.get()
@@ -361,6 +377,9 @@ class Emulator:
             self.commands_queue.put(self.commands)
 
             #Exibindo dados em tela
+
+            self.start_timer(2)
+        
             self.viewer.show(frame)
             self.debugFieldViewer.show(binary_treat)
             self.debugObjectsViewer.show(binaryBall)
@@ -383,10 +402,14 @@ class Emulator:
                 else:
                     self.cards[i+3].set_content("#", " ", [" ", " "], " ", None)
                     
-            # self.call_detection_system()
+        # elapsed_time = self.stop_timer()
+        # self.app.update_timer(elapsed_time)
 
+            time_exhibition = self.stop_timer(2)
+            self.app.update_timer(time_exhibition, mode="te")
 
-        self.viewer.window.after(self.delay, self.processUSB)
+        if self.cameraIsRunning:
+            self.viewer.window.after(self.delay, self.processUSB)
 
     def processImage(self):
         print("[EMULADOR] Processando imagem: ",self.ImgPath)
