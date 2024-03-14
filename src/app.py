@@ -11,7 +11,7 @@ class App:
         root = Tk()
         self.root = root
         self.menu = None
-        # self.root.iconbitmap('src\data\icon.ico')
+        # self.root.iconbitmap('data/icon.ico')
 
         self.configure_window() #self.window()
 
