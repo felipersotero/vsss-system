@@ -11,7 +11,7 @@ class App:
         root = Tk()
         self.root = root
         self.menu = None
-        self.root.iconbitmap('src\data\icon.ico')
+        # self.root.iconbitmap('src\data\icon.ico')
 
         self.configure_window() #self.window()
 
@@ -22,6 +22,8 @@ class App:
         self.widgets_settings_frame()
         self.widgets_emulate_frame()
         self.widgets_images_frame()
+
+        self.widgets_timer_frame()
 
         self.viewer  = MyViewer(self.tab1)
         self.debugField = MyViewer(self.tab2)
@@ -41,13 +43,9 @@ class App:
 
         self.emulator = Emulator(self)
 
-
-
         #Configurando menu para controle do jogador e retornar aos valores iniciais
         menu = Menu(self.root)
-        
- 
-
+    
         root.mainloop()
 
     def configure_window(self):
@@ -63,8 +61,11 @@ class App:
         self.images_frame = Frame(self.root,bg="white")
         self.images_frame.place(relx=0.31,rely=0.015, relwidth=0.68,relheight=0.68)
         
-        self.vision_data_frame = Frame(self.root, bg="darkgray")
-        self.vision_data_frame.place(relx=0.31,rely=0.72, relwidth=0.68,relheight=0.265)
+        self.vision_data_frame = Frame(self.root, bg="gray")
+        self.vision_data_frame.place(relx=0.31,rely=0.72, relwidth=0.56,relheight=0.265) #0.68
+
+        self.timer_frame = Frame(self.root, bg="gray")
+        self.timer_frame.place(relx=0.87,rely=0.72, relwidth=0.12,relheight=0.265)
 
     def create_settings_frame(self):
         self.set_settings_frame=Frame(self.settings_frame, bg="red")
@@ -142,6 +143,36 @@ class App:
         self.tabs.add(self.tab7, text="Resultado")
 
         self.tabs.place(relx=0, rely=0, relwidth=1, relheight=1)
+
+    def widgets_timer_frame(self):
+        self.title_timer = Label(self.timer_frame, text="Tempo", font=("Helvetica", 14))
+        self.title_timer.pack()
+
+        self.subtitle_process_timer = Label(self.timer_frame, text="Processamento", font=("Helvetica", 10))
+        self.subtitle_process_timer.pack()
+
+        self.processing_time = Label(self.timer_frame, text="")
+        self.processing_time.pack()
+
+        self.subtitle_between_timer = Label(self.timer_frame, text="Entre processamento", font=("Helvetica", 10))
+        self.subtitle_between_timer.pack()
+        
+        self.processing_between = Label(self.timer_frame, text="")
+        self.processing_between.pack()
+
+        self.subtitle_exhibition_timer = Label(self.timer_frame, text="Exibição", font=("Helvetica", 10))
+        self.subtitle_exhibition_timer.pack()
+        
+        self.processing_exhibition = Label(self.timer_frame, text="")
+        self.processing_exhibition.pack()
+
+    def update_timer(self, content, mode):
+        if mode == "tp":
+            self.processing_time.config(text=f"{content} ms")
+        elif mode == "tb":
+            self.processing_between.config(text=f"{content} ms")
+        elif mode == "te":
+            self.processing_exhibition.config(text=f"{content} ms")
 
     def build_tree_menu(self):
 
