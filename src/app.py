@@ -14,6 +14,11 @@ class App:
         root = Tk()
         self.root = root
         self.menu = None
+        #verifica qual o sistema operacional
+        self.system = platform.system()
+        self.release = platform.release()
+        self.version = platform.version()
+
         self.root.iconbitmap('src\data\icon.ico')
 
         self.configure_window() #self.window()
@@ -51,7 +56,8 @@ class App:
         
         #Configurando menu para controle do jogador e retornar aos valores iniciais
         menu = Menu(self.root)
-    
+
+        #inicia looping principal
         root.mainloop()
 
     def configure_window(self):
@@ -67,16 +73,16 @@ class App:
         self.images_frame = Frame(self.root,bg="white")
         self.images_frame.place(relx=0.31,rely=0.015, relwidth=0.68,relheight=0.68)
         
-        self.vision_data_frame = Frame(self.root, bg="white")
+        self.vision_data_frame = Frame(self.root, bg="black")
         self.vision_data_frame.place(relx=0.31,rely=0.705, relwidth=0.68,relheight=0.28)
         
         #criando um frame do tipo grid
         self.players_infos = Frame(self.vision_data_frame, bg="white")
-        self.players_infos.place(relx=0,rely=0, relwidth=0.75,relheight=1)
+        self.players_infos.place(relx=0,rely=0, relwidth=0.76,relheight=1)
         
         #criando um frame para as informações
         self.infos_emulate = Frame(self.vision_data_frame, bg="white")
-        self.infos_emulate.place(relx=0.78,rely=0.1, relwidth=1,relheight=1)
+        self.infos_emulate.place(relx=0.76,rely=0, relwidth=1,relheight=1)
 
         
     def create_settings_frame(self):
@@ -188,6 +194,7 @@ class App:
         ConfigEmulator=self.menu.add_node(SysVision,'EmulatorConfig','Configurações do Emulador', value='')
         self.menu.add_node(ConfigEmulator,'Debug','Debug', value='False')
         self.menu.add_node(ConfigEmulator,'MQTT','MQTT', value='False')
+        self.menu.add_node(ConfigEmulator,'CUDA','CUDA', value='False')
         self.menu.add_node(ConfigEmulator,'ExectState','Estado de Execução', value='Parado')
 
     def save_config(self):
@@ -205,7 +212,7 @@ class App:
         self.menu.save_to_json('config')
 
         self.emulator.init()
-        self.menu.att_node_id('I01D','Em execução.')
+        self.menu.att_node_id('I01E','Em execução.')
         self.menu.save_to_json('config')
 
     def stop_emulate(self):
@@ -213,7 +220,7 @@ class App:
         self.btn_stop.pack_forget()
         self.btn_run.pack(fill=BOTH, expand=1)
         
-        self.menu.att_node_id('I01D','Parado')
+        self.menu.att_node_id('I01E','Parado')
         self.menu.save_to_json('config')
 
 if __name__ == "__main__":

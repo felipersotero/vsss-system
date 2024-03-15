@@ -12,3 +12,10 @@ import numpy as np
 
 #Bibliotecas 
 from detector import *
+
+
+#suporte a GPU
+from cv2 import cuda
+import platform 
+import pycuda.driver as pycuda
+import numba

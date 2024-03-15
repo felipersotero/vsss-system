@@ -80,6 +80,17 @@ class Emulator:
         self.errorCode = 0              # código de erro do emulador
         self.totalTime = None           # tempo total para processar um quadro
         
+        #imformações uteis do processamento do emulador
+        self.OP = App.system            # Sistema operacional
+        self.OPrelease = App.release    # release
+        self.OPversion = App.version    # versão
+
+        self.hasCuda = False             # verifica a versão do cuda
+        self.CudaDevice = None          # Qual o serviço cuda
+        self.CudaDeviceVersion = None     # Quantos serviços cuda há
+        self.communication = False      # verifica se está ok a comunicação
+
+
     def load_vars(self):
         self.CamUSB = int(self.settingsTree.tree.item('I003','value')[0])
         self.ImgPath = self.settingsTree.tree.item('I004','value')[0]
@@ -90,7 +101,7 @@ class Emulator:
         self.OffSetErode = int(self.settingsTree.tree.item('I009','value')[0])
         self.BINThresh = int(self.settingsTree.tree.item('I00A','value')[0])
         self.MatrixTop = int(self.settingsTree.tree.item('I00B','value')[0])
-        self.DEBUGalg = self.settingsTree.tree.item('I00C','value')[0]
+        #self.DEBUGalg = self.settingsTree.tree.item('I00C','value')[0]
 
         self.fieldWidth = int(self.settingsTree.tree.item('I00E','value')[0])
         self.fieldHeight = int(self.settingsTree.tree.item('I00F','value')[0])
@@ -107,7 +118,8 @@ class Emulator:
 
         self.debug_view = self.settingsTree.tree.item('I01B','value')[0]
         self.mqttConection = self.settingsTree.tree.item('I01C','value')[0]
-        self.EXECMode = self.settingsTree.tree.item('I01D','value')[0]
+        self.CUDAservice = self.settingsTree.tree.item('I01D','value')[0]
+        self.EXECMode = self.settingsTree.tree.item('I01E','value')[0]
 
 
         self.UseMode = self.format_var(self.UseMode)
@@ -125,16 +137,20 @@ class Emulator:
         self.EXECMode = self.format_var(self.EXECMode)
         self.debug_view = self.format_var(self.debug_view)
         self.mqttConection = self.format_var(self.mqttConection)
-        self.DEBUGalg = self.format_var(self.DEBUGalg)
+        self.CUDAService = self.format_var(self.CUDAservice)
         
-        if(self.DEBUGalg == 'true'):
+        #verifica se foi solicitado debug
+        if(self.debug_view == 'true'):
             self.DEBUGA = True
-        elif(self.DEBUGalg == 'false'):
+            self.debug_view = True
+        elif(self.debug_view == 'false'):
             self.DEBUGA = False
+            self.debug_view = False
         else:
             self.DEBUGA = False
+            self.debug_view = False
         
-
+        #verifica se qual modo de execução foi solicitado
         if(self.UseMode== 'camera'):
             self.Mode = MODE_USB_CAM
         elif(self.UseMode == 'imagem'):
@@ -146,6 +162,20 @@ class Emulator:
             self.Mode = MODE_DEFAULT
             self.stop() #Para o emulador.
 
+
+        #Verifica se foi solicitado suporte ao cuda
+        if(self.CUDAService == 'true'):
+            #verifica se tem suporte ao CUDA
+            self.hasCudaDevice()
+        else:
+            self.hasCuda = False             # verifica a versão do cuda
+            self.CudaDevice = None          # Qual o serviço cuda
+            self.CudaDeviceVersion = None     # Quantos serviços cuda há
+
+        #Atualizo o card
+        self.infoCards.updateFuncs()
+
+            
     def format_var(self, var):
         var = unidecode.unidecode(var)
         var = var.lower()
@@ -164,7 +194,6 @@ class Emulator:
         OffSetErode: {self.OffSetErode}
         BINThresh: {self.BINThresh}
         MatrixTop: {self.MatrixTop}
-        DEBUGalg: {self.DEBUGalg}
         
         fieldWidth: {self.fieldWidth}
         fieldHeight: {self.fieldHeight}
@@ -193,8 +222,8 @@ class Emulator:
             result = publish_data(self.clientMQTT, "vsss-ifal-pin/robots", item)
 
             # print(f"Mensagem publicada! Resultado: {result}.")
-
-            print(item)
+            
+            
             queue.task_done()
             time.sleep(0.015)
             
@@ -214,7 +243,13 @@ class Emulator:
         self.debugFieldViewer.config()
         
         if (self.mqttConection == 'true'): self.clientMQTT = connect_to_broker("broker.hivemq.com", 1883)
-       
+
+        
+        if (self.clientMQTT != None): self.communication = True 
+        else: self.communication = False
+
+        self.infoCards.updateFuncs()
+
         def string_to_int_array(array):
             values = array.strip("[]").split()
             int_array = list(map(int, values))
@@ -290,6 +325,10 @@ class Emulator:
         if (self.clientMQTT):
             self.clientMQTT.loop_stop()
             self.clientMQTT.disconnect()
+            self.communication = False
+        
+        #Atualiza cards
+        self.infoCards.updateFuncs()
         #Inicializa o viewer
         if(self.Mode== MODE_USB_CAM): #Modo camera
             #Configurando Viewer para modo de exibição de câmera
@@ -396,12 +435,15 @@ class Emulator:
             self.commands_queue.queue.clear()
             self.commands_queue.put(self.commands)
 
-            
+            #Atualizo informações do cards sobre funcionalidade
+            self.infoCards.updateFuncs()
+
             self.viewer.show(frame)
-            self.debugFieldViewer.show(binary_treat)
-            self.debugObjectsViewer.show(binaryBall)
-            self.debugPlayersViewer.show(binaryPlayers)
-            self.debugTeamViewer.show(binaryTeam)
+            if(self.DEBUGA == True):
+                self.debugFieldViewer.show(binary_treat)
+                self.debugObjectsViewer.show(binaryBall)
+                self.debugPlayersViewer.show(binaryPlayers)
+                self.debugTeamViewer.show(binaryTeam)
             self.resultViewer.show(imgDebug)
 
             #Adicionando conteúdos
@@ -453,10 +495,12 @@ class Emulator:
 
         #Exibindo dados em tela
         self.viewer.show(frame)
-        self.debugFieldViewer.show(binary_treat)
-        self.debugObjectsViewer.show(binaryBall)
-        self.debugPlayersViewer.show(binaryPlayers)
-        self.debugTeamViewer.show(binaryTeam)
+        if(self.DEBUGA == True):
+            print("tá funcionando em debug")
+            self.debugFieldViewer.show(binary_treat)
+            self.debugObjectsViewer.show(binaryBall)
+            self.debugPlayersViewer.show(binaryPlayers)
+            self.debugTeamViewer.show(binaryTeam)
         self.resultViewer.show(imgDebug)
 
         #Adicionando conteúdos
@@ -499,3 +543,28 @@ class Emulator:
                 self.cards[i+3].set_content(self.enemies[i].id, self.enemies[i].detected, self.enemies[i].position, self.enemies[i].radius, self.enemies[i].image)
             else:
                 self.cards[i].set_content("#0", "False", ["0.0000", "0.0000"], "0.0000", None)
+
+    # Verifica se tem um serviço cuda no computador
+    def hasCudaDevice(self):
+        try:
+            pycuda.init()
+            device_count = pycuda.Device.count()
+            if device_count > 0:
+                self.hasCuda = True
+                context = pycuda.Device(0).make_context()
+                self.CudaDeviceVersion = context.get_api_version
+                context.detach()
+                self.CudaDevice= pycuda.Device(0).name()
+
+                return True
+            else:
+                self.hasCuda = False
+                self.CudaDeviceVersion = None
+                self.CudaDevice= None
+                return False
+        except pycuda.RuntimeError:
+                self.hasCuda = False
+                self.CudaDeviceVersion = None
+                self.CudaDevice= None
+
+                return False

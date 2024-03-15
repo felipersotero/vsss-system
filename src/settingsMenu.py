@@ -27,7 +27,7 @@ class settingsMenu(Frame):
         self.tree.item(id,tags=())
 
     def on_double_click  (self, event):
-        editable_items = ['Câmera USB','Vídeo Path','Cor','Cor Principal T1', 'Cor Principal T2','T1_robo 1','T1_robo 2','T1_robo 3','T2_robo 1','T2_robo 2','T2_robo 3','Borda da janela','offSet da Erosão','Debug do Algorítmo','Binarização Threshold','Dim. Matriz TOPHAT', 'Largura (menor)', 'Comprimento (maior)']
+        editable_items = ['Câmera USB','Vídeo Path','Cor','Cor Principal T1', 'Cor Principal T2','T1_robo 1','T1_robo 2','T1_robo 3','T2_robo 1','T2_robo 2','T2_robo 3','Borda da janela','offSet da Erosão','Binarização Threshold','Dim. Matriz TOPHAT', 'Largura (menor)', 'Comprimento (maior)']
         #color_editables = ["Calibração das Cores"]
         color_editables = ['Cor principal', 'J1 Cor 1', 'J1 Cor 2', 'J2 Cor 1', 'J2 Cor 2', 'J3 Cor 1', 'J3 Cor 2', 'Cor inimigos', 'Cor da bola']
         item = self.tree.focus()
@@ -51,6 +51,9 @@ class settingsMenu(Frame):
             elif self.tree.item(item, 'text') == 'Debug':
                 self.open_select_window(self.tree, item)
             
+            elif self.tree.item(item, 'text') == 'CUDA':
+                self.open_select_window(self.tree, item)
+                
             elif self.tree.item(item, 'text') == 'MQTT':
                 self.open_select_window(self.tree, item)
 

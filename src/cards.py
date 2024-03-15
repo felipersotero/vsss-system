@@ -99,12 +99,21 @@ class CardInfos:
         self.Mode = None
         self.totalTime = None
         
-        self.frame = Frame(self.master, bg="white")
-        self.frame.grid(row=0, column=1, sticky="nsew")
+        #Criando tabs para configurar entre o modo desempenho ou modo aplicações
+        self.tabs = ttk.Notebook(self.master)
+        self.tab1 = Frame(self.tabs)
+        self.tab2 = Frame(self.tabs)
 
-        self.title_label = tk.Label(self.frame, text="DESEMPENHO", bg="white", font=("Arial", 12, "bold"))
-        self.title_label.grid(row=0, column=0, columnspan=2, sticky="nsew")
+        self.tab1.configure(background="white")
+        self.tab2.configure(background="white")
 
+        self.tabs.add(self.tab1, text="Desempenho")
+        self.tabs.add(self.tab2, text="Funcionalidades")
+
+        
+        self.tabs.grid(row=0, column=1, sticky="nsew")
+
+        #configurando a aba Desempenho
         self.texts = {
             "FPS:": tk.StringVar(),                     # quadros por segundo
             "Vision. (ms):": tk.StringVar(),            # tempo para processar imagem
@@ -116,11 +125,28 @@ class CardInfos:
         }
 
         for i, (label_text, var) in enumerate(self.texts.items()):
-            label = tk.Label(self.frame, text=label_text, bg="white", font=("Arial", 8, "bold"))
+            label = tk.Label(self.tab1, text=label_text, bg="white", font=("Arial", 8, "bold"))
             label.grid(row=i + 1, column=0, sticky="w")
-            text = tk.Label(self.frame, textvariable=var, bg="white", font=("Arial", 8, "normal"))
+            text = tk.Label(self.tab1, textvariable=var, bg="white", font=("Arial", 8, "normal"))
             text.grid(row=i + 1, column=1, sticky="w")
             
+
+        #configurando a aba funcionalidades
+        #configurando a aba Desempenho
+        self.funcs = {
+            "Sys:": tk.StringVar(),                # Qual sistema está executando o código
+            "CUDA:": tk.StringVar(),                    # se tem suporte ao cuda
+            "cuDev:": tk.StringVar(),              # qual o serrviço cuda
+            "COM:": tk.StringVar(),             # Se foi enviada a mensagem
+            "Send:": tk.StringVar(),               # instrução enviada (codigo legado)
+        }
+
+        for i, (label_text, var) in enumerate(self.funcs.items()):
+            label2 = tk.Label(self.tab2, text=label_text, bg="white", font=("Arial", 8, "bold"))
+            label2.grid(row=i + 1, column=0, sticky="w")
+            text2 = tk.Label(self.tab2, textvariable=var, bg="white", font=("Arial", 8, "normal"))
+            text2.grid(row=i + 1, column=1, sticky="w")
+
         # Configurando a expansão do frame
         self.master.grid_rowconfigure(0, weight=1)
         self.master.grid_columnconfigure(1, weight=1)
@@ -129,7 +155,10 @@ class CardInfos:
     def updateInfo(self, variable, value):
         #verifica se é um valor válido
         if isinstance(value, (int, float)):
-            strValue = f"{value:.2f}"
+            if(variable == 'FPS:' or variable == 'Error Code:'):
+                strValue = f"{value:.0f}"
+            else:
+                strValue = f"{value:.2f}"
         elif isinstance(value,(str)):
             strValue = value
         else:
@@ -151,6 +180,41 @@ class CardInfos:
         self.updateInfo("Error Code:",self.emulator.errorCode)
         self.updateInfo("Modo:",self.conversionMode(self.emulator.Mode))
         
+    #atualizando funcionalidades utilizadas para a emulação
+    def updateFunc(self, variable, value):
+        #Envia apenas strings
+        strValue = value
+
+        #Trata a informação
+        if(variable == 'CUDA:'):
+            if(value == True):
+                strValue = "Disponível"
+            else:
+                strValue = "N/A"
+        elif (variable == 'COM:'):
+            if(value == True):
+                strValue = "Conectado"
+            else:
+                strValue = "Sem conexão"
+        else:
+            strValue = str(value)
+
+
+        #Verifica se está na biblioteca que preciso
+        if variable in self.funcs:
+            self.funcs[variable].set(strValue)
+        else:
+            print("Variável não encontrada.")
+    
+    #Atualiza tudo de uma vez
+    def updateFuncs(self):
+        self.updateFunc("Sys:", str(self.emulator.OP+' '+self.emulator.OPversion))
+        self.updateFunc("CUDA:",self.emulator.hasCuda)
+        self.updateFunc("cuDev:",self.emulator.CudaDevice)
+        self.updateFunc("COM:",self.emulator.communication)
+        self.updateFunc("Send:",self.emulator.commands)
+
+
     #função para setar um mestre
     def setMaster(self, emulator):
         self.emulator = emulator   
