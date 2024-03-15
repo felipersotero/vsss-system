@@ -5,7 +5,8 @@ def on_connect(client, userdata, flags, rc):
         print("Conectado ao Broker MQTT")
 
 def on_publish(client, userdata, mid):
-    print("Mensagem publicada com sucesso")
+    i = 1
+    #print("Mensagem publicada com sucesso")
     # client.disconnect()  # Desconecta após publicar a mensagem
 
 def connect_to_broker(broker_address, port):

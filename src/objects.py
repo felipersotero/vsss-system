@@ -5,7 +5,7 @@
     @GNOMIO: Definições que serão utilizadas como base no código, para serem utilizadas durante o processamento do sistema de visão.
 '''
 import numpy as np
-
+import time
 # =============== CONTROLE DE IDENTIFICADORES ===============================
 #identificadores padrões dos robôs
 class ID_Robots:
@@ -102,10 +102,10 @@ class CUDADevice:
 # =============== VARIAVEIS GLOBAIS DE EMULAÇÃO ===============================
 
 #Modo de Emulação do aplicativo
-MODE_DEFAULT:int = 1
-MODE_USB_CAM: int= 2
+MODE_DEFAULT:int = 0
+MODE_USB_CAM: int= 1
 MODE_VIDEO_CAM:int = 3
-MODE_IMAGE:int = 4
+MODE_IMAGE:int = 2
 
 # ================== CONTROLE DE ESTRUTURA DE DADOS ========================
 #Configurações da Emulação que serão inviadas para o sistema de visão realizar os cálculos
@@ -261,7 +261,48 @@ class ViewBot:
     #retornando os pontos que estão guardados na variável retângulo
     def getPoints(self):
         return self.rect.points
+    
+#========================| Gerando classe Timer | ==============================
 
+#configurando objeto timer de alta precisão para pegar o passar do tempo de processamento
+class HighPrecisionTimer:
+    def __init__(self, master):
+        self.master = master
+        self.start_time = None
+        self.elapsed_time = 0
+        self._isRunning = False
+        
+    def run(self):
+        self._isRunning = True
+        self.start_time = time.time()
+    
+    def stop(self):
+        if self.start_time is not None:
+            current_time = time.time()
+            self.elapsed_time += (current_time - self.start_time)*1000  # Multiplica por 1000 para obter milissegundos
+            self.start_time = None
+            self._isRunning = False
+        else:
+            print("O timer ainda não foi iniciado...")
+            
+    def reset(self):
+        self.start_time = None
+        self.elapsed_time = 0
+        self._isRunning = False
+        
+    def getElapsedTime(self):
+        if self.start_time is not None:
+            current_time = time.time()
+            elapsed_ms = (self.elapsed_time + (current_time - self.start_time)*1000)
+            return elapsed_ms
+        else:
+            return self.elapsed_time
+    
+    def isRunning(self):
+        return self._isRunning
+
+
+        
 #========================= /// CLASSE BÁSICA DE EXECUÇÃO // =====================
 '''
  @GNOMIO: Essa estrutura deveria representar de forma simples a forma de captura de imagens, sendo elas tanto por câmera, ou por arquivos. E funcionará de forma a simplificar a parte semâtica do código, contudo, ainda está em fase de estruturar

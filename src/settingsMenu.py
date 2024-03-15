@@ -137,6 +137,7 @@ class settingsMenu(Frame):
         new_window = Toplevel(self.tree)
         new_window.title("Seleção de cores")
         self.root = new_window
+        self.root.iconbitmap('src\data\icon.ico')
 
         def close_window():
             if self.mode == "camera": cap.release()
@@ -215,7 +216,7 @@ class settingsMenu(Frame):
         value_scale.pack()
 
         # Criação da área de exibição da cor em tempo real
-        color_display = Label(self.root, text="Cor em Tempo Real", width=20, height=5, bg="gray")
+        color_display = Label(self.root, text="Cor Definida", width=10, height=2, bg="gray")
         color_display.pack()
 
         # Criação da área de exibição da imagem original (quadro da webcam)
@@ -223,7 +224,7 @@ class settingsMenu(Frame):
         original_frame_label.pack()
 
         # Criação da área de exibição da máscara da cor selecionada
-        masked_frame_label = Label(self.root, text="Imagem Resultante")
+        masked_frame_label = Label(self.root, text="Imagem Filtrada")
         masked_frame_label.pack()
 
         if self.tree.item(item, 'text') == 'Cor da bola':
@@ -233,8 +234,8 @@ class settingsMenu(Frame):
         saturation_tolerance = 50
         value_tolerance = 50
 
-        image_width = 400
-        image_height = 300
+        image_width = 300
+        image_height = 150
 
         #Funções para ler imagem ou capturar vídeo
         # Função para ler imagem

@@ -1,7 +1,7 @@
 from modules import *
 from settingsMenu import *
 from viewer import MyViewer, WindowsViewer
-from cards import Card
+from cards import *
 from objects import *
 from control import Control
 from communication import *
@@ -17,19 +17,19 @@ class Emulator:
     def __init__(self,App):
         print("Emulador foi construído")
 
-        self.app = App
-
         self.settingsTree = App.menu
         self.viewer = App.viewer
         self.debugFieldViewer = App.debugField
         self.debugObjectsViewer = App.debugObject
         self.debugPlayersViewer = App.debugPlayers
         self.debugTeamViewer = App.debugTeam
-        self.playersWindows = App.playersWindows
         self.resultViewer = App.result
 
+        #informações para exibir
         self.cards = App.cards
-
+        self.infoCards = App.infosEmulator
+        
+        #campos iterativos
         self.IdCap = App.IdFrame
         self.btn_run = App.btn_run
         self.btn_stop = App.btn_stop
@@ -55,22 +55,35 @@ class Emulator:
         self.debugObjectsViewer.config()
         self.debugPlayersViewer.config()
         self.debugTeamViewer.config()
-        self.playersWindows.config()
         self.resultViewer.config()
 
         # Objetos
-
         self.field = None
         self.ball = None
         self.allies = [None, None, None]
         self.enemies = [None, None, None]
 
+        #Setando conteúdo
+        self.setContentRobots()
+
+        #objeto de controle
         self.control = Control(self)
 
         #Temporizador
         self.timer_running = [False, False, False]
         self.start_time = [0, 0, 0] # [tempo de processamento, tempo entre processamento, tempo para exibição]
     
+        #Criando temporizador de alta precisão
+        self.Timer = HighPrecisionTimer(self)
+        
+        #informações que serão uteis para computar
+        self.frameTime = None           # tempo de um frame em ms
+        self.sendTime = None            # tempo de envio de dados em ms
+        self.FPStime = None             # FPS do processo em quadros / segundo
+        self.realTime = None            # tempo contado pelo timer
+        self.errorCode = 0              # código de erro do emulador
+        self.totalTime = None           # tempo total para processar um quadro
+        
     def load_vars(self):
         self.CamUSB = int(self.settingsTree.tree.item('I003','value')[0])
         self.ImgPath = self.settingsTree.tree.item('I004','value')[0]
@@ -178,6 +191,8 @@ class Emulator:
 
     def send_mqtt_data(self, queue):
         while True:
+            #Inicia contagem de tempo
+            St1 = self.Timer.getElapsedTime()
             item = queue.get()
             result = publish_data(self.clientMQTT, "vsss-ifal-pin/robots", item)
 
@@ -187,9 +202,18 @@ class Emulator:
             queue.task_done()
             time.sleep(0.015)
             
+            #Tempo de envio da mensagem em ms
+            St2 = self.Timer.getElapsedTime()
+            self.sendTime = (St2-St1)
+            self.infoCards.update()
     #Método para o emulador exibir as imagens
     def init(self):
         print("[EMULADOR] Configurando variaveis")
+
+        #inicializando timer de alta precisão
+        self.Timer.run()
+
+        #Inicio das configurações necessárias
         self.viewer.config()
         self.debugFieldViewer.config()
         
@@ -302,23 +326,16 @@ class Emulator:
         self.viewer.default_mode()
         self.debugFieldViewer.default_mode()
 
-    def start_timer(self, i):
-        if not self.timer_running[i]:
-            self.start_time[i] = time.time()
-            self.timer_running[i] = True
-            
-    def stop_timer(self, i):
-        if self.timer_running[i]:
-            elapsed_time = time.time() - self.start_time[i]
-            self.timer_running[i] = False
-            # print(f"Tempo decorrido: {elapsed_time*1000} milisegundos")
-            
-            elapsed_time_formated = round(elapsed_time*1000, 3)
-            return elapsed_time_formated
+        #atualizo informações na interface
+        self.infoCards.update()
+
+        #parando o timer e resetando sua contagem
+        self.Timer.stop()
+        self.Timer.reset()
     
     def call_detection_system(self, input_queue, output_queue):
-
-        self.start_timer(0)
+        #inicio da contagem de tempo
+        St1 = self.Timer.getElapsedTime()
 
         received_data = input_queue.get()
 
@@ -329,19 +346,25 @@ class Emulator:
         ballImg, ball_object, binaryBall = detect_ball(frame_reduce, ballColor, ball, prop_px_cm, debug)
         imgDebug, binaryPlayers, binaryTeam, amountOfPlayers, amountOfAlslies, amountOfEnemies, playersWindows, alliesWindows, enemiesWindows, allies_list, enemies_list, robots = detect_players(frame_reduce, ballImg, binaryBall, binary_treat, teamMainColor, enemiesMainColor, playersAllColors, prop_px_cm, ball_object, allies, enemies, OffSetBord, rect_vertices, debug)
 
+
         sending_data = (ball_object, allies_list, enemies_list, frame, binary_treat, binaryBall, binaryPlayers, binaryTeam, imgDebug, alliesWindows, enemiesWindows)
         output_queue.queue.clear()
         output_queue.put(sending_data)
         
-        time_of_processing = self.stop_timer(0)
-        self.app.update_timer(time_of_processing, mode="tp")
+        #finalizo contagem completa dos frames
+        St2 = self.Timer.getElapsedTime()
+
+        self.frameTime = (St2 - St1)               #tempo em  milisegundos
+        self.FPStime = int(1000.0 / self.frameTime) if self.frameTime != 0 else 0 
+        self.realTime = self.Timer.getElapsedTime() /1000
+        #atualizo informações na interface
+        self.infoCards.update()
+        
+
  
     #Funções que executam os processos (execução por USB, por imagem ou )
     def processUSB(self):
-
-        # self.start_timer()
-       
-
+        
         ret, self.frame = self.capture.read()
 
         field_data_structure = (self.frame, self.debug_view, self.fieldDimensions, self.OffSetBord, self.OffSetErode, self.MatrixTop, self.BINThresh)
@@ -350,11 +373,11 @@ class Emulator:
         
         data_structure = field_data_structure + ball_data_structure + players_data_structure
 
-        if self.cameraIsRunning and ret:
-            
-            time_between = self.stop_timer(1)
-            self.app.update_timer(time_between, mode="tb")
+        #Pegando time atual do processamento
+        Stp1 = self.Timer.getElapsedTime()
 
+        if self.cameraIsRunning and ret:
+        
             # Chamando a função para detecção e enviando os parâmetros necessários
             self.sent_data_queue.queue.clear()
             self.sent_data_queue.put(data_structure)
@@ -362,8 +385,6 @@ class Emulator:
             video_processor_thread = threading.Thread(target=self.call_detection_system, args=(self.sent_data_queue, self.received_data_queue))
             video_processor_thread.daemon = True
             video_processor_thread.start()
-
-            self.start_timer(1)
 
             # Salvando dados recebidos
             received_data = self.received_data_queue.get()
@@ -379,10 +400,7 @@ class Emulator:
             self.commands_queue.queue.clear()
             self.commands_queue.put(self.commands)
 
-            #Exibindo dados em tela
-
-            self.start_timer(2)
-        
+            
             self.viewer.show(frame)
             self.debugFieldViewer.show(binary_treat)
             self.debugObjectsViewer.show(binaryBall)
@@ -390,32 +408,23 @@ class Emulator:
             self.debugTeamViewer.show(binaryTeam)
             self.resultViewer.show(imgDebug)
 
-            playersWindowsSeparated = alliesWindows[:3] + enemiesWindows[:3]
-            self.playersWindows.show(playersWindowsSeparated)
-
-            #Exibindo dados nos cards
-            for i in range(3):
-                if self.allies[i] is not None:
-                    self.cards[i].set_content(self.allies[i].id, self.allies[i].detected, self.allies[i].position, self.allies[i].radius, self.allies[i].image)
-                else:
-                    self.cards[i].set_content("#", " ", [" ", " "], " ", None)
-            for i in range(3):
-                if self.enemies[i] is not None:
-                    self.cards[i+3].set_content(self.enemies[i].id, self.enemies[i].detected, self.enemies[i].position, self.enemies[i].radius, self.enemies[i].image)
-                else:
-                    self.cards[i+3].set_content("#", " ", [" ", " "], " ", None)
+            #Adicionando conteúdos
+            self.setContentRobots()
                     
-        # elapsed_time = self.stop_timer()
-        # self.app.update_timer(elapsed_time)
+        #Finaliza contagem de tempo de processamento
+        Stp2 = self.Timer.getElapsedTime()
 
-            time_exhibition = self.stop_timer(2)
-            self.app.update_timer(time_exhibition, mode="te")
+        self.totalTime = (Stp2-Stp1)  
+        self.realTime = self.Timer.getElapsedTime()/1000.0        #tempo em segundos                              #tempo atual que se passou                                            #Em ms
+        self.FPStime = (1000/self.totalTime) if (self.totalTime != 0) else 0      #Calculando FPS
+        self.infoCards.update()
 
         if self.cameraIsRunning:
             self.viewer.window.after(self.delay, self.processUSB)
 
     def processImage(self):
         print("[EMULADOR] Processando imagem: ",self.ImgPath)
+        St1i = self.Timer.getElapsedTime()
 
         self.frame = load_image(self.ImgPath)
         
@@ -454,22 +463,18 @@ class Emulator:
         self.debugTeamViewer.show(binaryTeam)
         self.resultViewer.show(imgDebug)
 
-        playersWindowsSeparated = alliesWindows[:3] + enemiesWindows[:3]
-        self.playersWindows.show(playersWindowsSeparated)
+        #Adicionando conteúdos
+        self.setContentRobots()
 
-        #Exibindo dados nos cards
-        for i in range(3):
-            if self.allies[i] is not None:
-                self.cards[i].set_content(self.allies[i].id, self.allies[i].detected, self.allies[i].position, self.allies[i].radius, self.allies[i].image)
-            else:
-                self.cards[i].set_content("#", " ", [" ", " "], " ", None)
-        for i in range(3):
-            if self.enemies[i] is not None:
-                self.cards[i+3].set_content(self.enemies[i].id, self.enemies[i].detected, self.enemies[i].position, self.enemies[i].radius, self.enemies[i].image)
-            else:
-                self.cards[i+3].set_content("#", " ", [" ", " "], " ", None)
+      # self.call_detection_system()
+        St2i = self.Timer.getElapsedTime()
+        self.totalTime = (St2i - St1i)                       #tempo em mili 
+        #segundos
+        
+        self.realTime = self.Timer.getElapsedTime() / 1000
 
-        # self.call_detection_system()
+        #atualizo informações na interface
+        self.infoCards.update()
 
     def processVideo(self):
         print(self.VideoPath)
@@ -481,3 +486,20 @@ class Emulator:
             self.call_detection_system(self.sent_data_queue, self.received_data_queue)
 
         self.viewer.window.after(self.delay, self.processVideo)
+
+        #atualizo informações na interface
+        self.infoCards.update()
+
+    #Adicionar conteúdo dos robÔs
+    def setContentRobots(self):
+        for i in range(3):
+            if self.allies[i] is not None:
+                self.cards[i].set_content(self.allies[i].id, self.allies[i].detected, self.allies[i].position, self.allies[i].radius, self.allies[i].image)
+            else:
+                self.cards[i].set_content("#0", "False", ["0.0000", "0.0000"], "0.0000", None)
+                
+        for i in range(3):
+            if self.enemies[i] is not None:
+                self.cards[i+3].set_content(self.enemies[i].id, self.enemies[i].detected, self.enemies[i].position, self.enemies[i].radius, self.enemies[i].image)
+            else:
+                self.cards[i].set_content("#0", "False", ["0.0000", "0.0000"], "0.0000", None)
