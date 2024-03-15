@@ -11,7 +11,7 @@ class App:
         root = Tk()
         self.root = root
         self.menu = None
-        # self.root.iconbitmap('data/icon.ico')
+        # self.root.iconbitmap('data/icon.ico') 
 
         self.configure_window() #self.window()
 
@@ -22,8 +22,6 @@ class App:
         self.widgets_settings_frame()
         self.widgets_emulate_frame()
         self.widgets_images_frame()
-
-        self.widgets_timer_frame()
 
         self.viewer  = MyViewer(self.tab1)
         self.debugField = MyViewer(self.tab2)
@@ -143,36 +141,6 @@ class App:
         self.tabs.add(self.tab7, text="Resultado")
 
         self.tabs.place(relx=0, rely=0, relwidth=1, relheight=1)
-
-    def widgets_timer_frame(self):
-        self.title_timer = Label(self.timer_frame, text="Tempo", font=("Helvetica", 14))
-        self.title_timer.pack()
-
-        self.subtitle_process_timer = Label(self.timer_frame, text="Processamento", font=("Helvetica", 10))
-        self.subtitle_process_timer.pack()
-
-        self.processing_time = Label(self.timer_frame, text="")
-        self.processing_time.pack()
-
-        self.subtitle_between_timer = Label(self.timer_frame, text="Entre processamento", font=("Helvetica", 10))
-        self.subtitle_between_timer.pack()
-        
-        self.processing_between = Label(self.timer_frame, text="")
-        self.processing_between.pack()
-
-        self.subtitle_exhibition_timer = Label(self.timer_frame, text="Exibição", font=("Helvetica", 10))
-        self.subtitle_exhibition_timer.pack()
-        
-        self.processing_exhibition = Label(self.timer_frame, text="")
-        self.processing_exhibition.pack()
-
-    def update_timer(self, content, mode):
-        if mode == "tp":
-            self.processing_time.config(text=f"{content} ms")
-        elif mode == "tb":
-            self.processing_between.config(text=f"{content} ms")
-        elif mode == "te":
-            self.processing_exhibition.config(text=f"{content} ms")
 
     def build_tree_menu(self):
 

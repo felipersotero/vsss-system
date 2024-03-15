@@ -66,10 +66,6 @@ class Emulator:
         self.enemies = [None, None, None]
 
         self.control = Control(self)
-
-        #Temporizador
-        self.timer_running = [False, False, False]
-        self.start_time = [0, 0, 0] # [tempo de processamento, tempo entre processamento, tempo para exibição]
     
     def load_vars(self):
         self.CamUSB = int(self.settingsTree.tree.item('I003','value')[0])
@@ -301,24 +297,8 @@ class Emulator:
         self.Mode = MODE_DEFAULT
         self.viewer.default_mode()
         self.debugFieldViewer.default_mode()
-
-    def start_timer(self, i):
-        if not self.timer_running[i]:
-            self.start_time[i] = time.time()
-            self.timer_running[i] = True
-            
-    def stop_timer(self, i):
-        if self.timer_running[i]:
-            elapsed_time = time.time() - self.start_time[i]
-            self.timer_running[i] = False
-            # print(f"Tempo decorrido: {elapsed_time*1000} milisegundos")
-            
-            elapsed_time_formated = round(elapsed_time*1000, 3)
-            return elapsed_time_formated
     
     def call_detection_system(self, input_queue, output_queue):
-
-        self.start_timer(0)
 
         received_data = input_queue.get()
 
@@ -332,15 +312,9 @@ class Emulator:
         sending_data = (ball_object, allies_list, enemies_list, frame, binary_treat, binaryBall, binaryPlayers, binaryTeam, imgDebug, alliesWindows, enemiesWindows)
         output_queue.queue.clear()
         output_queue.put(sending_data)
-        
-        time_of_processing = self.stop_timer(0)
-        self.app.update_timer(time_of_processing, mode="tp")
  
     #Funções que executam os processos (execução por USB, por imagem ou )
-    def processUSB(self):
-
-        # self.start_timer()
-       
+    def processUSB(self):       
 
         ret, self.frame = self.capture.read()
 
@@ -351,9 +325,6 @@ class Emulator:
         data_structure = field_data_structure + ball_data_structure + players_data_structure
 
         if self.cameraIsRunning and ret:
-            
-            time_between = self.stop_timer(1)
-            self.app.update_timer(time_between, mode="tb")
 
             # Chamando a função para detecção e enviando os parâmetros necessários
             self.sent_data_queue.queue.clear()
@@ -362,8 +333,6 @@ class Emulator:
             video_processor_thread = threading.Thread(target=self.call_detection_system, args=(self.sent_data_queue, self.received_data_queue))
             video_processor_thread.daemon = True
             video_processor_thread.start()
-
-            self.start_timer(1)
 
             # Salvando dados recebidos
             received_data = self.received_data_queue.get()
@@ -380,8 +349,6 @@ class Emulator:
             self.commands_queue.put(self.commands)
 
             #Exibindo dados em tela
-
-            self.start_timer(2)
         
             self.viewer.show(frame)
             self.debugFieldViewer.show(binary_treat)
@@ -404,12 +371,6 @@ class Emulator:
                     self.cards[i+3].set_content(self.enemies[i].id, self.enemies[i].detected, self.enemies[i].position, self.enemies[i].radius, self.enemies[i].image)
                 else:
                     self.cards[i+3].set_content("#", " ", [" ", " "], " ", None)
-                    
-        # elapsed_time = self.stop_timer()
-        # self.app.update_timer(elapsed_time)
-
-            time_exhibition = self.stop_timer(2)
-            self.app.update_timer(time_exhibition, mode="te")
 
         if self.cameraIsRunning:
             self.viewer.window.after(self.delay, self.processUSB)
