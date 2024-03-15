@@ -69,10 +69,6 @@ class Emulator:
         #objeto de controle
         self.control = Control(self)
 
-        #Temporizador
-        self.timer_running = [False, False, False]
-        self.start_time = [0, 0, 0] # [tempo de processamento, tempo entre processamento, tempo para exibição]
-    
         #Criando temporizador de alta precisão
         self.Timer = HighPrecisionTimer(self)
         
