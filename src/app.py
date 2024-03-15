@@ -2,7 +2,10 @@ from modules import *
 from settingsMenu import settingsMenu
 from viewer import MyViewer, WindowsViewer
 from emulator import Emulator
-from cards import Card
+from cards import *
+from control import *
+from communication import *
+from objects import *
 
 execution = False
 
@@ -11,7 +14,7 @@ class App:
         root = Tk()
         self.root = root
         self.menu = None
-        # self.root.iconbitmap('data/icon.ico') 
+        self.root.iconbitmap('src\data\icon.ico')
 
         self.configure_window() #self.window()
 
@@ -28,19 +31,24 @@ class App:
         self.debugObject = MyViewer(self.tab3)
         self.debugPlayers = MyViewer(self.tab4)
         self.debugTeam = MyViewer(self.tab5)
-        self.playersWindows = WindowsViewer(self.tab6)
-        self.result = MyViewer(self.tab7)
+        self.result = MyViewer(self.tab6)
 
         self.cards = []
         for i in range(6):
-            self.card = Card(self.vision_data_frame, f"Jogador {i+1}", "white")
+            self.card = Card(self.players_infos, f"Jogador {i+1}", "white")
             self.cards.append(self.card)
 
         for i, card in enumerate(self.cards):
             card.frame.grid(row=i // 3, column=i % 3, padx=10, pady=10)
 
+        #bloco de informações do emulador
+        self.infosEmulator = CardInfos(self.infos_emulate,'Informações')
+        
+        #criando o objeto emulador
         self.emulator = Emulator(self)
 
+        self.infosEmulator.setMaster(self.emulator)
+        
         #Configurando menu para controle do jogador e retornar aos valores iniciais
         menu = Menu(self.root)
     
@@ -50,7 +58,7 @@ class App:
         self.root.title("PINBOT - VSSS")
         self.root.configure(background="#dfe3ee")
         self.root.geometry("1100x750")
-        self.root.resizable(False, True)
+        self.root.resizable(False, False)
     
     def create_main_frames(self):
         self.settings_frame = Frame(self.root, bg="white")
@@ -59,12 +67,18 @@ class App:
         self.images_frame = Frame(self.root,bg="white")
         self.images_frame.place(relx=0.31,rely=0.015, relwidth=0.68,relheight=0.68)
         
-        self.vision_data_frame = Frame(self.root, bg="gray")
-        self.vision_data_frame.place(relx=0.31,rely=0.72, relwidth=0.56,relheight=0.265) #0.68
+        self.vision_data_frame = Frame(self.root, bg="white")
+        self.vision_data_frame.place(relx=0.31,rely=0.705, relwidth=0.68,relheight=0.28)
+        
+        #criando um frame do tipo grid
+        self.players_infos = Frame(self.vision_data_frame, bg="white")
+        self.players_infos.place(relx=0,rely=0, relwidth=0.75,relheight=1)
+        
+        #criando um frame para as informações
+        self.infos_emulate = Frame(self.vision_data_frame, bg="white")
+        self.infos_emulate.place(relx=0.78,rely=0.1, relwidth=1,relheight=1)
 
-        self.timer_frame = Frame(self.root, bg="gray")
-        self.timer_frame.place(relx=0.87,rely=0.72, relwidth=0.12,relheight=0.265)
-
+        
     def create_settings_frame(self):
         self.set_settings_frame=Frame(self.settings_frame, bg="red")
         self.set_settings_frame.place(relx=0,rely=0, relwidth=1,relheight=0.90)
@@ -122,7 +136,6 @@ class App:
         self.tab4 = Frame(self.tabs)
         self.tab5 = Frame(self.tabs)
         self.tab6 = Frame(self.tabs)
-        self.tab7 = Frame(self.tabs)
 
         self.tab1.configure(background="black")
         self.tab2.configure(background="black")
@@ -130,15 +143,13 @@ class App:
         self.tab4.configure(background="black")
         self.tab5.configure(background="black")
         self.tab6.configure(background="black")
-        self.tab7.configure(background="black")
 
         self.tabs.add(self.tab1, text="Imagem")
         self.tabs.add(self.tab2, text="Debug campo")
         self.tabs.add(self.tab3, text="Debug bola")
         self.tabs.add(self.tab4, text="Debug jogadores")
         self.tabs.add(self.tab5, text="Debug time")
-        self.tabs.add(self.tab6, text="Janelas dos Jogadores")
-        self.tabs.add(self.tab7, text="Resultado")
+        self.tabs.add(self.tab6, text="Resultado")
 
         self.tabs.place(relx=0, rely=0, relwidth=1, relheight=1)
 
