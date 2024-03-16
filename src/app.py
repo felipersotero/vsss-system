@@ -62,8 +62,8 @@ class App:
 
         self.infosEmulator.setMaster(self.emulator)
         
-        #Configurando menu para controle do jogador e retornar aos valores iniciais
-        
+        #já inicia carregando as informações antigas do emulador
+        self.emulator.load_vars()
 
         #inicia looping principal
         root.mainloop()

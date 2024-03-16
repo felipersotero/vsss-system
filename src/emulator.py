@@ -97,8 +97,7 @@ class Emulator:
         self.serialPort = None          # Porta serial escolhida, caso esteja em modo serial
         self.hasMqtt    = False         # caso MQTT seja escolhido, essa variável será true
         self.hasSerial  = False         # caso Serial seja escolhido, essa  variável será true
-
-
+        
     def load_vars(self):
         self.CamUSB = int(self.settingsTree.tree.item('I003','value')[0])
         self.ImgPath = self.settingsTree.tree.item('I004','value')[0]
