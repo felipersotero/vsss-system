@@ -1,9 +1,9 @@
 from modules import *
 
 class settingsMenu(Frame):
-    def __init__(self, master=None, **kwargs):
+    def __init__(self, App, master=None, **kwargs):
         super().__init__(master, **kwargs)
-
+        self.app = App
         self.tree = Treeview(self, columns=('Valor',))
         self.tree.heading('#0',text="Variável")
         self.tree.heading('Valor', text='Valor')
@@ -85,6 +85,16 @@ class settingsMenu(Frame):
         new_window.title("Seleção de modo")
         self.root = new_window
 
+        try:
+            if(self.app.system == 'Windows'):
+                self.root.iconbitmap('src/data/icon.ico')
+            elif(self.app.system =='Linux'):
+                self.root.iconbitmap('src/data/icon.ico')
+            else:
+                self.root.iconbitmap('src/data/icon.ico')
+        except:
+            print("[APP]: Problemas em acessar o ícone")
+
         def update_value():
             mode_picked = pick_var.get()
             self.tree.set(item,'Valor',mode_picked)
@@ -111,6 +121,16 @@ class settingsMenu(Frame):
         new_window.title("Seleção de modo")
         self.root = new_window
 
+        try:
+            if(self.app.system == 'Windows'):
+                self.root.iconbitmap('src/data/icon.ico')
+            elif(self.app.system =='Linux'):
+                self.root.iconbitmap('src/data/icon.ico')
+            else:
+                self.root.iconbitmap('src/data/icon.ico')
+        except:
+            print("[APP]: Problemas em acessar o ícone")
+
         def update_value():
             mode_picked = pick_var.get()
             self.tree.set(item,'Valor',mode_picked)
@@ -135,16 +155,35 @@ class settingsMenu(Frame):
 
         self.mode = self.tree.item('I006','value')[0]
         self.imgPath = self.tree.item('I004','value')[0]
+        self.camPath = self.tree.item('I003','value')[0]
         #print(self.mode)
 
         new_window = Toplevel(self.tree)
         new_window.title("Seleção de cores")
         self.root = new_window
-        self.root.iconbitmap('src\data\icon.ico')
+
+        try:
+            if(self.app.system == 'Windows'):
+                self.root.iconbitmap('src/data/icon.ico')
+            elif(self.app.system =='Linux'):
+                self.root.iconbitmap('src/data/icon.ico')
+            else:
+                self.root.iconbitmap('src/data/icon.ico')
+        except:
+            print("[APP]: Problemas em acessar o ícone")
+
+        self.root.resizable(False, False)#Não permitindo mudar
+        
+        #objeto de captura
+        self.cap = None
 
         def close_window():
-            if self.mode == "camera": cap.release()
-            new_window.destroy()
+            if self.mode == "camera": self.cap.release()
+            self.root.destroy()
+            self.cap = None
+
+        #adiciona um protocolo a new_window para desligar a câmera
+        new_window.protocol("WM_DELETE_WINDOW", close_window)
 
         def update_color(val=None):
             h = hue_scale.get()
@@ -271,17 +310,23 @@ class settingsMenu(Frame):
         # Função para capturar vídeo da webcam
         if self.mode == "camera":
             # Inicializa a captura de vídeo da webcam
-            cap = cv2.VideoCapture(2)  # 0 representa a primeira câmera disponível
+            try:
+                self.cap = cv2.VideoCapture(int(self.camPath))  # 0 representa a primeira câmera disponível
+            except:
+                try:
+                    self.cap = cv2.VideoCapture(int(0))
+                except:
+                    print("[APP]: Camera não encontrada")
 
             # Captura um quadro inicial para obter informações de tamanho
-            ret, frame = cap.read()
+            ret, frame = self.cap.read()
             if ret:
                 frame = cv2.resize(frame, (image_width, image_height))
                 hsv_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
                 frame_bgr = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
 
             def capture_video():
-                ret, frame = cap.read()
+                ret, frame = self.cap.read()
                 if ret:
                     frame = cv2.resize(frame, (image_width, image_height))
                     hsv_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)

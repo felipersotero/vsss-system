@@ -14,12 +14,18 @@ class App:
         root = Tk()
         self.root = root
         self.menu = None
+        
         #verifica qual o sistema operacional
         self.system = platform.system()
         self.release = platform.release()
         self.version = platform.version()
 
-        self.root.iconbitmap('src\data\icon.ico')
+        if(self.system == 'Windows'):
+            self.root.iconbitmap('src\data\icon.ico')
+        elif(self.system =='Linux'):
+            self.root.iconbitmap('src/data/icon.ico')
+        else:
+            self.root.iconbitmap('src\data\icon.ico')
 
         self.configure_window() #self.window()
 
@@ -55,7 +61,7 @@ class App:
         self.infosEmulator.setMaster(self.emulator)
         
         #Configurando menu para controle do jogador e retornar aos valores iniciais
-        menu = Menu(self.root)
+        
 
         #inicia looping principal
         root.mainloop()
@@ -93,7 +99,7 @@ class App:
         self.emulate_frame.place(relx=0,rely=0.90, relwidth=1,relheight=0.10)
 
     def widgets_settings_frame(self):
-        self.menu = settingsMenu(self.set_settings_frame)
+        self.menu = settingsMenu(self, self.set_settings_frame)
         self.menu.pack(fill=BOTH, expand=True)
 
         self.exec = execution
