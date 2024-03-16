@@ -7,6 +7,7 @@ from control import *
 from communication import *
 from objects import *
 
+
 execution = False
 
 class App:
@@ -20,12 +21,13 @@ class App:
         self.release = platform.release()
         self.version = platform.version()
 
-        if(self.system == 'Windows'):
-            self.root.iconbitmap('src\data\icon.ico')
-        elif(self.system =='Linux'):
-            self.root.iconbitmap('src/data/icon.ico')
-        else:
-            self.root.iconbitmap('src\data\icon.ico')
+        #variáveis de tamanho da tela do computador
+        self.screen_height = None
+        self.screen_width = None
+
+        #tamanho da janela
+        self.width = 1100
+        self.height = 750
 
         self.configure_window() #self.window()
 
@@ -66,11 +68,24 @@ class App:
         #inicia looping principal
         root.mainloop()
 
+    #configurando a janela do projeto
     def configure_window(self):
+        #propriedades
         self.root.title("PINBOT - VSSS")
         self.root.configure(background="#dfe3ee")
         self.root.geometry("1100x750")
         self.root.resizable(False, False)
+
+        #colocando ícone
+        if(self.system == 'Windows'):
+            self.root.iconbitmap('src/data/icon.ico')
+        elif(self.system =='Linux'):
+            self.root.iconbitmap('src/data/icon.ico')
+        else:
+            self.root.iconbitmap('src/data/icon.ico')
+        
+        #posicionando a janela no centro
+        self.center_window()
     
     def create_main_frames(self):
         self.settings_frame = Frame(self.root, bg="white")
@@ -199,7 +214,8 @@ class App:
         
         ConfigEmulator=self.menu.add_node(SysVision,'EmulatorConfig','Configurações do Emulador', value='')
         self.menu.add_node(ConfigEmulator,'Debug','Debug', value='False')
-        self.menu.add_node(ConfigEmulator,'MQTT','MQTT', value='False')
+        self.menu.add_node(ConfigEmulator,'Comunicação','Comunicação', value='nenhuma')
+        self.menu.add_node(ConfigEmulator,'Porta Serial','Porta Serial',value = ' ')
         self.menu.add_node(ConfigEmulator,'CUDA','CUDA', value='False')
         self.menu.add_node(ConfigEmulator,'ExectState','Estado de Execução', value='Parado')
 
@@ -218,7 +234,7 @@ class App:
         self.menu.save_to_json('config')
 
         self.emulator.init()
-        self.menu.att_node_id('I01E','Em execução.')
+        self.menu.att_node_id('I01F','Em execução.')
         self.menu.save_to_json('config')
 
     def stop_emulate(self):
@@ -226,8 +242,53 @@ class App:
         self.btn_stop.pack_forget()
         self.btn_run.pack(fill=BOTH, expand=1)
         
-        self.menu.att_node_id('I01E','Parado')
+        self.menu.att_node_id('I01F','Parado')
         self.menu.save_to_json('config')
+
+    #pegar as informações da tela
+    def get_screen_resolution(self):
+        #funcionando no windows
+        if(self.system == 'Windows'):
+            user32 = ctypes.windll.user32
+            self.screen_width = user32.GetSystemMetrics(0)
+            self.screen_height = user32.GetSystemMetrics(1)
+        
+        #funcionando no linux
+        elif(self.system == 'Linux'):
+            output = subprocess.check_output(['xrandr']).decode('utf-8')
+            for line in output.splitlines():
+                if 'connected primary' in line:
+                    width_height = line.split()[3]
+                    self.screen_width, self.screen_height = map(int, width_height.split('x'))
+        else:
+            print("Não programado para esse tipo de sistema")
+
+    #centralizando a janela na tela
+    def center_window(self):
+        try:
+            if(self.system =='Windows'):
+                hwnd = ctypes.windll.user32.FindWindowW(u"Shell_traywnd", None)
+                rect = ctypes.wintypes.RECT()
+                ctypes.windll.user32.GetWindowRect(hwnd, ctypes.byref(rect))
+                taskbar_height = rect.bottom - rect.top
+            else:
+                taskbar_height = 0 
+        except:
+            taskbar_height = 0
+
+        self.get_screen_resolution()
+
+        self.screen_width = self.root.winfo_screenwidth()
+        self.screen_height = self.root.winfo_screenheight()
+
+        x = (self.screen_width // 2) - (self.width // 2)
+        y = (self.screen_height // 2) - (self.height // 2) - (taskbar_height//2)
+
+        # Impede que a janela seja redimensionada
+        self.root.resizable(False, False)
+
+        # Defina a geometria da janela
+        self.root.geometry(f"{self.width}x{self.height}+{x}+{y}")
 
 if __name__ == "__main__":
     app = App()

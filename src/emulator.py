@@ -86,9 +86,17 @@ class Emulator:
         self.OPversion = App.version    # versão
 
         self.hasCuda = False             # verifica a versão do cuda
-        self.CudaDevice = None          # Qual o serviço cuda
-        self.CudaDeviceVersion = None     # Quantos serviços cuda há
-        self.communication = False      # verifica se está ok a comunicação
+        self.CudaDevice = None           # Qual o serviço cuda
+        self.CudaDeviceVersion = None    # Quantos serviços cuda há
+        self.communication = False       # verifica se está ok a comunicação
+        self.CUDAselected = False        # variável para indicar que foi selecionado o cuda
+
+        #Variável relativa ao tipo de conexão escolhida pelo usuário
+        self.comSelected = None         # Será uma string {nenhuma, MQTT ou Serial}
+        self.hasConection = False       # verifica se foi selecionada alguma conexão
+        self.serialPort = None          # Porta serial escolhida, caso esteja em modo serial
+        self.hasMqtt    = False         # caso MQTT seja escolhido, essa variável será true
+        self.hasSerial  = False         # caso Serial seja escolhido, essa  variável será true
 
 
     def load_vars(self):
@@ -101,11 +109,12 @@ class Emulator:
         self.OffSetErode = int(self.settingsTree.tree.item('I009','value')[0])
         self.BINThresh = int(self.settingsTree.tree.item('I00A','value')[0])
         self.MatrixTop = int(self.settingsTree.tree.item('I00B','value')[0])
-        #self.DEBUGalg = self.settingsTree.tree.item('I00C','value')[0]
 
+        #dimensão do campo
         self.fieldWidth = int(self.settingsTree.tree.item('I00E','value')[0])
         self.fieldHeight = int(self.settingsTree.tree.item('I00F','value')[0])
 
+        #cores
         self.mainColor = self.settingsTree.tree.item('I011','value')[0]
         self.player1Color1 = self.settingsTree.tree.item('I012','value')[0]
         self.player1Color2 = self.settingsTree.tree.item('I013','value')[0]
@@ -116,14 +125,17 @@ class Emulator:
         self.enemiesMainColor = self.settingsTree.tree.item('I018','value')[0]
         self.ballColor = self.settingsTree.tree.item('I019','value')[0]
 
+        #variáveis que influenciam no desenvolvimento 
         self.debug_view = self.settingsTree.tree.item('I01B','value')[0]
-        self.mqttConection = self.settingsTree.tree.item('I01C','value')[0]
-        self.CUDAservice = self.settingsTree.tree.item('I01D','value')[0]
-        self.EXECMode = self.settingsTree.tree.item('I01E','value')[0]
+        self.comMode = self.settingsTree.tree.item('I01C','value')[0]
+        self.serialPort = self.settingsTree.tree.item('I01D','value')[0]
+        self.CUDAservice = self.settingsTree.tree.item('I01E','value')[0]
+        self.EXECMode = self.settingsTree.tree.item('I01F','value')[0]
 
-
+        #modo de uso do emulador
         self.UseMode = self.format_var(self.UseMode)
 
+        #cores
         self.mainColor = self.format_var(self.mainColor)
         self.player1Color1 = self.format_var(self.player1Color1)
         self.player1Color2 = self.format_var(self.player1Color2)
@@ -134,12 +146,13 @@ class Emulator:
         self.enemiesMainColor = self.format_var(self.enemiesMainColor)
         self.ballColor = self.format_var(self.ballColor)
 
+        #variáveis que influenciam no modo de emulação
         self.EXECMode = self.format_var(self.EXECMode)
         self.debug_view = self.format_var(self.debug_view)
-        self.mqttConection = self.format_var(self.mqttConection)
+        self.comMode = self.format_var(self.comMode)
         self.CUDAService = self.format_var(self.CUDAservice)
         
-        #verifica se foi solicitado debug
+        #verifica se foi solicitado DEBUG do código
         if(self.debug_view == 'true'):
             self.DEBUGA = True
             self.debug_view = True
@@ -166,11 +179,36 @@ class Emulator:
         #Verifica se foi solicitado suporte ao cuda
         if(self.CUDAService == 'true'):
             #verifica se tem suporte ao CUDA
-            self.hasCudaDevice()
+            self.CUDAselected = self.hasCudaDevice()
         else:
-            self.hasCuda = False             # verifica a versão do cuda
-            self.CudaDevice = None          # Qual o serviço cuda
-            self.CudaDeviceVersion = None     # Quantos serviços cuda há
+            self.CUDAselected = False        # Cuda não foi selecionado
+            self.hasCudaDevice()             # Atualizo informações do cuda
+        
+        #Trata qual foi o tipo de conexão escolhida pelo usuário
+
+
+        if(self.comMode == 'mqtt'):
+            #seleciona o modo mqtt
+            self.hasConection = True
+            self.hasMqtt = True
+            self.hasSerial = False
+        elif(self.comMode == 'serial'):
+            #seleciona o modo serial
+            self.hasConection = True
+            self.hasSerial = True
+            self.hasMqtt = False
+        elif(self.comMode == 'nenhuma'):
+            #nenhuma foi selecionada, então vira falso]
+            self.hasConection = False
+            self.hasSerial = False
+            self.hasMqtt = False
+        else:
+            #provavelmente foi um erro e nenhuma será selecionada
+            print("Não tem comunicação selecionada")
+            self.hasConection = False
+            self.hasSerial = False
+            self.hasMqtt = False
+
 
         #Atualizo o card
         self.infoCards.updateFuncs()
@@ -242,11 +280,15 @@ class Emulator:
         self.viewer.config()
         self.debugFieldViewer.config()
         
-        if (self.mqttConection == 'true'): self.clientMQTT = connect_to_broker("broker.hivemq.com", 1883)
-
-        
-        if (self.clientMQTT != None): self.communication = True 
-        else: self.communication = False
+        if (self.hasMqtt == True): 
+            self.clientMQTT = connect_to_broker("broker.hivemq.com", 1883)
+            # se tem modo de comunicação com mqtt
+            if (self.clientMQTT != None): 
+                self.hasConection = True 
+                self.hasMqtt = True
+            else: 
+                self.hasConection = False
+                self.hasMqtt = False
 
         self.infoCards.updateFuncs()
 
@@ -271,7 +313,7 @@ class Emulator:
         if(self.Mode== MODE_USB_CAM): #Modo camera
             print('[EMULADOR] Emulador em modo de processamento de imagem da Camera USB')
             #Configurando Viewer para modo de exibição de câmera   
-            if (self.mqttConection == 'true'): self.clientMQTT = connect_to_broker("broker.hivemq.com", 1883)        
+            if (self.hasMqtt == True): self.clientMQTT = connect_to_broker("broker.hivemq.com", 1883)        
             #Entrada do vídeo
             self.btn_run.pack_forget() # torna o botão "run" invisível
             self.btn_stop.pack(fill=BOTH, expand=1) # torna o botão "stop" visível
@@ -285,7 +327,7 @@ class Emulator:
             # Chamando thread para processamento de vídeo
 
             #Trabalhando com filas e threads
-            if (self.mqttConection == 'true'):
+            if (self.hasMqtt == True):
                 communication_thread = threading.Thread(target=self.send_mqtt_data, args=(self.commands_queue,), daemon=True)
                 communication_thread.start()
  
@@ -325,7 +367,8 @@ class Emulator:
         if (self.clientMQTT):
             self.clientMQTT.loop_stop()
             self.clientMQTT.disconnect()
-            self.communication = False
+            self.hasConection = False
+            self.hasMqtt = False
         
         #Atualiza cards
         self.infoCards.updateFuncs()
@@ -555,16 +598,22 @@ class Emulator:
                 self.CudaDeviceVersion = context.get_api_version
                 context.detach()
                 self.CudaDevice= pycuda.Device(0).name()
-
+                
+                #Atualizo o card
+                self.infoCards.updateFuncs()
                 return True
             else:
                 self.hasCuda = False
                 self.CudaDeviceVersion = None
                 self.CudaDevice= None
+
+                #Atualizo o card
+                self.infoCards.updateFuncs()
                 return False
         except pycuda.RuntimeError:
                 self.hasCuda = False
                 self.CudaDeviceVersion = None
                 self.CudaDevice= None
-
+                #Atualizo o card
+                self.infoCards.updateFuncs()
                 return False

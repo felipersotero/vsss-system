@@ -54,8 +54,9 @@ class settingsMenu(Frame):
             elif self.tree.item(item, 'text') == 'CUDA':
                 self.open_select_window(self.tree, item)
                 
-            elif self.tree.item(item, 'text') == 'MQTT':
-                self.open_select_window(self.tree, item)
+            # selecionando modo de conexão do computador
+            elif self.tree.item(item, 'text') == 'Comunicação':
+                self.open_window_connection(self.tree, item)
 
             elif self.tree.item(item, 'text') in editable_items:
                 self.tree.item(item, tags=('edit',))
@@ -113,6 +114,7 @@ class settingsMenu(Frame):
         select_button = Button(new_window, text="Confirmar", command=update_value)
         select_button.pack(pady=10)
 
+    #Janela se seleção true false
     def open_select_window(self, tree, item):
         self.item = item
         self.tree = tree
@@ -149,10 +151,133 @@ class settingsMenu(Frame):
         select_button = Button(new_window, text="Confirmar", command=update_value)
         select_button.pack(pady=10)
 
-    def open_color_pick_window(self, item):
-        # self.item = item
-        # self.tree = tree
+        #Janela de seleção do modo de conexão do algorítmo
+    
+    
+    #Selecionar tipo de conexão
+    def open_window_connection(self,tree, item):
+        #definindo a janela
+        new_window = Toplevel(self.tree)
+        new_window.title ("Seleção tipo de comunicação")
+        self.root = new_window
 
+        #adicionando ícone
+        try:
+            if(self.app.system == 'Windows'):
+                self.root.iconbitmap('src/data/icon.ico')
+            elif(self.app.system =='Linux'):
+                self.root.iconbitmap('src/data/icon.ico')
+            else:
+                self.root.iconbitmap('src/data/icon.ico')
+        except:
+            print("[APP]: Problemas em acessar o ícone")
+                # Calcula as dimensões da janela
+        
+        #frame principal
+        frame = ttk.Frame(self.root)
+        frame.pack(padx = 10, pady = 10)
+
+        #label de seleção de comunicação
+        label_comm = ttk.Label(frame, text="Selecione o tipo de comunicação:")
+        label_comm.grid(row=0, column=0, padx=5, pady=5)
+
+        # Combobox para seleção de comunicação
+        combobox_comm = ttk.Combobox(frame, values=["MQTT", "SERIAL","Nenhuma"])
+        combobox_comm.grid(row=0, column=1, padx=5, pady=5)
+
+        # Label de seleção de porta serial
+        label_serial = ttk.Label(frame, text="Selecione a porta serial:")
+        label_serial.grid(row=1, column=0, padx=5, pady=5)
+        label_serial.grid_remove()  # Inicialmente oculto
+
+        # Combobox para seleção de porta serial
+        combobox_serial = ttk.Combobox(frame)
+        combobox_serial.grid(row=1, column=1, padx=5, pady=5)
+        combobox_serial.grid_remove()  # Inicialmente oculto)
+
+        #exibe as seriais conectadas
+        def populate_serial_ports():
+            serial_ports = [port.device for port in serial.tools.list_ports.comports()]
+            combobox_serial["values"] = serial_ports
+            combobox_serial["state"] = "readonly"  # Define o Combobox como somente leitura
+
+
+        #mostra as opções de entrada serial
+        def show_serial_options(event):
+            selected_comm = combobox_comm.get()
+            if selected_comm == "SERIAL":
+                label_serial.grid()
+                combobox_serial.grid()
+                populate_serial_ports()
+
+            else:
+                label_serial.grid_remove()
+                combobox_serial.grid_remove()
+
+        #atualiza as portas seriais em tempo real
+        def update_serial_ports():
+            populate_serial_ports()
+            # Chama esta função novamente após 1000 milissegundos (1 segundo)
+            self.root.after(1000, update_serial_ports)
+        
+        #chama esse método para atualizar
+        update_serial_ports()
+
+        #destroi janela
+        def destroy_window():
+            self.root.destroy()
+
+        #confirma seleção
+        def on_confirm():
+            selected_comm = combobox_comm.get()
+            selected_port = combobox_serial.get() if selected_comm == "SERIAL" else None
+
+            if selected_comm == "MQTT":
+                self.tree.set(item, 'Valor', selected_comm)
+                self.tree.set('I01D', 'Valor', "")
+                self.nodes[item] = selected_comm
+                self.nodes['I01D'] = ""
+                destroy_window()
+            elif selected_comm == "SERIAL":
+                if selected_comm == "SERIAL" and not selected_port:
+                    messagebox.showerror("Erro", "Selecione uma porta serial!")
+                else:
+                    self.tree.set(item, 'Valor', selected_comm)
+                    self.tree.set('I01D', 'Valor', selected_port)
+                    self.nodes[item] = selected_comm
+                    self.nodes['I01D'] = selected_port
+                    destroy_window()
+
+            elif selected_comm == "Nenhuma":
+                    self.tree.set(item, 'Valor', selected_comm)
+                    self.tree.set('I01D', 'Valor', "")
+                    self.nodes[item] = selected_comm
+                    self.nodes['I01D'] = ""
+                    destroy_window()
+            else:
+                    #Provavelmente foi um erro, então mantem o padrão
+                    self.tree.set(item, 'Valor', "Nenhuma")
+                    self.tree.set('I01D', 'Valor', "")
+                    self.nodes[item] = "Nenhuma"
+                    self.nodes['I01D'] = ""
+                    destroy_window()
+
+
+
+        #definindo callbacks
+        combobox_comm.bind("<<ComboboxSelected>>", show_serial_options)
+
+        # Botão de voltar
+        button_back = ttk.Button(frame, text="Voltar", command=destroy_window)
+        button_back.grid(row=2, column=0, padx=5, pady=5)
+
+        # Botão de confirmar
+        button_confirm = ttk.Button(frame, text="Confirmar", command=on_confirm)
+        button_confirm.grid(row=2, column=1, padx=5, pady=5)
+        
+        
+    #janela de seleção de cores
+    def open_color_pick_window(self, item):
         self.mode = self.tree.item('I006','value')[0]
         self.imgPath = self.tree.item('I004','value')[0]
         self.camPath = self.tree.item('I003','value')[0]

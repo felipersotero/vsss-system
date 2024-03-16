@@ -189,15 +189,29 @@ class CardInfos:
         if(variable == 'CUDA:'):
             if(value == True):
                 strValue = "Disponível"
+                strValue += ' / '
+                if(self.emulator.CUDAselected == True):
+                    strValue += "ON"
+                else:
+                    strValue += "OFF"
             else:
-                strValue = "N/A"
+                strValue = "Indisponível / OFF"
         elif (variable == 'COM:'):
             if(value == True):
-                strValue = "Conectado"
+                if(self.emulator.hasMqtt):
+                    strValue = "MQTT"
+                elif(self.emulator.hasSerial):
+                    strValue = "Serial entry / "
+                    strValue += str(self.emulator.serialPort)
+                else:
+                    #provávelmente um erro
+                    strValue = "Sem conexão"
             else:
                 strValue = "Sem conexão"
         else:
             strValue = str(value)
+
+
 
 
         #Verifica se está na biblioteca que preciso
@@ -211,7 +225,7 @@ class CardInfos:
         self.updateFunc("Sys:", str(self.emulator.OP+' '+self.emulator.OPversion))
         self.updateFunc("CUDA:",self.emulator.hasCuda)
         self.updateFunc("cuDev:",self.emulator.CudaDevice)
-        self.updateFunc("COM:",self.emulator.communication)
+        self.updateFunc("COM:",self.emulator.hasConection)
         self.updateFunc("Send:",self.emulator.commands)
 
 
