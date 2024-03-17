@@ -26,7 +26,6 @@
 from modules import *
 from communication import *
 
-
 class Control:
     def __init__(self, Emulator):
         self.field = Emulator.field
@@ -115,13 +114,13 @@ class Control:
 
         self.getCoordinates()
 
-        kp = '+0.00'
-        ki = '+0.00'
-        kd = '+0.00'
-        pid_constants = kp + ki + kd
+        kr = '+0.00'
+        ka = '+0.00'
+        kb = '+0.00'
+        constants = kr + ka + kb
 
         # command = 'c+045.25025.13' #'c+aaa.aaddd.dd'
-        command = 's+000.00000.00'
+        command = 's+000.00000.00+0.00+0.00+0.00'
 
         if self.possibleRecognition[0] and self.ball_coordinates is not None:
             
@@ -141,7 +140,7 @@ class Control:
                 command_mode = 's'
 
 
-            command = command_mode + angle_string + distance_string
+            command = command_mode + angle_string + distance_string + constants
         
         return command
     
