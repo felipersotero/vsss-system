@@ -77,13 +77,16 @@ class App:
         self.root.resizable(False, False)
 
         #colocando ícone
-        if(self.system == 'Windows'):
-            self.root.iconbitmap('src/data/icon.ico')
-        elif(self.system =='Linux'):
-            self.root.iconbitmap('src/data/icon.ico')
-        else:
-            self.root.iconbitmap('src/data/icon.ico')
-        
+        try:
+            if(self.app.system == 'Windows'):
+                self.root.iconbitmap('src/data/icon.ico')
+            elif(self.app.system =='Linux'):
+                self.root.iconbitmap('src/data/icon.ico')
+            else:
+                self.root.iconbitmap('src/data/icon.ico')
+        except:
+            print("[APP]: Problemas em acessar o ícone")
+            
         #posicionando a janela no centro
         self.center_window()
     
@@ -255,13 +258,22 @@ class App:
         
         #funcionando no linux
         elif(self.system == 'Linux'):
+            # Executar o comando xrandr e obter a saída
             output = subprocess.check_output(['xrandr']).decode('utf-8')
-            for line in output.splitlines():
-                if 'connected primary' in line:
-                    width_height = line.split()[3]
-                    self.screen_width, self.screen_height = map(int, width_height.split('x'))
+
+            # Expressão regular para encontrar as dimensões da tela
+            pattern = r'\b(\d+)x(\d+)\+\d+\+\d+\b'
+
+            # Procurar as dimensões da tela na saída do xrandr
+            match = re.search(pattern, output)
+
+            # Se for encontrada uma correspondência, extrair as dimensões
+            if match:
+                screen_width, screen_height = map(int, match.groups())
+                print("Largura:", screen_width)
+                print("Altura:", screen_height)
         else:
-            print("Não programado para esse tipo de sistema")
+             print("Não foi possível encontrar as dimensões da tela.")
 
     #centralizando a janela na tela
     def center_window(self):
