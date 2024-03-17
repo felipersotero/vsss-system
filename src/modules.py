@@ -13,6 +13,7 @@ import serial
 import ctypes 
 import subprocess
 import serial.tools.list_ports
+import re
 
 #Bibliotecas 
 from detector import *
