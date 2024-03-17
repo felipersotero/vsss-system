@@ -9,6 +9,17 @@ import base64
 import unidecode
 import threading
 import numpy as np
+import serial
+import ctypes 
+import subprocess
+import serial.tools.list_ports
 
 #Bibliotecas 
 from detector import *
+
+
+#suporte a GPU
+from cv2 import cuda
+import platform 
+import pycuda.driver as pycuda
+import numba

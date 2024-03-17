@@ -1,9 +1,9 @@
 from modules import *
 
 class settingsMenu(Frame):
-    def __init__(self, master=None, **kwargs):
+    def __init__(self, App, master=None, **kwargs):
         super().__init__(master, **kwargs)
-
+        self.app = App
         self.tree = Treeview(self, columns=('Valor',))
         self.tree.heading('#0',text="Variável")
         self.tree.heading('Valor', text='Valor')
@@ -27,7 +27,7 @@ class settingsMenu(Frame):
         self.tree.item(id,tags=())
 
     def on_double_click  (self, event):
-        editable_items = ['Câmera USB','Vídeo Path','Cor','Cor Principal T1', 'Cor Principal T2','T1_robo 1','T1_robo 2','T1_robo 3','T2_robo 1','T2_robo 2','T2_robo 3','Borda da janela','offSet da Erosão','Debug do Algorítmo','Binarização Threshold','Dim. Matriz TOPHAT', 'Largura (menor)', 'Comprimento (maior)']
+        editable_items = ['Câmera USB','Vídeo Path','Cor','Cor Principal T1', 'Cor Principal T2','T1_robo 1','T1_robo 2','T1_robo 3','T2_robo 1','T2_robo 2','T2_robo 3','Borda da janela','offSet da Erosão','Binarização Threshold','Dim. Matriz TOPHAT', 'Largura (menor)', 'Comprimento (maior)']
         #color_editables = ["Calibração das Cores"]
         color_editables = ['Cor principal', 'J1 Cor 1', 'J1 Cor 2', 'J2 Cor 1', 'J2 Cor 2', 'J3 Cor 1', 'J3 Cor 2', 'Cor inimigos', 'Cor da bola']
         item = self.tree.focus()
@@ -51,8 +51,12 @@ class settingsMenu(Frame):
             elif self.tree.item(item, 'text') == 'Debug':
                 self.open_select_window(self.tree, item)
             
-            elif self.tree.item(item, 'text') == 'MQTT':
+            elif self.tree.item(item, 'text') == 'CUDA':
                 self.open_select_window(self.tree, item)
+                
+            # selecionando modo de conexão do computador
+            elif self.tree.item(item, 'text') == 'Comunicação':
+                self.open_window_connection(self.tree, item)
 
             elif self.tree.item(item, 'text') in editable_items:
                 self.tree.item(item, tags=('edit',))
@@ -82,6 +86,16 @@ class settingsMenu(Frame):
         new_window.title("Seleção de modo")
         self.root = new_window
 
+        try:
+            if(self.app.system == 'Windows'):
+                self.root.iconbitmap('src/data/icon.ico')
+            elif(self.app.system =='Linux'):
+                self.root.iconbitmap('src/data/icon.ico')
+            else:
+                self.root.iconbitmap('src/data/icon.ico')
+        except:
+            print("[APP]: Problemas em acessar o ícone")
+
         def update_value():
             mode_picked = pick_var.get()
             self.tree.set(item,'Valor',mode_picked)
@@ -100,6 +114,7 @@ class settingsMenu(Frame):
         select_button = Button(new_window, text="Confirmar", command=update_value)
         select_button.pack(pady=10)
 
+    #Janela se seleção true false
     def open_select_window(self, tree, item):
         self.item = item
         self.tree = tree
@@ -107,6 +122,16 @@ class settingsMenu(Frame):
         new_window = Toplevel(self.tree)
         new_window.title("Seleção de modo")
         self.root = new_window
+
+        try:
+            if(self.app.system == 'Windows'):
+                self.root.iconbitmap('src/data/icon.ico')
+            elif(self.app.system =='Linux'):
+                self.root.iconbitmap('src/data/icon.ico')
+            else:
+                self.root.iconbitmap('src/data/icon.ico')
+        except:
+            print("[APP]: Problemas em acessar o ícone")
 
         def update_value():
             mode_picked = pick_var.get()
@@ -126,22 +151,164 @@ class settingsMenu(Frame):
         select_button = Button(new_window, text="Confirmar", command=update_value)
         select_button.pack(pady=10)
 
-    def open_color_pick_window(self, item):
-        # self.item = item
-        # self.tree = tree
+        #Janela de seleção do modo de conexão do algorítmo
+    
+    
+    #Selecionar tipo de conexão
+    def open_window_connection(self,tree, item):
+        #definindo a janela
+        new_window = Toplevel(self.tree)
+        new_window.title ("Seleção tipo de comunicação")
+        self.root = new_window
 
+        #adicionando ícone
+        try:
+            if(self.app.system == 'Windows'):
+                self.root.iconbitmap('src/data/icon.ico')
+            elif(self.app.system =='Linux'):
+                self.root.iconbitmap('src/data/icon.ico')
+            else:
+                self.root.iconbitmap('src/data/icon.ico')
+        except:
+            print("[APP]: Problemas em acessar o ícone")
+                # Calcula as dimensões da janela
+        
+        #frame principal
+        frame = ttk.Frame(self.root)
+        frame.pack(padx = 10, pady = 10)
+
+        #label de seleção de comunicação
+        label_comm = ttk.Label(frame, text="Selecione o tipo de comunicação:")
+        label_comm.grid(row=0, column=0, padx=5, pady=5)
+
+        # Combobox para seleção de comunicação
+        combobox_comm = ttk.Combobox(frame, values=["MQTT", "SERIAL","Nenhuma"])
+        combobox_comm.grid(row=0, column=1, padx=5, pady=5)
+
+        # Label de seleção de porta serial
+        label_serial = ttk.Label(frame, text="Selecione a porta serial:")
+        label_serial.grid(row=1, column=0, padx=5, pady=5)
+        label_serial.grid_remove()  # Inicialmente oculto
+
+        # Combobox para seleção de porta serial
+        combobox_serial = ttk.Combobox(frame)
+        combobox_serial.grid(row=1, column=1, padx=5, pady=5)
+        combobox_serial.grid_remove()  # Inicialmente oculto)
+
+        #exibe as seriais conectadas
+        def populate_serial_ports():
+            serial_ports = [port.device for port in serial.tools.list_ports.comports()]
+            combobox_serial["values"] = serial_ports
+            combobox_serial["state"] = "readonly"  # Define o Combobox como somente leitura
+
+
+        #mostra as opções de entrada serial
+        def show_serial_options(event):
+            selected_comm = combobox_comm.get()
+            if selected_comm == "SERIAL":
+                label_serial.grid()
+                combobox_serial.grid()
+                populate_serial_ports()
+
+            else:
+                label_serial.grid_remove()
+                combobox_serial.grid_remove()
+
+        #atualiza as portas seriais em tempo real
+        def update_serial_ports():
+            populate_serial_ports()
+            # Chama esta função novamente após 1000 milissegundos (1 segundo)
+            self.root.after(1000, update_serial_ports)
+        
+        #chama esse método para atualizar
+        update_serial_ports()
+
+        #destroi janela
+        def destroy_window():
+            self.root.destroy()
+
+        #confirma seleção
+        def on_confirm():
+            selected_comm = combobox_comm.get()
+            selected_port = combobox_serial.get() if selected_comm == "SERIAL" else None
+
+            if selected_comm == "MQTT":
+                self.tree.set(item, 'Valor', selected_comm)
+                self.tree.set('I01D', 'Valor', "")
+                self.nodes[item] = selected_comm
+                self.nodes['I01D'] = ""
+                destroy_window()
+            elif selected_comm == "SERIAL":
+                if selected_comm == "SERIAL" and not selected_port:
+                    messagebox.showerror("Erro", "Selecione uma porta serial!")
+                else:
+                    self.tree.set(item, 'Valor', selected_comm)
+                    self.tree.set('I01D', 'Valor', selected_port)
+                    self.nodes[item] = selected_comm
+                    self.nodes['I01D'] = selected_port
+                    destroy_window()
+
+            elif selected_comm == "Nenhuma":
+                    self.tree.set(item, 'Valor', selected_comm)
+                    self.tree.set('I01D', 'Valor', "")
+                    self.nodes[item] = selected_comm
+                    self.nodes['I01D'] = ""
+                    destroy_window()
+            else:
+                    #Provavelmente foi um erro, então mantem o padrão
+                    self.tree.set(item, 'Valor', "Nenhuma")
+                    self.tree.set('I01D', 'Valor', "")
+                    self.nodes[item] = "Nenhuma"
+                    self.nodes['I01D'] = ""
+                    destroy_window()
+
+
+
+        #definindo callbacks
+        combobox_comm.bind("<<ComboboxSelected>>", show_serial_options)
+
+        # Botão de voltar
+        button_back = ttk.Button(frame, text="Voltar", command=destroy_window)
+        button_back.grid(row=2, column=0, padx=5, pady=5)
+
+        # Botão de confirmar
+        button_confirm = ttk.Button(frame, text="Confirmar", command=on_confirm)
+        button_confirm.grid(row=2, column=1, padx=5, pady=5)
+        
+        
+    #janela de seleção de cores
+    def open_color_pick_window(self, item):
         self.mode = self.tree.item('I006','value')[0]
         self.imgPath = self.tree.item('I004','value')[0]
+        self.camPath = self.tree.item('I003','value')[0]
         #print(self.mode)
 
         new_window = Toplevel(self.tree)
         new_window.title("Seleção de cores")
         self.root = new_window
-        self.root.iconbitmap('src\data\icon.ico')
+
+        try:
+            if(self.app.system == 'Windows'):
+                self.root.iconbitmap('src/data/icon.ico')
+            elif(self.app.system =='Linux'):
+                self.root.iconbitmap('src/data/icon.ico')
+            else:
+                self.root.iconbitmap('src/data/icon.ico')
+        except:
+            print("[APP]: Problemas em acessar o ícone")
+
+        self.root.resizable(False, False)#Não permitindo mudar
+        
+        #objeto de captura
+        self.cap = None
 
         def close_window():
-            if self.mode == "camera": cap.release()
-            new_window.destroy()
+            if self.mode == "camera": self.cap.release()
+            self.root.destroy()
+            self.cap = None
+
+        #adiciona um protocolo a new_window para desligar a câmera
+        new_window.protocol("WM_DELETE_WINDOW", close_window)
 
         def update_color(val=None):
             h = hue_scale.get()
@@ -268,17 +435,23 @@ class settingsMenu(Frame):
         # Função para capturar vídeo da webcam
         if self.mode == "camera":
             # Inicializa a captura de vídeo da webcam
-            cap = cv2.VideoCapture(2)  # 0 representa a primeira câmera disponível
+            try:
+                self.cap = cv2.VideoCapture(int(self.camPath))  # 0 representa a primeira câmera disponível
+            except:
+                try:
+                    self.cap = cv2.VideoCapture(int(0))
+                except:
+                    print("[APP]: Camera não encontrada")
 
             # Captura um quadro inicial para obter informações de tamanho
-            ret, frame = cap.read()
+            ret, frame = self.cap.read()
             if ret:
                 frame = cv2.resize(frame, (image_width, image_height))
                 hsv_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
                 frame_bgr = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
 
             def capture_video():
-                ret, frame = cap.read()
+                ret, frame = self.cap.read()
                 if ret:
                     frame = cv2.resize(frame, (image_width, image_height))
                     hsv_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)

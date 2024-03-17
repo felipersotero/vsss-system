@@ -17,7 +17,7 @@ from objects import *
 from timer import *
 import threading
 import queue
-
+import modules
 #======================|| DEFINIÇÕES DE CLASSES ||======================================#
 '''
 @GNOMIO: Classe Robot que será utilizada no algorítmo de detecção para representar os robôs
