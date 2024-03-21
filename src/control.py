@@ -108,6 +108,14 @@ class Control:
 
         return formatted_value
 
+    def formatW(self, value):
+        formatted_value = str(value)
+        if value >= 0:
+            formatted_value = "+" + formatted_value
+        formatted_value = formatted_value.zfill(4)
+
+        return formatted_value
+
     ################################################################
     # Função principal que recebe os dados das coordenadas dos objetos
     def processControl(self):
@@ -120,7 +128,9 @@ class Control:
         constants = kr + ka + kb
 
         # command = 'c+045.25025.13' #'c+aaa.aaddd.dd'
-        command = 's+000.00000.00+0.00+0.00+0.00'
+        # command = 's+000.00000.00+0.00+0.00+0.00'
+
+        command = 's+000+000'
 
         if self.possibleRecognition[0] and self.ball_coordinates is not None:
             
@@ -130,24 +140,35 @@ class Control:
             print(f"Ângulo: {angle} °")
             print(f"Distância: {distance} cm")
             
-            # angle = angle*(-1)
-            angle_string = self.formatAngle(angle)
-            distance_string = self.formatDistance(distance)
+            wr, wl = self.controlRobot(distance, angle, angle)
 
-            command_mode = 'c'
+            wr_string = self.formatW(wr)
+            wl_string = self.formatW(wl)
 
+            command_mode = 'f'
+            
             if(((abs(angle) < 0.5) and distance < 8) or not(self.allies[0].detected)):
                 command_mode = 's'
+            
+            command = command_mode + wr_string + wl_string
 
+            print(f"Comando: {command}")
+            # angle_string = self.formatAngle(angle)
+            # distance_string = self.formatDistance(distance)
 
-            command = command_mode + angle_string + distance_string + constants
+            # command_mode = 'c'
+
+            # if(((abs(angle) < 0.5) and distance < 8) or not(self.allies[0].detected)):
+            #     command_mode = 's'
+
+            # command = command_mode + angle_string + distance_string + constants
         
         return command
 
     ################################################################
     # Funções que processam o controle dos robôs
 
-    def limitSpeed(speed):
+    def limitSpeed(self, speed):
         max_velocity = 255
         min_velocity = -255
         min_velocity_bin = 150
@@ -162,11 +183,16 @@ class Control:
             speed = -min_velocity_bin
         # Caso a velocidade esteja dentro das faixas permitidas, não é necessário alterar o valor.
 
-        return speed
+        return int(speed)
     
-    def controlRobot(self, rho, alpha, beta, wr, wl):
-        Kr = 3
-        Ka = 4
+    def controlRobot(self, rho, alpha, beta):
+        # Valores originais
+        # Kr = 3
+        # Ka = 4
+        # Kb = -4
+
+        Kr = 2
+        Ka = 8
         Kb = -4
 
         alpha = alpha * math.pi / 180
@@ -178,10 +204,10 @@ class Control:
         v_minus_w_over_2 = v - w / 2
         v_plus_w_over_2 = v + w / 2
 
-        wr[0] = self.limitSpeed(v_minus_w_over_2)
-        wl[0] = self.limitSpeed(v_plus_w_over_2)
+        wr = self.limitSpeed(v_minus_w_over_2)
+        wl = self.limitSpeed(v_plus_w_over_2)
 
-        return wr[0], wl[0]
+        return wr, wl
 
 '''
 # # Verfificar se o jogador está e posse da bola
