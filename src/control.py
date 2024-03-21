@@ -83,9 +83,9 @@ class Control:
 
         # Se o produto vetorial for negativo, o objeto alvo está à esquerda
         if cross_product < 0:
-            angle_deg *= -1
+            angle_rad *= -1
 
-        return angle_deg
+        return angle_rad
 
     def distanceBetweenObjects(self, target_coordinates, source_coordinates):
         dx = abs(target_coordinates[0] - source_coordinates[0])
@@ -137,7 +137,7 @@ class Control:
             angle = self.angleBetweenObjects(self.ball_coordinates, self.allies_coordinates[0], self.allies_direction[0])
             distance = self.distanceBetweenObjects(self.ball_coordinates, self.allies_coordinates[0])
 
-            print(f"Ângulo: {angle} °")
+            print(f"Ângulo: {angle} rad")
             print(f"Distância: {distance} cm")
             
             wr, wl = self.controlRobot(distance, angle, angle)
@@ -186,17 +186,28 @@ class Control:
         return int(speed)
     
     def controlRobot(self, rho, alpha, beta):
-        # Valores originais
-        # Kr = 3
-        # Ka = 4
-        # Kb = -4
+        absAlpha = abs(alpha) 
+        if absAlpha > math.pi /2 :
+            Kr = 0
+            # Ka = 170
+            Ka = 130
+            Kb = 0
+        elif absAlpha> math.pi /4:
+            Kr = 0
+            # Ka = 130
+            Ka = 80
+            Kb = 0
+        elif absAlpha> math.pi /6:
+            # Kr = 10
+            Kr = 1
+            # Ka = 100
+            Ka = 30
+            Kb = 0
 
-        Kr = 2
-        Ka = 8
-        Kb = -4
-
-        alpha = alpha * math.pi / 180
-        beta = -alpha
+        else :
+            Kr = 30
+            Ka = 0
+            Kb = 0
 
         v = Kr * rho
         w = Ka * alpha + Kb * beta
