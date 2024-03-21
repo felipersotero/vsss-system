@@ -143,7 +143,46 @@ class Control:
             command = command_mode + angle_string + distance_string + constants
         
         return command
+
+    ################################################################
+    # Funções que processam o controle dos robôs
+
+    def limitSpeed(speed):
+        max_velocity = 255
+        min_velocity = -255
+        min_velocity_bin = 150
+
+        if speed >= max_velocity:  # Verifica se a velocidade é maior ou igual à velocidade máxima permitida.
+            speed = max_velocity
+        elif speed <= min_velocity:  # Verifica se a velocidade é menor ou igual à velocidade mínima permitida.
+            speed = min_velocity
+        elif speed <= min_velocity_bin and speed > 0:  # Verifica se a velocidade está na faixa entre 0 e 150.
+            speed = min_velocity_bin
+        elif speed >= -min_velocity_bin and speed < 0:  # Verifica se a velocidade está na faixa entre -150 e 0.
+            speed = -min_velocity_bin
+        # Caso a velocidade esteja dentro das faixas permitidas, não é necessário alterar o valor.
+
+        return speed
     
+    def controlRobot(self, rho, alpha, beta, wr, wl):
+        Kr = 3
+        Ka = 4
+        Kb = -4
+
+        alpha = alpha * math.pi / 180
+        beta = -alpha
+
+        v = Kr * rho
+        w = Ka * alpha + Kb * beta
+
+        v_minus_w_over_2 = v - w / 2
+        v_plus_w_over_2 = v + w / 2
+
+        wr[0] = self.limitSpeed(v_minus_w_over_2)
+        wl[0] = self.limitSpeed(v_plus_w_over_2)
+
+        return wr[0], wl[0]
+
 '''
 # # Verfificar se o jogador está e posse da bola
 # def possession_ball(ball_coord, player_coord, player_direction):
