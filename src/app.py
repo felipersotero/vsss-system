@@ -107,10 +107,10 @@ class App:
 
         
     def create_settings_frame(self):
-        self.set_settings_frame=Frame(self.settings_frame, bg="red")
+        self.set_settings_frame=Frame(self.settings_frame, bg="white")
         self.set_settings_frame.place(relx=0,rely=0, relwidth=1,relheight=0.90)
 
-        self.emulate_frame=Frame(self.settings_frame, bg="yellow")
+        self.emulate_frame=Frame(self.settings_frame, bg="white")
         self.emulate_frame.place(relx=0,rely=0.90, relwidth=1,relheight=0.10)
 
     def widgets_settings_frame(self):

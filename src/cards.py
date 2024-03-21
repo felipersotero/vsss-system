@@ -136,11 +136,11 @@ class CardInfos:
         self.funcs = {
             "Sys:": tk.StringVar(),                 # Qual sistema está executando o código
             "CUDA:": tk.StringVar(),                # se tem suporte ao cuda
-            "cuDev:": tk.StringVar(),               # qual o serrviço cuda
+            "cuDev:": tk.StringVar(),               # qual o serviço cuda
             "COM:": tk.StringVar(),                 # Se foi enviada a mensagem
-            "Send C1:": tk.StringVar(),              # instrução do carro 1
-            "Send C2:": tk.StringVar(),              # instrução do carro 2
-            "Send C3:": tk.StringVar(),              # instrução do carro 3
+            "SC1:": tk.StringVar(),                 # instrução do carro 1
+            "SC2:": tk.StringVar(),                 # instrução do carro 2
+            "SC3:": tk.StringVar(),                 # instrução do carro 3
         }
 
         for i, (label_text, var) in enumerate(self.funcs.items()):
@@ -228,9 +228,9 @@ class CardInfos:
         self.updateFunc("CUDA:",self.emulator.hasCuda)
         self.updateFunc("cuDev:",self.emulator.CudaDevice)
         self.updateFunc("COM:",self.emulator.hasConection)
-        self.updateFunc("Send C1:",self.emulator.commands)
-        self.updateFunc("Send C2:"," N/A ")
-        self.updateFunc("Send C3:"," N/A ")
+        self.updateFunc("SC1:",self.emulator.commands)
+        self.updateFunc("SC2:"," N/A ")
+        self.updateFunc("SC3:"," N/A ")
 
 
 
