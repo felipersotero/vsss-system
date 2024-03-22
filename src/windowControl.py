@@ -25,7 +25,7 @@ class ControlWindow:
         
         #tamanho da tela
         self.width  = 900
-        self.height = 730
+        self.height = 735
 
         #frames
         self.frameViewer = None             #Frame de visualizar
@@ -103,7 +103,7 @@ class ControlWindow:
 
         #frame
         # Espaçamento entre os frames
-        spacer1 = Frame(self.root, width=800, height=10, bg='#dfe3ee')
+        spacer1 = Frame(self.root, height=10, bg='#dfe3ee')
         spacer1.pack_propagate(False)  # Evita que o frame ajuste seu tamanho automaticamente
         spacer1.pack()
 
@@ -118,34 +118,28 @@ class ControlWindow:
         self.frameViewer.grid_columnconfigure(0, weight=1)
 
         # Espaçamento entre os frames
-        spacer = Frame(self.root, width=800, height=10, bg="#dfe3ee")
+        spacer = Frame(self.root, height=10, bg="#dfe3ee")
         spacer.pack()
 
         resto = (self.height-420)
 
         # Criando o segundo frame abaixo
-        self.frameControl = Frame(self.root, width=800, height=resto, bg="white")
+        self.frameControl = Frame(self.root,height=resto, bg="white")
         self.frameControl.pack_propagate(False)  # Evita que o frame ajuste seu tamanho automaticamente
         self.frameControl.pack()
 
         #frame filho do frameControl na esquerda
-        self.choseFrame = Frame(self.frameControl, height=resto, bg = "white")
-        self.choseFrame.pack_propagate(False)
+        self.choseFrame = Frame(self.frameControl,height=resto, bg = "white")
         self.choseFrame.grid(row=0,column=0)
 
-        #frame de controles (controle automático)
-        self.cButtonsFrame = Frame(self.frameControl, width = 200, height=resto, bg="white")
-        self.cButtonsFrame.pack_propagate(False)
-        self.cButtonsFrame.grid(row=0, column=1)
-    
+        #frame de controles (controle manual)
+        self.cButtonsFrame = Frame(self.frameControl,height=resto, bg="white")
+        
         #frame de ajuste de constantes (controle automático)
-        self.cConstFrame = Frame(self.frameControl, width = 200, height=resto, bg="white")
-        self.cConstFrame.pack_propagate(False)
-        self.cConstFrame.grid(row=0, column=2)
-
+        self.cConstFrame = Frame(self.frameControl,height=resto, bg="white")
+        
         #frame de análise
-        self.analiseFrame = Frame(self.frameControl, width=320, height=resto, bg="white")
-        self.analiseFrame.pack_propagate(False)
+        self.analiseFrame = Frame(self.frameControl,height=resto, bg="white")
         self.analiseFrame.grid(row=0, column=3)
 
     #Método para inicializar os labels
@@ -156,7 +150,6 @@ class ControlWindow:
         self.cBoxPlayer= ttk.Combobox(self.choseFrame, values=["Player 1", "Player 2", "Player 3"], state='readonly')
         self.cBoxPlayer.grid(row=0,column=1,padx=10, pady=2, sticky="w")
         
-
         #Label para escolher comunicação com o jogador
         self.labelCom = Label(self.choseFrame, text="Modo de comunicação: ", fg = "black", bg ="white")
 
@@ -274,14 +267,15 @@ class ControlWindow:
         #publicando
         self.frameCConst.pack(anchor=CENTER)
 
-
         #botão de publicar configuração de constante
         self.btnCFrame = Frame(self.cConstFrame)
         self.btnCSend = Button(self.btnCFrame, text="Configurar constantes", command=self.send_consts)
         self.btnCSend.pack()
         self.btnCFrame.pack(padx=10,pady=10)
 
-
+        #publicando os frames
+        self.cButtonsFrame.grid(padx=10, pady=10,row=0, column=1)
+        self.cConstFrame.grid(padx=10, pady=10,row=0, column=2)
 
 
     #método para puxar os dados do usuário já presentes e colocar-los na janela
