@@ -3,12 +3,12 @@ from modules import *
 #Classe de player para o aplicativo
 class MyViewer:
     def __init__(self, window: Frame):
-        print("[VIEWER] Viewer criado")
+        #print("[VIEWER] Viewer criado")
         self.window = window
 
     #Método para configurar o viewer para a função definida
     def config(self):
-        print("[VIEWER] Viewer em modo de configuração")
+        #print("[VIEWER] Viewer em modo de configuração")
         #Configurand o o canvas
         self.canvas = Canvas(self.window, width=780, height=510)
         self.canvas.place(relx=0, rely=0)
@@ -17,13 +17,13 @@ class MyViewer:
         
     #Resetando as configurações do viewer para forma padrão
     def resetConfig(self):
-        print("[VIEWER] Resetando configuração de exibição")
+        #print("[VIEWER] Resetando configuração de exibição")
         #Retornado ao modo padrão
         self.default_mode()
     
     #Método de [VIEWER]viewer padrão sem exibir
     def default_mode(self):
-        print("[VIEWER] Viewer não configurado")
+        #print("[VIEWER] Viewer não configurado")
         self.canvas = Canvas(self.window, width=780, height=480)
         self.canvas.place(relx=0, rely=0)
         self.canvas.create_rectangle(0, 0, 748, 510, fill="black")
@@ -59,7 +59,7 @@ class MyViewer:
 
 class WindowsViewer:
     def __init__(self, window: Frame):
-        print("[VIEWER] Viewer criado")
+        #print("[VIEWER] Viewer criado")
         #Frame que irá ser utilizado
         self.window = window
 
@@ -67,7 +67,7 @@ class WindowsViewer:
     def config(self):
         wCanva = int(720/3)
         hCanva = int(480/2)
-        print("[VIEWER] Viewer em modo de configuração")
+        #print("[VIEWER] Viewer em modo de configuração")
         #Configurand o o canvas
         self.canvas = Canvas(self.window, width=780, height=510)
         #self.canvas = Canvas(self.window, width=200, height=100)
@@ -101,13 +101,13 @@ class WindowsViewer:
 
     #Resetando as configurações do viewer para forma padrão
     def resetConfig(self):
-        print("[VIEWER] Resetando configuração de exibição")
+        #print("[VIEWER] Resetando configuração de exibição")
         #Retornado ao modo padrão
         self.default_mode()
     
     #Método de [VIEWER]viewer padrão sem exibir
     def default_mode(self):
-        print("[VIEWER] Viewer não configurado")
+        #print("[VIEWER] Viewer não configurado")
         self.canvas = Canvas(self.window, width=780, height=480)
         self.canvas.place(relx=0, rely=0)
         self.canvas.create_rectangle(0, 0, 748, 510, fill="black")
