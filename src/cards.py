@@ -88,6 +88,11 @@ class CardInfos:
         self.title = title
         self.emulator = None
         
+        # Configurando a expansão do frame
+        self.master.grid_rowconfigure(0, weight=1)
+        self.master.grid_columnconfigure(1, weight=1)
+
+
         #Informações que ele irá exibir
         #pegará as informações de tempo de frame, tempo de envio
         #e código de erro
@@ -149,10 +154,7 @@ class CardInfos:
             text2 = tk.Label(self.tab2, textvariable=var, bg="white", font=("Arial", 8, "normal"))
             text2.grid(row=i + 1, column=1, sticky="w")
 
-        # Configurando a expansão do frame
-        self.master.grid_rowconfigure(0, weight=1)
-        self.master.grid_columnconfigure(1, weight=1)
-        
+
     #Atualiza informação
     def updateInfo(self, variable, value):
         #verifica se é um valor válido
@@ -212,8 +214,6 @@ class CardInfos:
                 strValue = "Sem conexão"
         else:
             strValue = str(value)
-
-
 
 
         #Verifica se está na biblioteca que preciso

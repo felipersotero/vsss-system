@@ -352,6 +352,7 @@ class App:
 
         #verifica então o modo
         if(self.emulator.Mode == MODE_USB_CAM ):
+            print("Entrou com modo câmera e o emulador existe")
             self.popUp = ControlWindow(self.root, self, self.emulator)
         else:
             #abre uma janela de popup falando que precisa estar configurada a camera

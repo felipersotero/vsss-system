@@ -111,6 +111,13 @@ MODE_VIDEO_CAM:int = 3
 MODE_IMAGE:int = 2
 MODE_CONTROL_ROBOT: int = 4
 
+
+#Modos de execução da janela de controle
+class ModeControlW:
+    MANUAL: int = 1
+    POINTER: int = 2
+    DEFAULT: int = 0
+    
 # ================== CONTROLE DE ESTRUTURA DE DADOS ========================
 #Configurações da Emulação que serão inviadas para o sistema de visão realizar os cálculos
 class EConfig:
