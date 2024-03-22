@@ -443,7 +443,7 @@ def detect_field(img, debug, fieldDimensions, offSetWindow=10, offSetErode=0, di
                         #Vértices reais na imagem real
                         rect_vertices_true = rect_vertices+np.array([[coorVetor[0]-dd,coorVetor[1]-dd], [coorVetor[0]-dd,coorVetor[1]+dd], [coorVetor[0]+dd,coorVetor[1]+dd], [coorVetor[0]+dd,coorVetor[1]-dd]], dtype=np.int32)
                     
-                        if(debug == 'true'):
+                        if(debug):
                             # Desenhar os vértices do retângulo na imagem original
                             cv2.polylines(frameOrig, [rect_vertices_true], True, (0, 0, 255), 4)
                             # print("Vértices:")
@@ -506,7 +506,7 @@ def detect_ball(img, color, ball, prop_px_cm, debug):
             ball.set_direction(ball.position, np.array([xcm, ycm]))
             ball.update_position(xcm, ycm, rcm)
 
-        if (debug == 'true'):
+        if (debug):
 
             rb = int(rb)
             xb = int(xb)
@@ -700,7 +700,7 @@ def detect_players(img, ballImg, binaryBall, binaryField, alliesColor, enemiesCo
                         # text = "Inimigo: " + str(xi) + ", " + str(yi)
                         # cv2.putText(imgDegub, text , (int(xi),int(yi+ri+20)), cv2.FONT_HERSHEY_SIMPLEX,0.4,(0, 0, 255), 1)
 
-                        if(debug == 'true'): draw_player_circle(imgDegub, robot, prop_px_cm)
+                        if(debug): draw_player_circle(imgDegub, robot, prop_px_cm)
 
                         enemiesCount += 1
 
@@ -771,7 +771,7 @@ def detect_players(img, ballImg, binaryBall, binaryField, alliesColor, enemiesCo
                         xci = int(xi - (winSize/2) + xc)
                         yci = int(yi - (winSize/2) + yc)
 
-                        if(debug == 'true'): draw_player_circle(imgDegub, robot, prop_px_cm)
+                        if(debug): draw_player_circle(imgDegub, robot, prop_px_cm)
 
                         # cv2.circle(imgDegub, (xci, yci), (rc + 5), (0, 255, 0), 2)
                         # cv2.putText(imgDegub,"Cor", (int(xci+5),int(yci+5)), cv2.FONT_HERSHEY_SIMPLEX,0.4,(0,255,0), 1)
@@ -808,7 +808,7 @@ def detect_players(img, ballImg, binaryBall, binaryField, alliesColor, enemiesCo
                         yi = int(yi)
                         ri = int(ri)
 
-                        if(debug == 'true'):
+                        if(debug):
                             cv2.arrowedLine(imgDegub, (xi, yi), (xi+int(Dx), yi+int(Dy)), (0,255,0), 2)
                             # cv2.circle(imgDegub, (xi, yi), (ri + 5), (255, 0, 0), 2)
 
@@ -862,7 +862,7 @@ def detect_players(img, ballImg, binaryBall, binaryField, alliesColor, enemiesCo
                             # text = "Inimigo: " + str(xi) + ", " + str(yi)
                             # cv2.putText(imgDegub, text , (int(xi),int(yi+ri+20)), cv2.FONT_HERSHEY_SIMPLEX,0.4,(0, 0, 255), 1)
 
-                            if(debug == 'true'): draw_player_circle(imgDegub, robot, prop_px_cm)
+                            if(debug): draw_player_circle(imgDegub, robot, prop_px_cm)
 
                             enemiesCount += 1
             

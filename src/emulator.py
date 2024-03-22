@@ -44,6 +44,7 @@ class Emulator:
         self.delay = 14 #14 ms
 
         self.clientMQTT = None
+        self.clientSerial = None
         self.commands = None
 
         self.commands_queue = queue.Queue()
@@ -251,16 +252,17 @@ class Emulator:
 
         print(msg.decode('utf-8', errors='replace'))
 
-    def send_mqtt_data(self, queue):
+    def send_data(self, queue):
         while True:
             #Inicia contagem de tempo
             St1 = self.Timer.getElapsedTime()
             item = queue.get()
-            result = publish_data(self.clientMQTT, "vsss-ifal-pin/robots", item)
 
-            # print(f"Mensagem publicada! Resultado: {result}.")
-            
-            
+            if(self.hasMqtt):
+                result = publish_mqtt_data(self.clientMQTT, "vsss-ifal-pin/robots", item)            
+            elif(self.hasSerial):
+                send_serial_data(self.clientSerial, item)
+
             queue.task_done()
             time.sleep(0.015)
             
@@ -268,6 +270,7 @@ class Emulator:
             St2 = self.Timer.getElapsedTime()
             self.sendTime = (St2-St1)
             self.infoCards.update()
+
     #Método para o emulador exibir as imagens
     def init(self):
         print("[EMULADOR] Configurando variaveis")
@@ -278,16 +281,6 @@ class Emulator:
         #Inicio das configurações necessárias
         self.viewer.config()
         self.debugFieldViewer.config()
-        
-        if (self.hasMqtt == True): 
-            self.clientMQTT = connect_to_broker("broker.hivemq.com", 1883)
-            # se tem modo de comunicação com mqtt
-            if (self.clientMQTT != None): 
-                self.hasConection = True 
-                self.hasMqtt = True
-            else: 
-                self.hasConection = False
-                self.hasMqtt = False
 
         self.infoCards.updateFuncs()
 
@@ -311,8 +304,31 @@ class Emulator:
         #Inicializa o viewer
         if(self.Mode== MODE_USB_CAM): #Modo camera
             print('[EMULADOR] Emulador em modo de processamento de imagem da Camera USB')
-            #Configurando Viewer para modo de exibição de câmera   
-            if (self.hasMqtt == True): self.clientMQTT = connect_to_broker("broker.hivemq.com", 1883)        
+            # Inicialização da comunicação (Serial, MQTT ou nenhuma)
+            if (self.hasMqtt == True): 
+                print("[EMULADOR] Comunicação MQTT inicializada")
+
+                self.clientMQTT = connect_to_broker("broker.hivemq.com", 1883)
+
+                if (self.clientMQTT != None): 
+                    self.hasConection = True 
+                    self.hasMqtt = True
+                else: 
+                    self.hasConection = False
+                    self.hasMqtt = False
+
+            elif (self.hasSerial == True):
+                print("[EMULADOR] Comunicação Serial inicializada")
+                print(self.serialPort)
+                self.clientSerial = connect_to_serial(self.serialPort)
+
+                if (self.clientSerial != None): 
+                    self.hasConection = True 
+                    self.hasSerial = True
+                else: 
+                    self.hasConection = False
+                    self.hasSerial = False
+
             #Entrada do vídeo
             self.btn_run.pack_forget() # torna o botão "run" invisível
             self.btn_stop.pack(fill=BOTH, expand=1) # torna o botão "stop" visível
@@ -326,8 +342,8 @@ class Emulator:
             # Chamando thread para processamento de vídeo
 
             #Trabalhando com filas e threads
-            if (self.hasMqtt == True):
-                communication_thread = threading.Thread(target=self.send_mqtt_data, args=(self.commands_queue,), daemon=True)
+            if (self.hasConection == True):
+                communication_thread = threading.Thread(target=self.send_data, args=(self.commands_queue,), daemon=True)
                 communication_thread.start()
  
         elif(self.Mode ==  MODE_IMAGE): #Modo Imagem
@@ -363,12 +379,18 @@ class Emulator:
         print('[EMULADOR] Emulador teve sua execução parada.')
         if(self.capture): self.capture.release() #Libera a câmera
 
-        if (self.clientMQTT):
+        if (self.clientMQTT != None):
             self.clientMQTT.loop_stop()
             self.clientMQTT.disconnect()
             self.hasConection = False
             self.hasMqtt = False
         
+        if(self.clientSerial != None):
+            print(self.clientSerial)
+            close_serial(self.clientSerial)
+            self.hasConection = False
+            self.hasSerial = False
+
         #Atualiza cards
         self.infoCards.updateFuncs()
         #Inicializa o viewer
