@@ -536,10 +536,10 @@ def detect_players(img, ballImg, binaryBall, binaryField, alliesColor, enemiesCo
     # cv2.circle(imgDegub, (d, d), (5), (0, 0, 255), 2)
     # cv2.circle(imgDegub, (d, d), (5), (0, 0, 255), 2)
 
-    initial = [30*prop_px_cm, 30*prop_px_cm]
-    final = [30*prop_px_cm, 37.5*prop_px_cm]
+    # initial = [30*prop_px_cm, 30*prop_px_cm]
+    # final = [30*prop_px_cm, 37.5*prop_px_cm]
 
-    cv2.line(imgDegub, (int(initial[0]), int(initial[1])), (int(final[0]), int(final[1])), (255, 0, 0), 2)
+    # cv2.line(imgDegub, (int(initial[0]), int(initial[1])), (int(final[0]), int(final[1])), (255, 0, 0), 2)
     #==========================================================================================
     #Cria variáveis e vetores de contagem dos jogadores 
     #Janela dos jogadores
@@ -633,7 +633,9 @@ def detect_players(img, ballImg, binaryBall, binaryField, alliesColor, enemiesCo
 
         #Objetos com raios maiores que certo valor serão considerados como jogadores
         if(ri > 0.5*playerRadius and ri < 1.5*playerRadius and playersCount < 6): #4*prop_px_cm
-            cv2.circle(imgDegub, (int(xi), int(yi)), (int(ri) + 5), (0, 255, 0), 2)
+
+            if(debug):
+                cv2.circle(imgDegub, (int(xi), int(yi)), (int(ri) + 5), (0, 255, 0), 2)
 
             #Traçando janelas (winSize x winSize)
             # winSize = int(200) #18*prop_px_cm
