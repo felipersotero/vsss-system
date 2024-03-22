@@ -1,5 +1,7 @@
 import paho.mqtt.client as mqtt
+import serial
 
+########## Comunicação MQTT ##########
 def on_connect(client, userdata, flags, rc):
     if rc == 0:
         print("Conectado ao Broker MQTT")
@@ -25,20 +27,21 @@ def connect_to_broker(broker_address, port):
 
     return client  # Retorna o cliente para futuras interações
 
-def publish_data(client, topic, message):
+def publish_mqtt_data(client, topic, message):
     # Publica uma mensagem no tópico especificado
     result = client.publish(topic, message)
     return result
 
-# Configurações do broker MQTT
-# broker_address = "mqtt.eclipse.org"
-# port = 1883
+########## Comunicação Serial ##########
 
-# # Conecta ao broker
-# mqtt_client = connect_to_broker(broker_address, port)
+def connect_to_serial(serial_port):
+    ser = serial.Serial(serial_port, 115200)
+    return ser
 
-# # Publica uma mensagem no tópico "topic/test"
-# publish_data(mqtt_client, "topic/test", "Hello MQTT")
+def send_serial_data(ser, message):
+    data_bytes = message.encode('utf-8')
+    print(f"data_bytes: {data_bytes}")
+    ser.write(data_bytes)
 
-# # Aguarda a conclusão da publicação e da desconexão
-# mqtt_client.loop_forever()
+def close_serial(ser):
+    ser.close()

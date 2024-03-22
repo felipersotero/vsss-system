@@ -9,6 +9,7 @@ import base64
 import unidecode
 import threading
 import numpy as np
+import math
 import serial
 import ctypes 
 import subprocess

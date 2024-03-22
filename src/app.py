@@ -83,13 +83,16 @@ class App:
         self.root.resizable(False, False)
 
         #colocando ícone
-        if(self.system == 'Windows'):
-            self.root.iconbitmap('src/data/icon.ico')
-        elif(self.system =='Linux'):
-            self.root.iconbitmap('src/data/icon.ico')
-        else:
-            self.root.iconbitmap('src/data/icon.ico')
-        
+        try:
+            if(self.app.system == 'Windows'):
+                self.root.iconbitmap('src/data/icon.ico')
+            elif(self.app.system =='Linux'):
+                self.root.iconbitmap('src/data/icon.ico')
+            else:
+                self.root.iconbitmap('src/data/icon.ico')
+        except:
+            print("[APP]: Problemas em acessar o ícone")
+            
         #posicionando a janela no centro
         self.center_window()
     
@@ -272,6 +275,7 @@ class App:
 
             # Se for encontrada uma correspondência, extrair as dimensões
             if match:
+              
                 self.screen_width, self.screen_height = map(int, match.groups())
                 print("Largura:", self.screen_width)
                 print("Altura:", self.screen_height)
