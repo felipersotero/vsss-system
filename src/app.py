@@ -6,7 +6,7 @@ from cards import *
 from control import *
 from communication import *
 from objects import *
-
+from windowControl import *
 
 execution = False
 
@@ -15,6 +15,7 @@ class App:
         root = Tk()
         self.root = root
         self.menu = None
+        self.menuTop= None
         
         #verifica qual o sistema operacional
         self.system = platform.system()
@@ -65,8 +66,13 @@ class App:
         #já inicia carregando as informações antigas do emulador
         self.emulator.load_vars()
 
+        #configurando um menu na interface
+        self.configure_menu()
+
         #inicia looping principal
         root.mainloop()
+    
+    #configarando menu
 
     #configurando a janela do projeto
     def configure_window(self):
@@ -110,10 +116,10 @@ class App:
 
         
     def create_settings_frame(self):
-        self.set_settings_frame=Frame(self.settings_frame, bg="red")
+        self.set_settings_frame=Frame(self.settings_frame, bg="white")
         self.set_settings_frame.place(relx=0,rely=0, relwidth=1,relheight=0.90)
 
-        self.emulate_frame=Frame(self.settings_frame, bg="yellow")
+        self.emulate_frame=Frame(self.settings_frame, bg="white")
         self.emulate_frame.place(relx=0,rely=0.90, relwidth=1,relheight=0.10)
 
     def widgets_settings_frame(self):
@@ -269,11 +275,13 @@ class App:
 
             # Se for encontrada uma correspondência, extrair as dimensões
             if match:
-                screen_width, screen_height = map(int, match.groups())
-                print("Largura:", screen_width)
-                print("Altura:", screen_height)
+              
+                self.screen_width, self.screen_height = map(int, match.groups())
+                print("Largura:", self.screen_width)
+                print("Altura:", self.screen_height)
         else:
              print("Não foi possível encontrar as dimensões da tela.")
+
 
     #centralizando a janela na tela
     def center_window(self):
@@ -301,6 +309,59 @@ class App:
 
         # Defina a geometria da janela
         self.root.geometry(f"{self.width}x{self.height}+{x}+{y}")
+    
+    #configurando a mensagem de erro
+    def show_error_message(self, message):
+        messagebox.showerror("Erro", message)
+    
+    #configurando o menu
+    def configure_menu(self):
+        #criando o menu
+        self.menuTop = Menu(self.root)
+        self.root.config(menu=self.menuTop)
+
+        #criando menu de informações
+        self.infoMenu = Menu(self.menuTop, tearoff=0)
+        self.menuTop.add_cascade(label='Informações',menu=self.infoMenu)
+        self.infoMenu.add_command(label="Abrir informações", command=None)
+        self.infoMenu.add_separator()
+
+        #criando menus arquivo
+        self.arqMenu = Menu(self.menuTop, tearoff=0)
+        self.menuTop.add_cascade(label='Arquivos',menu=self.arqMenu)
+        self.arqMenu.add_command(label="Abrir arquivo de backup", command=None)
+        self.arqMenu.add_command(label="Salvar backup", command=None)
+        self.arqMenu.add_command(label="Retornar às configurações de fábrica", command=None)
+        self.arqMenu.add_separator()
+
+        #criando menu de jogadores
+        self.players= Menu(self.menuTop, tearoff=0)
+        self.menuTop.add_cascade(label='Jogadores',menu=self.players)
+        self.players.add_command(label="Abrir controle de jogadores",command = self.open_player_control)
+        self.players.add_separator()
+
+        #criando menu de ajuda
+        self.helpMenu = Menu(self.menuTop, tearoff=0)
+        self.menuTop.add_cascade(label='Ajuda',menu=self.helpMenu)
+        self.helpMenu.add_command(label='Sequência de uso', command=None)
+        self.helpMenu.add_separator()
+
+    #funções do menu para utilizar
+    
+
+    #função de controle do jogador
+    def open_player_control(self):
+        #apenas abre se o jogador tiver escolhido modo câmera
+        self.emulator.load_vars()
+
+        #verifica então o modo
+        if(self.emulator.Mode == MODE_USB_CAM ):
+            print("Entrou com modo câmera e o emulador existe")
+            self.popUp = ControlWindow(self.root, self, self.emulator)
+        else:
+            #abre uma janela de popup falando que precisa estar configurada a camera
+            self.show_error_message("Necessário estar no modo câmera")
+            
 
 if __name__ == "__main__":
     app = App()

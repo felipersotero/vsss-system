@@ -6,6 +6,9 @@
 '''
 import numpy as np
 import time
+from modules import *
+from viewer import MyViewer
+
 # =============== CONTROLE DE IDENTIFICADORES ===============================
 #identificadores padrões dos robôs
 class ID_Robots:
@@ -106,7 +109,15 @@ MODE_DEFAULT:int = 0
 MODE_USB_CAM: int= 1
 MODE_VIDEO_CAM:int = 3
 MODE_IMAGE:int = 2
+MODE_CONTROL_ROBOT: int = 4
 
+
+#Modos de execução da janela de controle
+class ModeControlW:
+    MANUAL: int = 1
+    POINTER: int = 2
+    DEFAULT: int = 0
+    
 # ================== CONTROLE DE ESTRUTURA DE DADOS ========================
 #Configurações da Emulação que serão inviadas para o sistema de visão realizar os cálculos
 class EConfig:
@@ -301,8 +312,6 @@ class HighPrecisionTimer:
     def isRunning(self):
         return self._isRunning
 
-
-        
 #========================= /// CLASSE BÁSICA DE EXECUÇÃO // =====================
 '''
  @GNOMIO: Essa estrutura deveria representar de forma simples a forma de captura de imagens, sendo elas tanto por câmera, ou por arquivos. E funcionará de forma a simplificar a parte semâtica do código, contudo, ainda está em fase de estruturar
