@@ -67,8 +67,8 @@ class ControlWindow:
                 self.root.iconbitmap('src/data/icon.ico')
             else:
                 self.root.iconbitmap('src/data/icon.ico')
-        except:
-            print("[APP]: Problemas em acessar o ícone")
+        except ValueError as e:
+            print("[APP]: Problemas em acessar o ícone", e)
                 # Calcula as dimensões da janela
         
         #título da janela
