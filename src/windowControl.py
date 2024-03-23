@@ -24,8 +24,8 @@ class ControlWindow:
         self.viewer = None                  # viewer para o carro
         
         #tamanho da tela
-        self.width  = 900
-        self.height = 730
+        #self.width  = 900
+        #self.height = 735
 
         #frames
         self.frameViewer = None             #Frame de visualizar
@@ -46,6 +46,7 @@ class ControlWindow:
         #configurando a janela
         self.config()                                       # Configurando frames
         self.initLabels()                                   # Configurando labels
+        
         self.show_serial_combobox(None)                     # simulando evento
         self.control_mode_changed(None)                     
 
@@ -71,8 +72,7 @@ class ControlWindow:
         #título da janela
         self.root.title("PINBOT - VSSS - Controle de Jogador")
         self.root.configure(background="#dfe3ee")
-        self.root.geometry(f'{self.width}x{self.height}')
-        self.root.resizable(False,False)
+        self.root.geometry()
 
         #configurando frames labels necessários
         #frame de viewer do jogador
@@ -81,29 +81,15 @@ class ControlWindow:
                 hwnd = ctypes.windll.user32.FindWindowW(u"Shell_traywnd", None)
                 rect = ctypes.wintypes.RECT()
                 ctypes.windll.user32.GetWindowRect(hwnd, ctypes.byref(rect))
-                taskbar_height = rect.bottom - rect.top
+                self.taskbar_height = rect.bottom - rect.top
             else:
-                taskbar_height = 0 
+                self.taskbar_height = 0 
         except:
-            taskbar_height = 0
-
-        self.get_screen_resolution()
-
-        self.screen_width = self.root.winfo_screenwidth()
-        self.screen_height = self.root.winfo_screenheight()
-
-        x = (self.screen_width // 2) - (self.width // 2)
-        y = (self.screen_height // 2) - (self.height // 2) - (taskbar_height//2)
-
-        # Impede que a janela seja redimensionada
-        self.root.resizable(False, False)
-
-        # Defina a geometria da janela
-        self.root.geometry(f"{self.width}x{self.height}+{x}+{y}")
+            self.taskbar_height = 0
 
         #frame
         # Espaçamento entre os frames
-        spacer1 = Frame(self.root, width=800, height=10, bg='#dfe3ee')
+        spacer1 = Frame(self.root, height=10, bg='#dfe3ee')
         spacer1.pack_propagate(False)  # Evita que o frame ajuste seu tamanho automaticamente
         spacer1.pack()
 
@@ -118,34 +104,27 @@ class ControlWindow:
         self.frameViewer.grid_columnconfigure(0, weight=1)
 
         # Espaçamento entre os frames
-        spacer = Frame(self.root, width=800, height=10, bg="#dfe3ee")
+        spacer = Frame(self.root, height=10, bg="#dfe3ee")
         spacer.pack()
 
-        resto = (self.height-420)
 
         # Criando o segundo frame abaixo
-        self.frameControl = Frame(self.root, width=800, height=resto, bg="white")
+        self.frameControl = Frame(self.root, bg="white")
         self.frameControl.pack_propagate(False)  # Evita que o frame ajuste seu tamanho automaticamente
         self.frameControl.pack()
 
         #frame filho do frameControl na esquerda
-        self.choseFrame = Frame(self.frameControl, height=resto, bg = "white")
-        self.choseFrame.pack_propagate(False)
+        self.choseFrame = Frame(self.frameControl, bg = "white")
         self.choseFrame.grid(row=0,column=0)
 
-        #frame de controles (controle automático)
-        self.cButtonsFrame = Frame(self.frameControl, width = 200, height=resto, bg="white")
-        self.cButtonsFrame.pack_propagate(False)
-        self.cButtonsFrame.grid(row=0, column=1)
-    
+        #frame de controles (controle manual)
+        self.cButtonsFrame = Frame(self.frameControl, bg="white")
+        
         #frame de ajuste de constantes (controle automático)
-        self.cConstFrame = Frame(self.frameControl, width = 200, height=resto, bg="white")
-        self.cConstFrame.pack_propagate(False)
-        self.cConstFrame.grid(row=0, column=2)
-
+        self.cConstFrame = Frame(self.frameControl, bg="white")
+        
         #frame de análise
-        self.analiseFrame = Frame(self.frameControl, width=320, height=resto, bg="white")
-        self.analiseFrame.pack_propagate(False)
+        self.analiseFrame = Frame(self.frameControl, bg="white")
         self.analiseFrame.grid(row=0, column=3)
 
     #Método para inicializar os labels
@@ -156,7 +135,6 @@ class ControlWindow:
         self.cBoxPlayer= ttk.Combobox(self.choseFrame, values=["Player 1", "Player 2", "Player 3"], state='readonly')
         self.cBoxPlayer.grid(row=0,column=1,padx=10, pady=2, sticky="w")
         
-
         #Label para escolher comunicação com o jogador
         self.labelCom = Label(self.choseFrame, text="Modo de comunicação: ", fg = "black", bg ="white")
 
@@ -274,15 +252,33 @@ class ControlWindow:
         #publicando
         self.frameCConst.pack(anchor=CENTER)
 
-
         #botão de publicar configuração de constante
         self.btnCFrame = Frame(self.cConstFrame)
         self.btnCSend = Button(self.btnCFrame, text="Configurar constantes", command=self.send_consts)
         self.btnCSend.pack()
         self.btnCFrame.pack(padx=10,pady=10)
 
+        #publicando os frames
+        self.cButtonsFrame.grid(padx=10, pady=10,row=0, column=1)
+        self.cConstFrame.grid(padx=10, pady=10,row=0, column=2)
 
+        #Centralizando janela
+        self.get_screen_resolution()
 
+        self.screen_width = self.root.winfo_screenwidth()
+        self.screen_height = self.root.winfo_screenheight()
+
+        self.width = self.root.winfo_width()
+        self.height = self.root.winfo_height()
+        
+        x = (self.screen_width // 2) - (self.width // 2)
+        y = (self.screen_height // 2) - (self.height // 2) - (self.taskbar_height//2)
+
+        # Impede que a janela seja redimensionada
+        self.root.resizable(False, False)
+
+        # Defina a geometria da janela
+        self.root.geometry(f"{self.width}x{self.height}+{x}+{y}")
 
     #método para puxar os dados do usuário já presentes e colocar-los na janela
     def loadMemory(self):
