@@ -212,8 +212,7 @@ class Emulator:
 
         #Atualizo o card
         self.infoCards.updateFuncs()
-
-            
+   
     def format_var(self, var):
         var = unidecode.unidecode(var)
         var = var.lower()
@@ -459,8 +458,6 @@ class Emulator:
         #atualizo informações na interface
         self.infoCards.update()
         
-
- 
     #Funções que executam os processos (execução por USB, por imagem ou )
     def processUSB(self):
         
@@ -600,13 +597,13 @@ class Emulator:
             if self.allies[i] is not None:
                 self.cards[i].set_content(self.allies[i].id, self.allies[i].detected, self.allies[i].position, self.allies[i].radius, self.allies[i].image)
             else:
-                self.cards[i].set_content("#0", "False", ["0.0000", "0.0000"], "0.0000", None)
+                self.cards[i].set_content("#0", False, ["0.0000", "0.0000"], "0.0000", None)
                 
         for i in range(3):
             if self.enemies[i] is not None:
                 self.cards[i+3].set_content(self.enemies[i].id, self.enemies[i].detected, self.enemies[i].position, self.enemies[i].radius, self.enemies[i].image)
             else:
-                self.cards[i].set_content("#0", "False", ["0.0000", "0.0000"], "0.0000", None)
+                self.cards[i+3].set_content("#0", False, ["0.0000", "0.0000"], "0.0000", None)
 
     # Verifica se tem um serviço cuda no computador
     def hasCudaDevice(self):
