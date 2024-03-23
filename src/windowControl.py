@@ -52,6 +52,8 @@ class ControlWindow:
 
         self.loadMemory()                                   # Carregando  configurações da memória
 
+        #self.centerWindow()                                 # tentanto centralizar a janela
+
         #atualizando os cards
         self.cardsInfos.setMaster(self.emulador)
 
@@ -262,6 +264,10 @@ class ControlWindow:
         self.cButtonsFrame.grid(padx=10, pady=10,row=0, column=1)
         self.cConstFrame.grid(padx=10, pady=10,row=0, column=2)
 
+    
+    #método para centralizar  a janela
+    def centerWindow(self):
+        
         #Centralizando janela
         self.get_screen_resolution()
 
@@ -274,12 +280,11 @@ class ControlWindow:
         x = (self.screen_width // 2) - (self.width // 2)
         y = (self.screen_height // 2) - (self.height // 2) - (self.taskbar_height//2)
 
-        # Impede que a janela seja redimensionada
-        self.root.resizable(False, False)
-
         # Defina a geometria da janela
         self.root.geometry(f"{self.width}x{self.height}+{x}+{y}")
-
+            
+        # Impede que a janela seja redimensionada
+        self.root.resizable(False, False)
     #método para puxar os dados do usuário já presentes e colocar-los na janela
     def loadMemory(self):
         #puxa dados do emulador
