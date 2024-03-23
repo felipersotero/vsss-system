@@ -84,14 +84,15 @@ class App:
 
         #colocando ícone
         try:
-            if(self.app.system == 'Windows'):
+            if(self.system == 'Windows'):
                 self.root.iconbitmap('src/data/icon.ico')
-            elif(self.app.system =='Linux'):
+            elif(self.system =='Linux'):
                 self.root.iconbitmap('src/data/icon.ico')
             else:
                 self.root.iconbitmap('src/data/icon.ico')
         except:
             print("[APP]: Problemas em acessar o ícone")
+                # Calcula as dimensões da janela
             
         #posicionando a janela no centro
         self.center_window()
