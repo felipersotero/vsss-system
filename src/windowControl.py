@@ -272,7 +272,7 @@ class ControlWindow:
         self.height = self.root.winfo_height()
         
         x = (self.screen_width // 2) - (self.width // 2)
-        y = (self.screen_height // 2) - (self.height // 2) - (taskbar_height//2)
+        y = (self.screen_height // 2) - (self.height // 2) - (self.taskbar_height//2)
 
         # Impede que a janela seja redimensionada
         self.root.resizable(False, False)
