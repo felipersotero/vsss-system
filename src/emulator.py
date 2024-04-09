@@ -445,7 +445,7 @@ class Emulator:
         imgDebug, binaryPlayers, binaryTeam, amountOfPlayers, amountOfAlslies, amountOfEnemies, playersWindows, alliesWindows, enemiesWindows, allies_list, enemies_list, robots = detect_players(frame_reduce, ballImg, binaryBall, binary_treat, teamMainColor, enemiesMainColor, playersAllColors, prop_px_cm, ball_object, allies, enemies, OffSetBord, rect_vertices, debug)
 
 
-        sending_data = (ball_object, allies_list, enemies_list, frame, binary_treat, binaryBall, binaryPlayers, binaryTeam, imgDebug, alliesWindows, enemiesWindows)
+        sending_data = (ball_object, allies_list, enemies_list, frame, binary_treat, binaryBall, binaryPlayers, binaryTeam, imgDebug, alliesWindows, enemiesWindows, prop_px_cm)
         output_queue.queue.clear()
         output_queue.put(sending_data)
         
@@ -484,7 +484,7 @@ class Emulator:
 
             # Salvando dados recebidos
             received_data = self.received_data_queue.get()
-            ball_object, allies_list, enemies_list, frame, binary_treat, binaryBall, binaryPlayers, binaryTeam, imgDebug, alliesWindows, enemiesWindows = received_data
+            ball_object, allies_list, enemies_list, frame, binary_treat, binaryBall, binaryPlayers, binaryTeam, imgDebug, alliesWindows, enemiesWindows, prop_px_cm = received_data
 
             self.ball = ball_object
             self.allies = allies_list
@@ -543,17 +543,20 @@ class Emulator:
 
         # Salvando dados recebidos
         received_data = self.received_data_queue.get()
-        ball_object, allies_list, enemies_list, frame, binary_treat, binaryBall, binaryPlayers, binaryTeam, imgDebug, alliesWindows, enemiesWindows = received_data
+        ball_object, allies_list, enemies_list, frame, binary_treat, binaryBall, binaryPlayers, binaryTeam, imgDebug, alliesWindows, enemiesWindows, prop_px_cm = received_data
 
         self.ball = ball_object
         self.allies = allies_list
         self.enemies = enemies_list
 
         # Enviando dados para o processamento
-        # self.commands = recieve_data(self, self.ball, self.allies, self. enemies, self.clientMQTT)
+
+        self.control.updateObjectsValues(self.field, self.ball, self.allies, self.enemies)
+        # self.commands = self.control.processControl()
         # self.commands_queue.queue.clear()
         # self.commands_queue.put(self.commands)
-
+    
+        imgDebug = self.control.processDiscreteControl(imgDebug, prop_px_cm)
         #Exibindo dados em tela
         self.viewer.show(frame)
         if(self.DEBUGA == True):
@@ -562,6 +565,9 @@ class Emulator:
             self.debugObjectsViewer.show(binaryBall)
             self.debugPlayersViewer.show(binaryPlayers)
             self.debugTeamViewer.show(binaryTeam)
+
+            # imgDebug = self.control.drawPath(imgDebug, prop_px_cm)
+
         self.resultViewer.show(imgDebug)
 
         #Adicionando conteúdos

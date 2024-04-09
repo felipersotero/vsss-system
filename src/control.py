@@ -42,11 +42,14 @@ class Control:
 
         self.possibleRecognition = [False, False, False]
 
+        # self.imgDebug = None
+
     def updateObjectsValues(self, field, ball, allies, enemies):
         self.field = field
         self.ball = ball
         self.allies = allies
         self.enemies = enemies
+        # self.imgDebug = imgDebug
 
     def getCoordinates(self):
 
@@ -116,19 +119,139 @@ class Control:
 
         return formatted_value
 
+    def drawPath(self, imgDebug, prop_px_cm):
+        self.getCoordinates()
+        
+        print(self.allies_coordinates[0])
+        print(self.ball_coordinates)
+
+        source_point = np.round(prop_px_cm*self.allies_coordinates[1]).astype(int)
+        target_point = np.round(prop_px_cm*self.ball_coordinates).astype(int)
+
+        cv2.arrowedLine(imgDebug, source_point, target_point, (255, 0, 0), 2)
+
+        return imgDebug
+    
+    def estimateNextPoint(self, position, direction, v, w, t):
+        x0 = position[0]
+        y0 = position[1]
+        
+        angle = np.arctan2(direction[1], direction[0])
+        print(f"angulo de direção do objeto: {angle}")
+
+        theta = angle + w
+
+        dx = v*np.cos(theta)
+        dy = v*np.sin(theta)
+        
+        x = x0 + dx
+        y = y0 + dy
+
+        new_position = np.array([x, y])
+        direction = np.array([(np.cos(theta)), (np.sin(theta))])
+
+        return new_position, direction
+
+    def drawPoints(self, imgDebug, prop_px_cm, position, direction, number):
+
+        point = np.round(prop_px_cm*position).astype(int)
+
+        angle = np.arctan2(direction[1], direction[0])
+
+        print(f"Direção. dx = {np.cos(angle)}, dy = {np.sin(angle)}")
+        print(f"Vetor  . dx = {direction[0]}, dy = {direction[1]}")
+
+        point_direction = np.round(prop_px_cm*(position+2*direction)).astype(int)
+
+        print(f"Ponto inicial: {point}")
+        print(f"Ponto final  : {point_direction}")
+
+        cv2.circle(imgDebug, point, 1, (3, 186, 252), 2)
+        cv2.putText(imgDebug, str(number), (point + np.array([10, 10])), cv2.FONT_HERSHEY_SIMPLEX, 0.4, (180, 186, 45), 1)
+        cv2.arrowedLine(imgDebug, point, point_direction, (3, 186, 252), 1)
+
+        return imgDebug
+    
+    def processDiscreteControl(self, imgDebug, prop_px_cm):
+        self.getCoordinates()
+        t = 20
+
+        if self.possibleRecognition[0] and self.ball_coordinates is not None:
+            
+            target_position = self.ball_coordinates
+
+            for it in range(t):
+                print(it)
+                if it == 0:
+                    source_position = self.allies_coordinates[0]
+                    source_direction = self.allies_direction[0]
+
+                    print(f"Posição {it}: {source_position}")
+                    print(f"Direção {it}: {source_direction}")
+                    angle = np.arctan2(source_direction[1], source_direction[0])
+                    print(f"Ângulo de direção inicial: {angle}")
+
+                    angle = self.angleBetweenObjects(target_position, source_position, source_direction)
+                    distance = self.distanceBetweenObjects(target_position, source_position)
+                else:
+                    print(f"Posição {it}: {source_position}")
+                    print(f"Direção {it}: {source_direction}")
+                
+                    angle = self.angleBetweenObjects(target_position, source_position, source_direction)
+                    distance = self.distanceBetweenObjects(target_position, source_position)
+
+
+                print(f"Ângulo: {angle} rad")
+                print(f"Distância: {distance} cm")
+
+                v, w = self.controlRobotDiscrete(distance, angle, angle)
+
+                print(f"v = {v} m/s || w = {w} rad/s")
+                source_position, source_direction = self.estimateNextPoint(source_position, source_direction, v*0.01, w, it)
+
+                img = self.drawPoints(imgDebug, prop_px_cm, source_position, source_direction, it)
+
+        return img
+
+    def controlRobotDiscrete(self, rho, alpha, beta):
+        absAlpha = abs(alpha)
+
+        Kr = 20
+        Ka = 0.5
+        Kb = 0
+
+        # if absAlpha > math.pi /2 :
+        #     Kr = 0
+        #     # Ka = 170
+        #     Ka = 130
+        #     Kb = 0
+        # elif absAlpha> math.pi /4:
+        #     Kr = 0
+        #     # Ka = 130
+        #     Ka = 80
+        #     Kb = 0
+        # elif absAlpha> math.pi /6:
+        #     # Kr = 10
+        #     Kr = 1
+        #     # Ka = 100
+        #     Ka = 30
+        #     Kb = 0
+
+        # else :
+        #     Kr = 30
+        #     Ka = 0
+        #     Kb = 0
+
+        v = Kr * rho
+        w = Ka * alpha + Kb * beta
+
+        return v, w
+
     ################################################################
     # Função principal que recebe os dados das coordenadas dos objetos
     def processControl(self):
 
         self.getCoordinates()
-
-        kr = '+0.00'
-        ka = '+0.00'
-        kb = '+0.00'
-        constants = kr + ka + kb
-
-        # command = 'c+045.25025.13' #'c+aaa.aaddd.dd'
-        # command = 's+000.00000.00+0.00+0.00+0.00'
 
         command = 's+000+000'
 
@@ -153,15 +276,6 @@ class Control:
             command = command_mode + wr_string + wl_string
 
             print(f"Comando: {command}")
-            # angle_string = self.formatAngle(angle)
-            # distance_string = self.formatDistance(distance)
-
-            # command_mode = 'c'
-
-            # if(((abs(angle) < 0.5) and distance < 8) or not(self.allies[0].detected)):
-            #     command_mode = 's'
-
-            # command = command_mode + angle_string + distance_string + constants
         
         return command
 
