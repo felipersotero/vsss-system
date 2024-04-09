@@ -265,6 +265,7 @@ class ViewCapture:
     def getExtremes(self):
         return self.Extremes
 
+#===============================================================================================
 #Classe principal do sistema de visão que irá executar as funções
 class VisionSystem:
     #Inicializando objeto do sistema de detecção
@@ -274,22 +275,23 @@ class VisionSystem:
 
         #Carregando as configurações do sistema de visão
         self.config = config
+        
+        #objeto de captura internas
+        self._capture = capture
 
         #Pegando a imagem de origem
-        self.imgOrigim = capture.getImage()
-
-        #váriaveis que serão utilizadas pelo compilador
-
+        self.imgOrigim = self._capture.getImage()
 
         #verifica se existe suporte ao CUDA
-        self.hasCuda = UseCuda 
-        self.GPUType = GPUType
+        self._hasCuda = UseCuda 
+        self._GPUType = GPUType
 
-    #Métodos (método run e o método stop)
-    def init(self):
+
+    #Processamento geral da imagem que irá pegar os valores necessários
+    def process(self):
         a = 1
 
-#Criando os objetos
+    #Criando os objetos
     def createObjs(self):
         #Construção dos objetos necessários para realizar a análise
         #Objeto da bola
@@ -315,19 +317,47 @@ class VisionSystem:
 
         #gerando objeto para representar o campo
         self.field = Field()
+
+        #gerando a viewCapture
+        self.viewCapture = ViewCapture()
+
     #Método para retornar o processamento
     def getResult(self):
-        b = 1
-
-    #Verifica se o computador tem GPU compatível
-    def hasGPUDevice(self):
         return True
-    
-    #verifica se o computador tem suporte CUDA
-    def hasCUDADevice(self):
-        return False
     
     #método para retornar o processamento
     def getViewCapture(self):
-        return 0
+        return self.viewCapture
     
+    #===============| Definindo funções básicas|==============================
+    # métodos sem suporte ao CUDA
+
+
+
+
+    # métodos com suporte ao CUDA
+
+
+
+    #=============| Definindo funções módulares | ===========================
+    #métodos sem suporte ao CUDA
+
+
+
+    #métodos com suporte ao CUDA
+
+    #===========| Definindo funções principais | ============================
+    #Métodos sem suporte ao cuda
+
+
+
+
+    #métodos com suporte ao cuda
+
+
+
+
+# Testar função principal e nova lógica
+if __name__ =='__main__':
+    #executará o código de teste deste módulo com uma imagem padrão
+    print("Executado como principal")

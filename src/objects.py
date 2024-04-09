@@ -8,6 +8,9 @@ import numpy as np
 import time
 from modules import *
 from viewer import MyViewer
+import threading
+import queue
+import tkinter 
 
 # =============== CONTROLE DE IDENTIFICADORES ===============================
 #identificadores padrões dos robôs
@@ -316,56 +319,144 @@ class HighPrecisionTimer:
 '''
  @GNOMIO: Essa estrutura deveria representar de forma simples a forma de captura de imagens, sendo elas tanto por câmera, ou por arquivos. E funcionará de forma a simplificar a parte semâtica do código, contudo, ainda está em fase de estruturar
 '''
-#Representa o hardware ou software de captura de imagens
-#PertenceAoEmulador
-class Capture:
-    def __init__(self, mode):
-        self.mode = mode
-        self.image = None           # representa a imagem que foi capturada
-        self.isCamRunning = False   # Para o caso de uma câmera de verdade
-        self.FPS = 15               # Taxa de quadro
+# Representa o hardware ou software de captura de imagens
+class CaptureMode:
+    DEFAULT: int = 0
+    CAM: int = 1
+    IMG: int = 2
+    VIDEO: int = 3
 
-        #Endereços para imagem e vídeo
+# PertenceAoEmulador
+class Capture:
+    def __init__(self, mode: CaptureMode.DEFAULT):
+        self.mode = mode
+        self.image = None           # Representa a imagem que foi capturada
+        self.isCamRunning = False   # Para o caso de uma câmera de verdade
+        self.frameDelay = 14        # Taxa de quadro (delai)
+
+        # Endereços para imagem e vídeo
         self.imgPath = None
         self.videoPath = None
 
-        #Imagem que será utilizada
-        self.img = None
+        self.idCam = None
+        # Usa a câmera
+        self.CAM = None             # Armazena o objeto de captura do OpenCV
 
-    #Mudar o modo de execução
-    def SetMode(self,mode):
+
+    # Mudar o modo de execução
+    def setMode(self, mode):
         self.mode = mode
 
-    #Informar o identificador da câmera
+    # Informar o identificador da câmera
     def setIdCam(self, id):
         self.idCam = id
 
-    #Informar o endereço das imagens e dos vídeos
+        if(self.mode == CaptureMode.CAM):
+            self.CAM = cv2.VideoCapture(self.idCam)
+
+    # Informar o endereço das imagens e dos vídeos
     def setImagePath(self, pathImg):
         self.imgPath = pathImg
 
-    #Informar o endereço dos vídeos
+    # Informar o endereço dos vídeos
     def setVideoPath(self, pathVideo):
         self.videoPath = pathVideo
 
-    #Retorna a imagem da captura
+    '''
+    @GNOMIO: essa função "getImage" deve ser utilizada dentro dum loop quand oem vídeo
+    '''
+    # Retorna a imagem da captura
     def getImage(self):
-        return self.img
+        if self.mode == CaptureMode.IMG:
+            self.image = cv2.imread(self.imgPath)
+            return self.image
+        elif self.mode == CaptureMode.CAM:
+            ret, self.image = self.CAM.read()
+            
+            if ret:
+                return self.image
+            else:
+                return self.image
+        else:
+            print("[CAPTURA]: Não está configurado no modo imagem")
+            return None
     
-    #Resetar captura
+    # Resetar objeto de captura captura
     def reset(self):
-        self.mode = MODE_DEFAULT    #Modo que representa a imagem
-        self.image = None           # representa a imagem que foi capturada
+        self.mode = MODE_DEFAULT    # Modo que representa a imagem
+        self.image = None           # Representa a imagem que foi capturada
         self.isCamRunning = False   # Para o caso de uma câmera de verdade
         self.FPS = None             # Taxa de quadro
 
-        #Endereços para imagem e vídeo
+        # Endereços para imagem e vídeo
         self.imgPath = None
         self.videoPath = None
 
-        #Imagem que será utilizada
+        # Imagem que será utilizada
         self.img = None
     
-    #Destruindo o objeto de captura
-    def delete(self):
+    # Destruindo o objeto de captura
+    def destroy(self):
         del self
+
+
+
+
+#====================================================================================
+#classe padrão para um thread
+# Gerando uma classe de thread exclusiva para capturas de vídeo interna
+class Thread(threading.Thread):
+    def __init__(self, mainCap=None, queueIn=None, queueOut=None, callBack=None):
+        super().__init__()
+        self._main = mainCap                # Endereço do classe dona
+        self._isRunning = True             # Variável de controle
+        self._queueIn= queueIn              # fila de receber dados
+        self._queueOut = queueOut           # fila para enviar dados
+        self._callBack = callBack           # função que está sendo chamada
+
+    def run(self):
+        while self._isRunning:
+            try:
+                self._callBack()
+                time.sleep(0.006)
+            except Exception as e:
+                print(f"Erro na execução da thread: {e}")
+
+    def stop(self):
+        self._isRunning = False
+
+
+#==================================== CLASSES PARA INTERFACE =========================
+#definindo função para indicar estado do controlador
+class StateSquare(Frame):
+    def __init__(self, master=None, variable=None, btn= None):
+        super().__init__(master, bg="white")
+        self.square_size = 10
+        self.status = variable
+        self.square = Canvas(self, width=self.square_size, height=self.square_size, bd=1, relief="solid", bg="red")
+        self.square.grid(row=0, column=0, padx=5, pady=5)
+        self.text_var = StringVar()
+        self.text_var.set("Parado")
+        self.text_label = Label(self, textvariable=self.text_var, bg="white")
+        self.text_label.grid(row=0, column=1, padx=5, pady=5)
+        self.button = btn
+
+    #modificar estado
+    def toggle_status(self):
+        if self.status == True:
+            self.set_status(False)
+        else:
+            self.set_status(True)
+
+
+    #definir estado
+    def set_status(self, status):
+        self.status = status
+        if self.status == True:
+            self.square.config(bg="green")
+            self.text_var.set("Em execução")
+            self.button.config(text="Parar o processamento")
+        elif self.status  == False:
+            self.square.config(bg="red")
+            self.text_var.set("Parado")
+            self.button.config(text="Iniciar processamento")

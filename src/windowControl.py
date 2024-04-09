@@ -23,9 +23,8 @@ class ControlWindow:
         self.emulador = Emulador            # emulador mestre
         self.viewer = None                  # viewer para o carro
         
-        #tamanho da tela
-        #self.width  = 900
-        #self.height = 735
+        #modo
+        self.mode = 'Manual'                # Modo padrão
 
         #frames
         self.frameViewer = None             #Frame de visualizar
@@ -41,7 +40,16 @@ class ControlWindow:
         self.SerialPorts = None                             # Portas seriais descobretas
         self.SerialPort = None                              # Porta serial escolhida
         self.comMode = None                                 # Modo de comunicação
-        self.controlMode =  tk.StringVar(value="manual")          # Modo de configuração
+        self.controlMode =  tk.StringVar(value="manual")    # Modo de configuração
+
+        #variável de controle
+        self._isRun = False                                 # Simulação iniciou
+        self.command = None                                 # comando atual que será enviado
+
+        #thread para processamento
+        self.queueIn = queue.Queue()                        # fila para enviar dados para a thread
+        self.queueOut = queue.Queue()                       # fila para receber dados da thread
+        self.processThread = Thread(self,self.queueIn,self.queueOut,self.callBack)
 
         #configurando a janela
         self.config()                                       # Configurando frames
@@ -157,6 +165,9 @@ class ControlWindow:
         self.btn_start = Button(self.choseFrame, text="Iniciar processamento", command=self.start_processing)
         self.btn_start.grid(row=7, column=1, padx=(10,5),pady =5)
 
+        self.state = StateSquare(self.choseFrame, self._isRun, self.btn_start)
+        self.state.grid(row=10, column=0, padx=5, pady=5, sticky="w")
+
         #Label para escolher um ponto
         self.lChosePoint = Label(self.choseFrame, text="Escolher um ponto", fg="black", bg="white")
         self.lChosePoint.grid(row=3, column=0, padx=10, pady = 2 , sticky="w")
@@ -203,19 +214,25 @@ class ControlWindow:
         self.cBVelocity = Frame(self.cButtonsFrame, bg="white")
         self.cBVelocity.pack(padx=3, pady=3)
 
-        directions = ["NW", "N", "NE", "W", "Stop", "E", "SW", "S", "SE"]
-        row_indices = [0, 0, 0, 1, 1, 1, 2, 2, 2]
-        col_indices = [0, 1, 2, 0, 1, 2, 0, 1, 2]
+        # Defina as direções
+        self.directions = ["NW", "N", "NE", "W", "Stop", "E", "SW", "S", "SE"]
 
-        #botões
-        self.btns= [None,None,None,None,None,None,None,None,None]
+        # Criar um dicionário vazio para armazenar os botões
+        self.btns_dict = {}
 
-        i = 0
-        for direction, row, col in zip(directions, row_indices, col_indices):
-            self.btns[i] = Button(self.cBVelocity, text=direction, width=5, height=2)  # Definindo o tamanho dos botões
-            self.btns[i].grid(row=row, column=col, padx=2, pady=2)
-            i = i+1
-        
+        # Iterar sobre as direções e criar botões para cada uma delas
+        for i,direction in enumerate(self.directions):
+            #calcula a linha e coluna para esse botão
+            row = i //3  
+            col = i % 3
+            # Crie o botão
+            button = Button(self.cBVelocity, text=direction, width=5, height=2, command=lambda dir=direction: self.choseDirection(dir))
+            button.grid(row=row, column=col, padx=2, pady=2)
+            
+            # Adicione o botão ao dicionário, usando a direção como chave
+            self.btns_dict[direction] = button
+
+
         #Tratando label de informações
         self.cardsInfos = CardInfos(self.analiseFrame,'Informações')
         self.cardsInfos.setMaster(self.emulador)
@@ -264,7 +281,8 @@ class ControlWindow:
         self.cButtonsFrame.grid(padx=10, pady=10,row=0, column=1)
         self.cConstFrame.grid(padx=10, pady=10,row=0, column=2)
 
-    
+        self.root.resizable("false", "false")
+        
     #método para centralizar  a janela
     def centerWindow(self):
         
@@ -285,6 +303,7 @@ class ControlWindow:
             
         # Impede que a janela seja redimensionada
         self.root.resizable(False, False)
+
     #método para puxar os dados do usuário já presentes e colocar-los na janela
     def loadMemory(self):
         #puxa dados do emulador
@@ -305,14 +324,6 @@ class ControlWindow:
         except:
             messagebox.showerror("Erro", "Não foi possível acessar a memória!")
 
-    #método para iniciar processamento e envio
-    def init(self):
-        i=2
-
-    #método para enviar o comando para o carro executar
-    def sendCommand(self):
-        i = 3
-    
     #publicando constantes
     def send_consts(self):
         kp = self.scaleKp.get()
@@ -322,8 +333,8 @@ class ControlWindow:
 
     #angulo para enviar?
     def send_angle(self):
-        angle = self.scaleAngle.get()
-        print("Sending angle:", angle)
+        self.angle = self.scaleAngle.get()
+        print("Sending angle:", self.angle)
     
     #exibir bombox da serial
     def show_serial_combobox(self, event):
@@ -351,12 +362,33 @@ class ControlWindow:
     #começar processamento
     def start_processing(self):
         player = self.cBoxPlayer.get()
-        print(player)
         if(player is None or player ==''):
             messagebox.showwarning("Problema no processamento", "Necessário selecionar o jogador")
         else:
-            print('Iniciando processamento')
+            self.state.toggle_status()
+            self._isRun = self.state.status
+            if(self._isRun):
+                #inicio a thread de processamento
+                pass
+            else:
+                #paro a threa de processamento
+                pass
 
+
+    #função de callback dos botões de direção
+    def choseDirection(self, name):
+        pass
+
+    #função de callback do botão de velocidade
+
+    #função de callback do botão de ângulo
+
+
+    #função para construir um comando e o enviar
+    def makeCommand(self):
+        pass
+
+    
     #método para escolher um ponto na teal
     def choose_point(self):
         print("Escolhendo um ponto na tela")
@@ -394,11 +426,12 @@ class ControlWindow:
 
     # Defina a função de callback
     def control_mode_changed(self, *args):
-        mode = self.controlMode.get()
-        if mode == "manual":
+        self.mode = self.controlMode.get()
+        if self.mode == "manual":
             #Variaveis do modo manual
-            for i in range(0,8):
-                self.btns[i]['state']=NORMAL
+            for direction in self.directions:
+                button = self.btns_dict[direction]
+                button.config(state=NORMAL)
 
             self.btnSend['state'] = NORMAL
             self.scaleSpeed['state'] = NORMAL
@@ -415,10 +448,12 @@ class ControlWindow:
             self.cButtonsFrame.configure(borderwidth=1,relief="sunken")
             self.cConstFrame.configure(borderwidth=0,relief="solid")
 
-        elif mode == "automatic":
+        elif self.mode == "automatic":
             #variáveis do modo manual
-            for i in range(0,8):
-                self.btns[i]['state']=DISABLED
+            for direction in self.directions:
+                button = self.btns_dict[direction]
+                button.config(state=DISABLED)
+
 
             self.btnSend['state'] = DISABLED
             self.scaleSpeed['state'] = DISABLED
@@ -437,8 +472,11 @@ class ControlWindow:
 
         else:
             #variáveis do modo manual
-            for i in range(0,8):
-                self.btns[i]['state']=DISABLED
+            for direction in self.directions:
+                button = self.btns_dict[direction]
+                button.config(state=DISABLED)
+
+
 
             self.btnSend['state'] = DISABLED
             self.scaleSpeed['state'] = DISABLED
@@ -455,3 +493,14 @@ class ControlWindow:
             self.cButtonsFrame.configure(borderwidth=0,relief="sunken")
             self.cConstFrame.configure(borderwidth=0,relief="sunken")
     
+        #Definindo funções dos botões com lógica de chamada
+
+
+
+    #definindo o processamento, ou seja uma thread para isso
+    def callBack(self):
+        if (self.mode == "Manual"):
+            pass
+        else:
+            pass
+

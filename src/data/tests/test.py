@@ -1,49 +1,45 @@
-import platform 
-import pycuda.driver as pycuda
-import ctypes
+import cv2
 
-'''
-@GNOMIO: Necessário baixar o pycuda.drive para fazer esse teste!
-'''
+# Inicialização da Captura de Vídeo
+cap = cv2.VideoCapture(0)
 
-def test_cuda():
-    try:
-        pycuda.init()
-        device_count = pycuda.Device.count()
-        if device_count > 0:
-            print("CUDA está disponível neste sistema.")
-            print("Número de dispositivos CUDA disponíveis:", device_count)
-            for i in range(device_count):
-                device = pycuda.Device(i)
-                print("Dispositivo", i, ":", device.name())
-        else:
-            print("Nenhum dispositivo CUDA disponível.")
-    except pycuda.RuntimeError:
-        print("Erro ao inicializar o CUDA. Verifique sua configuração.")
+# Configuração da GPU
+cv2.cuda.setDevice(0)  # Seleciona o dispositivo GPU (se houver mais de uma)
+cuda_stream = cv2.cuda_Stream()  # Cria um fluxo CUDA
 
+# Carregar Modelo ou Funções de Processamento para GPU (exemplo)
+dnn_net = cv2.dnn.readNetFromCaffe(proto_text='model.prototxt', caffe_model='model.caffemodel')
+dnn_net.setPreferableBackend(cv2.dnn.DNN_BACKEND_CUDA)
+dnn_net.setPreferableTarget(cv2.dnn.DNN_TARGET_CUDA)
 
-def get_cuda_version():
-    try:
-        pycuda.init()
-        context = pycuda.Device(0).make_context()
-        version = context.get_api_version()
-        context.detach()
-        return version
-    except pycuda.RuntimeError:
-        return "CUDA não encontrado ou não está funcionando corretamente."
+while True:
+    # Captura de um frame da câmera
+    ret, frame = cap.read()
+    if not ret:
+        break
 
-def get_screen_resolution():
-    user32 = ctypes.windll.user32
-    screen_width = user32.GetSystemMetrics(0)
-    screen_height = user32.GetSystemMetrics(1)
-    return screen_width, screen_height
+    # Processamento de imagem na GPU
+    gpu_frame = cv2.cuda_GpuMat()
+    gpu_frame.upload(frame, stream=cuda_stream)
 
-def test_resolution_window():
-    # Obtém as dimensões da tela
-    screen_width, screen_height = get_screen_resolution()
-    print("Largura da tela:", screen_width)
-    print("Altura da tela:", screen_height)
+    # Exemplo: detecção de objetos usando uma rede neural na GPU
+    blob = cv2.dnn.blobFromImage(gpu_frame, scalefactor=1.0, size=(300, 300), mean=(104.0, 177.0, 123.0))
+    dnn_net.setInput(blob, scalefactor=1.0, mean=(104.0, 177.0, 123.0))
+    detections = dnn_net.forward()
 
+    # Transferir resultados de volta para a CPU (se necessário)
+    detections = detections.download(stream=cuda_stream)
 
-if __name__ == "__main__":
-    test_resolution_window()
+    # Pós-processamento ou exibição dos resultados
+    # ...
+
+    # Exibir o frame processado
+    cv2.imshow('Frame', frame)
+
+    # Verificação de evento de saída
+    if cv2.waitKey(1) & 0xFF == ord('q'):
+        break
+
+# Liberação de Recursos
+cap.release()
+cv2.destroyAllWindows()
