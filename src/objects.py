@@ -119,7 +119,7 @@ MODE_CONTROL_ROBOT: int = 4
 class ModeControlW:
     MANUAL: int = 1
     POINTER: int = 2
-    DEFAULT: int = 0
+    DEFAULT: int = 1
     
 # ================== CONTROLE DE ESTRUTURA DE DADOS ========================
 #Configurações da Emulação que serão inviadas para o sistema de visão realizar os cálculos

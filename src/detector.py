@@ -290,17 +290,6 @@ def list_players(teamList):
     
     print("====================")
 
-#Função para identificar equipe
-def find_team(windowsCar, colorTeam, colorEnemy):
-    #Irá a partir da imagem descobrir se é ou não um carro aliado e inimigo
-    # Verifica a cor, e dependendo disso irá retornar 2 valores:
-    # 1 -> Aliado
-    # 0 -> Inimigo
-    # Além disso, retorna o objeto Robô com as informações necessárias.
-    
-    #Processo de filtragem
-    
-    return 0
 
 def create_color_bounds(color_array):
     h = color_array[0]

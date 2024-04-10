@@ -5,7 +5,7 @@ from control import *
 from communication import *
 import serial.tools.list_ports
 from cards import *
-
+import numpy as np
 #==========================/// Gerando classe de janela de controle de jogador /// ====================
 #Essa janela funciona como um aplicativo que será utilizado para controlar
 # o jogador de forma unica, para podermos verificar se ele está fazendo as
@@ -24,7 +24,7 @@ class ControlWindow:
         self.viewer = None                  # viewer para o carro
         
         #modo
-        self.mode = 'Manual'                # Modo padrão
+        self.mode = 'manual'                # Modo padrão
 
         #frames
         self.frameViewer = None             #Frame de visualizar
@@ -166,7 +166,7 @@ class ControlWindow:
         self.btn_start.grid(row=7, column=1, padx=(10,5),pady =5)
 
         self.state = StateSquare(self.choseFrame, self._isRun, self.btn_start)
-        self.state.grid(row=10, column=0, padx=5, pady=5, sticky="w")
+        self.state.grid(row=10, column=1, padx=5, pady=5, sticky="w")
 
         #Label para escolher um ponto
         self.lChosePoint = Label(self.choseFrame, text="Escolher um ponto", fg="black", bg="white")
@@ -377,18 +377,67 @@ class ControlWindow:
 
     #função de callback dos botões de direção
     def choseDirection(self, name):
-        pass
+        #["NW", "N", "NE", "W", "Stop", "E", "SW", "S", "SE"]
+        #puxando valor de velocidade
+        velocity = self.scaleSpeed.get()
+        dir = name 
+        player = self.cBoxPlayer.get()
 
-    #função de callback do botão de velocidade
+        self.makeCommand(1,velocity =velocity, direction = dir, player = player)
 
     #função de callback do botão de ângulo
-
-
-    #função para construir um comando e o enviar
-    def makeCommand(self):
+    def choseAngle(self):
         pass
 
+    #função para construir um comando e o enviar
+    def makeCommand(self, mode =1,velocity = 0, direction =0 , player = None, angle =0):
+        #puxando velocidade e direção
+        vel = velocity
+        dir = direction
+        player = player
+
+        #no referencial do robô -> encontrar we e wd
+
+
+
+        #gerando string
+        if(mode == 1): # modo de controle por botão
+            command = ""
+            #criando o comando
+            if dir == 'NW': 
+                w1 = None
+                w2 = None
+                pass
+            elif dir == 'N':
+                pass
+            elif dir == 'NE':
+                pass
+            elif dir == 'W':
+                pass
+            elif dir == 'Stop':
+                pass
+            elif dir =='E':
+                pass
+            elif dir == 'SW':
+                pass
+            elif dir == 'S':
+                pass
+            elif dir == 'SE':
+                pass
+            else:
+                pass
+            
+            
+            self.command = command
+            #enviando para a fila o comando
+        else:          
+
+            # girar um angulo qualquer
+            command = ""
+            self.command = command
     
+
+
     #método para escolher um ponto na teal
     def choose_point(self):
         print("Escolhendo um ponto na tela")
@@ -428,6 +477,7 @@ class ControlWindow:
     def control_mode_changed(self, *args):
         self.mode = self.controlMode.get()
         if self.mode == "manual":
+            self.Mode = ModeControlW.MANUAL
             #Variaveis do modo manual
             for direction in self.directions:
                 button = self.btns_dict[direction]
@@ -449,6 +499,7 @@ class ControlWindow:
             self.cConstFrame.configure(borderwidth=0,relief="solid")
 
         elif self.mode == "automatic":
+            self.Mode = ModeControlW.POINTER
             #variáveis do modo manual
             for direction in self.directions:
                 button = self.btns_dict[direction]
@@ -471,6 +522,7 @@ class ControlWindow:
             self.cConstFrame.configure(borderwidth=1,relief="sunken")
 
         else:
+            self.Mode= ModeControlW.MANUAL
             #variáveis do modo manual
             for direction in self.directions:
                 button = self.btns_dict[direction]
@@ -495,9 +547,7 @@ class ControlWindow:
     
         #Definindo funções dos botões com lógica de chamada
 
-
-
-    #definindo o processamento, ou seja uma thread para isso
+    #definindo o processamento, ou seja como a thread irá realizar o processamento, o importante é que ela apenas execute em looping no manual.
     def callBack(self):
         if (self.mode == "Manual"):
             pass
