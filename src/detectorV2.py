@@ -759,7 +759,7 @@ class VisionSystem:
         return contours
 
     #Desenhar circulos na imagem onde estão os jogadores
-    def draw_player_circle_noCuda(self, imgDegub, robot):
+    def draw_player_circle_noCuda(self, imgDegub, robot:Robot):
         '''
             Desenha um círculo no jogador
         '''
@@ -1068,7 +1068,7 @@ class VisionSystem:
         return contours
 
     #Desenhar circulos na imagem onde estão os jogadores
-    def draw_player_circle_Cuda(self, imgDegub, robot):
+    def draw_player_circle_Cuda(self, imgDegub, robot:Robot):
         '''
             #### Utilizando a GPU pelo suporte cuda. 
             Desenha círculos nos robôs.
@@ -1302,8 +1302,6 @@ class VisionSystem:
 
 
 
-
-
 # Testar função principal e nova lógica
 if __name__ =='__main__':
     #executará o código de teste deste módulo com uma imagem padrão
@@ -1318,12 +1316,7 @@ if __name__ =='__main__':
     timer.run()
     while True:
         #Executar algum processamento aqui utilizando a câmera!
-
+        
         if cv2.waitKey(1) & 0xFF == ord('q'):  # Espera 1 milissegundo e verifica se a tecla 'q' foi pressionada para sair do loop
             cv2.destroyAllWindows()
             break
-
-
-
-
-

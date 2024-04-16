@@ -51,8 +51,7 @@ class Emulator:
         self.commands_queue = queue.Queue()
         self.sent_data_queue = queue.Queue()
         self.received_data_queue = queue.Queue()
-        #self.capture_queue = queue.Queue()
-        
+                
         #deque de no máximo 10 imagens
         self.maxDeque = 4
         self.capture_deque = deque(maxlen=self.maxDeque)
@@ -352,7 +351,7 @@ class Emulator:
             
             self.capture.setIdCam(self.CamUSB)
             self.cameraIsRunning = True #Camera Não pausada
-
+            
             print("[CAPTURA]: Iniciou-se a thread novamente!")
             self.captureThread= CameraCaptureThread(main=self, capture_instance=self.capture, deque=self.capture_deque)
             self.captureThread.start()  
@@ -361,7 +360,8 @@ class Emulator:
             self.processUSB()
 
             # Chamando thread para processamento de vídeo
-
+            self.showInformation()
+            
             #Trabalhando com filas e threads
             if (self.hasConection == True):
                 self.communication_thread = threading.Thread(target=self.send_data, args=(self.commands_queue,), daemon=True)
@@ -539,31 +539,14 @@ class Emulator:
 
             # Salvando dados recebidos
             received_data = self.received_data_queue.get()
-            ball_object, allies_list, enemies_list, frame, binary_treat, binaryBall, binaryPlayers, binaryTeam, imgDebug, alliesWindows, enemiesWindows = received_data
+            self.ball, self.allies, self.enemies, self.frame, self.binary_treat, self.binaryBall, self.binaryPlayers, self.binaryTeam, self.imgDebug, self.alliesWindows, self.enemiesWindows = received_data
 
-            self.ball = ball_object
-            self.allies = allies_list
-            self.enemies = enemies_list
 
             # Enviando dados para o processamento
             self.control.updateObjectsValues(self.field, self.ball, self.allies, self.enemies)
             self.commands = self.control.processControl()
             self.commands_queue.queue.clear()
             self.commands_queue.put(self.commands)
-
-            #Atualizo informações do cards sobre funcionalidade
-            self.infoCards.updateFuncs()
-
-            self.viewer.show(frame)
-            if(self.DEBUGA == True):
-                self.debugFieldViewer.show(binary_treat)
-                self.debugObjectsViewer.show(binaryBall)
-                self.debugPlayersViewer.show(binaryPlayers)
-                self.debugTeamViewer.show(binaryTeam)
-            self.resultViewer.show(imgDebug)
-
-            #Adicionando conteúdos
-            self.setContentRobots()
                     
         #Finaliza contagem de tempo de processamento
         Stp2 = self.Timer.getElapsedTime()
@@ -636,6 +619,27 @@ class Emulator:
         self.captureThread.stop()
         self.captureThread.join()
 
+    #Método para exibir informações
+    def showInformation(self):
+        if self.cameraIsRunning:
+            #Atualizo informações do cards sobre funcionalidade
+            self.infoCards.updateFuncs()
+
+            self.viewer.show(self.frame)
+            if(self.DEBUGA == True):
+                self.debugFieldViewer.show(self.binary_treat)
+                self.debugObjectsViewer.show(self.binaryBall)
+                self.debugPlayersViewer.show(self.binaryPlayers)
+                self.debugTeamViewer.show(self.binaryTeam)
+            self.resultViewer.show(self.imgDebug)
+
+            #Adicionando conteúdos
+            self.setContentRobots()
+
+            self.viewer.window.after(self.delay, self.showInformation)
+        else:
+            print('Não está no modo câmera')
+    #Método para processar o vídeo
     def processVideo(self):
         print(self.VideoPath)
         print("[EMULADOR] Processando vídeo")
