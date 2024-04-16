@@ -94,11 +94,11 @@ class GeometryType:
     '''
         Identificador de tipo de geometria: 
         * POINT2D;
-        * RECT (retângulo)
+        * QUAD (Quadrilátero)
         * CIRCLE
     '''
     POINT2D: int = 0
-    RECT: int = 1
+    QUAD: int = 1
     CIRCLE: int =2 
 
 # PROTOTIPO DE CLASSES BÁSICAS PARA UM SISTEMA DE COLISÃO
@@ -199,7 +199,7 @@ class EConfig:
         self.offSetErode = offSetErode
         self.dimMatrix = dimMatrix
         self.Trashhold = Trashhold
-
+        
     #Deletar este objeto em tempo de execução
     def delete(self):
         del self
@@ -227,10 +227,10 @@ class Point2D:
         '''
         return self.pos 
     
-#Definição de um retângulo 
-class Rectangle:
+#Definição de um Quadrilátero 
+class Quad:
     '''
-        Definição de um retângulo para o código.
+        Definição de um Quadrilátero para o código.
     '''
     def __init__(self, P1:Point2D, P2:Point2D, P3:Point2D, P4:Point2D):
         ''' Necessário informar 4 pontos para ele interpretar e juntar'''
@@ -244,7 +244,7 @@ class Rectangle:
 
     def getPoint(self):
         '''
-            Retorna os pontos associados a esse retângulo num array
+            Retorna os pontos associados a esse Quadrilátero num array
         '''
         return self.points
      
@@ -270,6 +270,10 @@ class Circle(GeometryType):
             Retorna o centro do círculo
         '''
         return self.center.getPos()
+
+
+#Definindo um polígono
+'''...'''
 
 #========================= /// CLASSES SEMÂNTICAS DO CÓDIGO // ===================
 #Classe responsável por guardar as informações dos pontos de apoio
@@ -302,7 +306,7 @@ class BorderBox:
         '''
         Essa classe representa a borda de colisão do objeto, podendo ser de três tipos:
         * Círculo (GeometryType.CIRCLE)
-        * Retângulo (GeometryType.RECT)
+        * Quadrilátero (GeometryType.QUAD)
         * Ponto ((GeometryType.POINT2D)
 
         Cada tipo de borderbox terá um sistema de colisão diferente.
@@ -315,7 +319,7 @@ class BorderBox:
             self.Center = Infos.center
             self.radius = Infos.radius
 
-        elif(self.type == GeometryType.RECT): #verifica se é um retângulo
+        elif(self.type == GeometryType.QUAD): #verifica se é um retângulo
             self.p1 = Infos.p1
             self.p2 = Infos.p2
             self.p3 = Infos.p3
@@ -331,7 +335,7 @@ class AreaField:
         A classe representa uma área importante do campo, podendo ser a área
         do goleiro aliado ou inimigo, bem como  o próprio campo e o campo aliado e inimigo.
     '''
-    def __init__(self, id:ID_Field,rect:Rectangle = Rectangle(Point2D(0,0),Point2D(0,0),Point2D(0,0),Point2D(0,0))):
+    def __init__(self, id:ID_Field,rect:Quad = Quad(Point2D(0,0),Point2D(0,0),Point2D(0,0),Point2D(0,0))):
         #Setando identificador da área
         self.Id = id
         self.rect = rect
@@ -341,10 +345,10 @@ class AreaField:
         self.objTypeSystem = ObjTypeVision.GOALFIELD
 
         #configurando a border box da área
-        self.bbox = BorderBox(GeometryType.RECT,rect)
+        self.bbox = BorderBox(GeometryType.QUAD,rect)
 
     #Setando o retângulo que o representa
-    def setRect(self,rect:Rectangle):
+    def setRect(self,rect:Quad):
         '''
             Informo qual o retângulo que será representado por essa área
         '''
@@ -377,7 +381,7 @@ class ViewBot:
         self.Pe4 = self.center + np.array([-1,1])*self.step
 
         #Gerando retângulo para guardar as informações
-        self.rect = Rectangle(self.Pe1, self.Pe2, self.Pe3, self.Pe4)
+        self.rect = Quad(self.Pe1, self.Pe2, self.Pe3, self.Pe4)
 
     #atualizando a posição da ViewBot pela posição central
     def updateViewBot(self, newPosition: Point2D):
@@ -393,7 +397,7 @@ class ViewBot:
         self.Pe4 = self.center + np.array([-1,1])*self.step
 
         #Gerando retângulo para guardar as informações
-        self.rect = Rectangle(self.Pe1, self.Pe2, self.Pe3, self.Pe4)
+        self.rect = Quad(self.Pe1, self.Pe2, self.Pe3, self.Pe4)
 
     #atualizando posição do ViewBot por um passo
     def translateViewBot(self, stepView:Point2D):
@@ -411,7 +415,7 @@ class ViewBot:
         self.Pe4 = self.center + np.array([-1,1])*self.step
 
         #Gerando retângulo para guardar as informações
-        self.rect = Rectangle(self.Pe1, self.Pe2, self.Pe3, self.Pe4)
+        self.rect = Quad(self.Pe1, self.Pe2, self.Pe3, self.Pe4)
     
     #retornando os pontos que estão guardados na variável retângulo
     def getPoints(self):
@@ -669,8 +673,12 @@ class Capture:
         self.reset()
         del self
 
-
+#classe para gerenciar a thread de captura de dados
 class CameraCaptureThread(threading.Thread):
+    '''
+        Essa classe é responsável por gerar a Thread que irá capturar imagens
+        e salvar elas num deque, que será acessado pelo emulador.
+    '''
     def __init__(self, main, capture_instance: Capture, deque:deque, interval=0.050):
         super().__init__()
         self.capture_instance = capture_instance

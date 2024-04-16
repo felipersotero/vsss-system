@@ -268,14 +268,14 @@ class Field:
         #@GNOMIO: As posições do Field são em relações à ViewCapture
 
         #Setando parâmetros do campo
-        self.extrems = np.array([[0,0], [0, 0], [0,0], [0,0]])             
+        self.extrems = Quad(Point2D(0,0),Point2D(0,0),Point2D(0,0),Point2D(0,0))
 
         #Informações do tipo de objeto
         self.ObjType = ObjTypeMove.STATIC
         self.objTypeSystem = ObjTypeVision.FIELD
         
     #Atualizar extremos do campo, para realizar cálculos
-    def updatePos(self,pos,width,height):
+    def updatePos(self,pos:Point2D,width,height):
         '''
             Atualiza posição do campo.
         '''
@@ -293,17 +293,20 @@ class Field:
         self.pivots[id].updatePos(px,py)
 
     #Seta as áreas de gol dos jogadores
-    def setAreaGoal(self, id:ID_Field, rect:Rectangle):
+    def setAreaGoal(self, id:ID_Field, rect:Quad):
         '''
         Função responsável por setar uma área do campo
         '''
         self.goalArea[id].setRect(rect)
         
     #Seta a posição dos goleiros do jogo
-    def setAreaRobotGoal(self, id:ID_Field,rect:Rectangle):
+    def setAreaRobotGoal(self, id:ID_Field,rect:Quad):
         self.goalRobotArea[id].setRect(rect)
 
     
+    #setando pontos extremos do campo
+    def setPointsField(self, rect: Quad):
+        self.extrems 
 #======================|| Sistema de detecção POO||======================================#
 #Vista capturada pelo processamento, que contem a imagem base
 class ViewCapture: 
@@ -312,7 +315,7 @@ class ViewCapture:
         enviada. Ela irá representar, portanto, um retângulo útil na imagem total, no qual será realizado
         o processamento
     '''
-    def __init__(self, Extremes:Rectangle = Rectangle(Point2D(0,0),Point2D(0,0),Point2D(0,0),Point2D(0,0))):
+    def __init__(self, Extremes:Quad = Quad(Point2D(0,0),Point2D(0,0),Point2D(0,0),Point2D(0,0))):
         '''
             Esse classe representa a "vista" capturada pelo sistema de visão com base na imagem
             enviada. Ela irá representar, portanto, um retângulo útil na imagem total, no qual será realizado
@@ -323,7 +326,7 @@ class ViewCapture:
         self.Extremes = Extremes        # Extremos da view
 
     #Modificando os extremos em relação à imagem original
-    def setViewCapture(self, Extremes:Rectangle):
+    def setViewCapture(self, Extremes:Quad):
         '''
             Forma indireta de informar quais são os pontos de interesse para o processamento
         '''
@@ -380,21 +383,47 @@ class VisionSystem:
             self.GPUimg = cv2.cuda.GpuMat()
 
 
-        #variáveis internas utilizadas pela classe de visão 
-        self.binImg = None                      # Imagem binarizada necessária
-        self.binReduceField = None              # Imagem binarizada reduzida
-        self.imgReduce = None
-        
-        
         #configurações do campo comprimento e largura
-        self.fieldWidth = None
-        self.fieldHeight = None
-        self.prop_px_cm = None                  # proporção pixel para cm
+        self.fieldWidth = 0                     # largura do campo
+        self.fieldHeight = 0                    # altura do campo
+        self.prop_px_cm = 0                     # proporção pixel para cm
+        self.debug = False                      # verifica se o processamento usará ou não o debug
 
+        #Variáveis internas do sistema de visão que serão importantes para o processamento
+        #Configurações
+        self.offSetWindow = 10                 
+        '''Tamanho extra de janela utilizada'''
+        self.offSetErode = 0                    
+        '''Quantidade padrão de erosões na imagem'''
+        self.dimMatrix = 25                     
+        '''Dimensão da matriz de convolução na imagem'''
+        self.Thrashhold = 235                   
+        '''Limiar de binarização da imagem'''
+        self.pixelWidth = 1
+        '''Tamanho de um pixel normal'''
 
-        #Variáveis internas do sistema de visão que serão importantes
+        #Imagens
+        self.frameOrigin    = None             
+        '''responsável por guardar a imagem do campo'''
+        self.fieldReduce    = None              
+        '''Imagem do campo reduzida'''
+        self.frameResult    = None              
+        '''Imagem final já reduzida e processada'''
+        self.imgReduce      = None              
+        '''Imagem reduzida para utilizar no processamento'''
 
+        #Imagens binarizadas
+        self.binaryObjects  = None              # Imagem binária dos objetos
+        self.binaryPlayers  = None              # Imagem Binária dos Jogadores
+        self.binaryTeam     = None              # Imagem Binária do Time
+        self.binaryBall     = None              # Imagem binária da bola
+        self.binReduceField = None              # Imagem binarizada do campo reduzido tratada
+        self.binField       = None              # Imagem binarizada do campo original tratada
 
+        #Atualiza as funções com base no modo que foi determinado para elas
+        self.choseModeFunctions()
+    
+    
     #Processamento geral da imagem que irá pegar os valores necessários
     #Envio primeiro a imagem, e ele irá tratar da forma certa
     def proc(self, img):
@@ -468,7 +497,31 @@ class VisionSystem:
             Atualiza as funções que serão utilizadas pela GPU e pela CPU
             Além de deixar mais eficaz.
         '''
-        pass
+        print("[VisionSystem]: Configurando as funções para o método solicitado")
+        #Se tiver utilizando o cuda no código para otimizar o processamento
+        if self._hasCuda:
+            #Métodos utilizando o CUDA
+            self.gray_scale = self.gray_scale_Cuda
+            self.median_blur = self.median_blur_Cuda
+            self.highlight_img = self.highlight_img_Cuda
+            self.binarize_up = self.binarize_up_Cuda
+            self.treat_noise = self.trait_noise_Cuda
+            self.reduce_field = self.reduce_field_Cuda
+            self.detect_ball = self.detect_ball_Cuda
+            self.detect_field = self.detect_field_Cuda
+            self.detect_players = self.detect_players_Cuda
+        else:
+            #PROCESSAMENTO UTILIZANDO APENAS A CPU com aprimoramento em algumas partes
+            self.gray_scale = self.gray_scale_noCuda
+            self.median_blur = self.median_blur_noCuda
+            self.highlight_img = self.highlight_img_noCuda
+            self.binarize_up = self.binarize_up_noCuda
+            self.treat_noise = self.trait_noise_noCuda
+            self.reduce_field = self.reduce_field_noCuda
+            self.detect_ball = self.detect_ball_noCuda
+            self.detect_field = self.detect_ball_noCuda
+            self.detect_players = self.detect_players_noCuda
+
 
     #===============| Definindo funções básicas|==============================
     # ============= métodos sem suporte ao CUDA =====================
@@ -583,8 +636,7 @@ class VisionSystem:
         cont, __ = cv2.findContours(BinImg, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
         #objT = cont[0] #Encontra o objeto maior, nesse caso o campo, e então filtrarei a imagem para esse ponto
         objT = max(cont, key=cv2.contourArea)
-        contour_area = cv2.contourArea(objT)
-
+        
         threshold = 50
         
         # print(f"Área do contorno encontrado: {contour_area}")
@@ -595,21 +647,36 @@ class VisionSystem:
 
         try:
             #Obtendo os vértices do retângulo'
-            x,y,w,h = cv2.boundingRect(objT) #Coordenadas da noav imagem
+            x,y,w,h = cv2.boundingRect(objT) #Coordenadas da nova imagem
 
+            #Esse valor x,y,w,h corresponde  
             #Vetor das coordenadas
             cooVetor = [x,y,w,h]
-            pontosIniciais = np.float32([[x-d,y-d],[x+w+d,y-d],[x-d,y+h+d],[x+w+d,y+h+d]])
-            novosExtremos = np.float32([[0,0],[w,0],[0,h],[w,h]])
+
+            #Os pontos iniciais são dentro de uma janela com um "offset"
+            #pontos iniciais
+            pi = np.float32([[x-d,y-d],[x+w+d,y-d],[x-d,y+h+d],[x+w+d,y+h+d]])
+
+            #pontos finais
+            pf = np.float32([[0,0],[w,0],[0,h],[w,h]])
 
             #Matriz de transformação para nova perspectiva
-            matrizPerspectiva = cv2.getPerspectiveTransform(pontosIniciais,novosExtremos)
+            matrizPerspectiva = cv2.getPerspectiveTransform(pi,pf)
 
             #revisando nova imagem para processamento
             img_Reduce = cv2.warpPerspective(Img, matrizPerspectiva, (w,h))
             bin_Reduce = cv2.warpPerspective(BinImg, matrizPerspectiva, (w,h))
 
-        except:
+            #Pontos extremos da viewCapture
+            rect = Quad(Point2D(pi[0, 0], pi[0, 1]), Point2D(pi[1, 0], pi[1, 1]),
+                 Point2D(pi[3, 0], pi[3, 1]), Point2D(pi[2, 0], pi[2, 1]))
+            
+
+            #Gerando o objeto ViewRect (Retângulo envolvente)
+            self.viewCapture.setViewCapture(rect) 
+
+
+        except: 
             #Se ele não conseguir, retorna a imagem inicial...
             bin_Reduce = BinImg
             img_Reduce = Img
@@ -1023,13 +1090,146 @@ class VisionSystem:
 
     #=============| Definindo funções módulares | ===========================
     #métodos sem suporte ao CUDA
+    def detect_field_noCuda(self, img, debug=False):
+        '''
+            Função responsável por detectar o campo na imagem e gerar um ViewRect com as coordenadas
+            do campo que foi reduzido. Salvando o objeto em Field.
+
+            Os argumentos da função são configurações vindas do emulador.
+        '''
+
+        h = img.shape[0]
+        w = img.shape[0]
+        debug = self.debug
+
+        self.pixelWidth = min(w,h)
+
+        #conversão da imagem para pixels
+        convert_measures(self.fieldWidth, self.pixelWidth)
+
+        #looping principal
+        while self.offSetErode < 20:
+            try:
+                #imagem original
+                self.frameOrigin = img.copy()
+
+                #tomando imagem em tons de cinza
+                gray = self.gray_scale(self.frameOrigin)
+
+                #aplica filtro de mediana para diminuir ruídos
+                blur = self.median_blur(gray, 3)
+
+                #realça objetos brilhantes, que nesse caso é o campo
+                imgProc = self.highlight_img(blur, self.dimMatrix)
+
+                #binarizando a imagem num limiar
+                binary = self.binarize_up(imgProc, self.Thrashhold)
+
+                #tratando ruídos da imagem binarizada
+                binary_treat = self.treat_noise(binary, self.offSetErode)
+
+                #reduzindo imagem e gerando ViewRect
+                self.binReduceFIled, self.fieldReduce, coorVetor = self.reduce_field(binary_treat, self.frameOrigin, self.fieldWidth, self.offSetWindow)
+            
+                #encontra extremos do paralelogramo
+                contours, _ = cv2.findContours(self.binReduceFIled, cv2.RETR_EXTERNAL,cv2.CHAIN_APPROX_SIMPLE)
+
+                #gerando os vertices que serão guardados na classe ViewRect
+                rectVer = np.array([0,0,0,0], dtype=np.int32)
+
+                #loop através dos contornos encontrados
+                for contour in contours:
+                    #aproximar o contorno para um polígono com poucos vértices
+                    epsilon = 0.02*cv2.arcLength(contour, True)
+                    approx = cv2.approxPolyDP(contour, epsilon, True)
+
+                    #Se o polígono tem 4 vértices então é um retângulo
+                    if len(approx) == 4:
+                        try:
+                            #extrair os vértices do retângulo que é gerada na imagem reduzida! rectVer é a coordenada do paralelepípedo na imagem reduzida
+
+                            rectVer = np.array([approx[0][0], approx[1][0], approx[2][0], approx[3][0]], dtype=np.int32)
+                            
+                            #coorVetor tem as coordenadas x,y iniciais do retângulo que envolve o campo detectado, portanto, ele é da forma coorVetor = [x,y,w,h], 
+
+                            #offset da janela
+                            dd = self.offSetWindow
+                            
+                            #Vértices reais na imagem real
+                            rv = rectVer+np.array([[coorVetor[0]-dd,coorVetor[1]-dd], [coorVetor[0]-dd,coorVetor[1]+dd], [coorVetor[0]+dd,coorVetor[1]+dd], [coorVetor[0]+dd,coorVetor[1]-dd]], dtype=np.int32)
+                            
+
+                            #rv é a janela com um "offset" de valor dd na imagem original.
+
+                            rect = Quad(Point2D(rv[0, 0], rv[0, 1]), Point2D(rv[1, 0], rv[1, 1]),
+                 Point2D(rv[2, 0], rv[2, 1]), Point2D(rv[3, 0], rv[3, 1]))
+
+                            
+                            
+                            #salvando extremos do objeto campo
+                            self.field.updatePos()
 
 
+
+                            if(debug):
+                                #Desenhar os vértices do retângulo na imagem original (Desenhando os retângulos no campo)
+                                cv2.polylines(self.frameOrigin, [rv], True, (0,0,255), 4)
+
+                                for vertex in rv:
+                                    x,y = vertex 
+                                    cv2.circle(self.frameOrigin, (x,y),4,(0,255,0),-1)
+                        except:
+                            print("[VisionSystem]: Não conseguiu desenhar na imagem")
+                            pass
+            except:
+                self.offSetErode += 1
+                #retornaria as variáveis, mas ele vai atualizar as variáveis internas
+                self.fieldReduce = self.frameOrigin
+
+
+    #Detectar a imagem da bola na imagem
+    def detect_ball_noCuda(self, img, debug):
+        '''
+            Função responsável por detectar a bola na imagem, sem usar o suporte ao Cuda.
+        '''
+        pass
+
+
+    #Método para detectar os robôs com suporte ao Cuda
+    def detect_players_noCuda(self, img, debug):
+        '''
+            Função responsável por detectar os robôs na imagem, sem usar o suporte ao Cuda.
+        '''
+        pass
 
     #métodos com suporte ao CUDA
 
     #===========| Definindo funções principais | ============================
     #Métodos sem suporte ao cuda
+    #método para detectar o campo na imagem utilizar a GPU com o suporte ao CUDA
+    def detect_field_Cuda(self, img, debug):
+        '''
+        #### Utilizando a GPU pelo suporte cuda. 
+        Função responsável por detectar o campo na imagem e gerar um ViewRect com as coordenadas do campo que foi reduzido. Salvando o objeto em Field.
+        
+        '''
+        pass
+    
+    #Método para detectar a bola utilizando a GPU com o suporte ao CUDA
+    def detect_ball_Cuda(self,img, debug):
+        '''
+        #### Utilizando a GPU pelo suporte cuda. 
+        Função responsável por detectar a bola na imagem.
+        '''
+        pass
+    
+    #Método para detectar os robôs com suporte ao Cuda
+    def detect_players_Cuda(self, img, debug):
+        '''
+        #### Utilizando a GPU pelo suporte cuda. 
+        Função responsável por detectar os robôs na imagem.
+        '''
+        pass
 
 
 
