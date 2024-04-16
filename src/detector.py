@@ -519,17 +519,6 @@ def detect_players(img, ballImg, binaryBall, binaryField, alliesColor, enemiesCo
     #Cria uma cópia da imagem reduzida para debug 
     imgDegub = ballImg
 
-    # print(rect_vertices)
-    # cv2.circle(imgDegub, (rect_vertices[0][0], rect_vertices[0][1]), (5), (0, 0, 255), 2)
-    # cv2.circle(imgDegub, (d, d), (5), (0, 0, 255), 2)
-    # cv2.circle(imgDegub, (d, d), (5), (0, 0, 255), 2)
-    # cv2.circle(imgDegub, (d, d), (5), (0, 0, 255), 2)
-
-    # initial = [30*prop_px_cm, 30*prop_px_cm]
-    # final = [30*prop_px_cm, 37.5*prop_px_cm]
-
-    # cv2.line(imgDegub, (int(initial[0]), int(initial[1])), (int(final[0]), int(final[1])), (255, 0, 0), 2)
-    #==========================================================================================
     #Cria variáveis e vetores de contagem dos jogadores 
     #Janela dos jogadores
     playersWindows = [None, None, None, None, None, None]

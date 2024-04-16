@@ -40,7 +40,7 @@ class Emulator:
 
         self.DEBUGA = False
         self.thread = None
-        self.capture = None
+        self.capture = Capture(CaptureMode.DEFAULT,False)
         self.delay = 14 #14 ms
 
         self.clientMQTT = None
@@ -99,6 +99,12 @@ class Emulator:
         self.hasMqtt    = False         # caso MQTT seja escolhido, essa variável será true
         self.hasSerial  = False         # caso Serial seja escolhido, essa  variável será true
         
+        #variável de travar threads numa variável compartilhada
+        self.captureLock = threading.Lock()
+        self.captureThread = None
+
+
+        #Thread de captura para imagem, guardando de forma paralela
     def load_vars(self):
         self.CamUSB = int(self.settingsTree.tree.item('I003','value')[0])
         self.ImgPath = self.settingsTree.tree.item('I004','value')[0]
@@ -332,9 +338,14 @@ class Emulator:
             self.btn_run.pack_forget() # torna o botão "run" invisível
             self.btn_stop.pack(fill=BOTH, expand=1) # torna o botão "stop" visível
 
-            self.capture = cv2.VideoCapture(self.CamUSB)
+            self.capture.reset()
+            self.capture.setMode(CaptureMode.CAM)
+            print("[CAPTURA]: Primeira execução")
+            self.capture.setIdCam(self.CamUSB)
             self.cameraIsRunning = True #Camera Não pausada
-            self.delay = 14 #14ms
+            self.captureThread = CameraCaptureThread(capture_instance=self.capture, lock=self.captureLock)
+            self.captureThread.start()  
+
             # self.firstExecution = True
             self.processUSB()
 
@@ -342,26 +353,36 @@ class Emulator:
 
             #Trabalhando com filas e threads
             if (self.hasConection == True):
-                communication_thread = threading.Thread(target=self.send_data, args=(self.commands_queue,), daemon=True)
-                communication_thread.start()
- 
+                self.communication_thread = threading.Thread(target=self.send_data, args=(self.commands_queue,), daemon=True)
+                self.communication_thread.start()
+
+                
         elif(self.Mode ==  MODE_IMAGE): #Modo Imagem
             print('[EMULADOR] Emulador em modo de processamento de Imagem')
             #Configurar viewer para modo de exibição imagem
             #Entrada do vídeo
             self.cameraIsRunning = False
+            self.capture.reset()
+            self.capture.setMode(CaptureMode.IMG)
+
+
             self.btn_stop.pack_forget() # torna o botão "run" invisível
             self.btn_run.pack(fill=BOTH, expand=1) # torna o botão "stop" visível
             self.processImage()
             
         elif(self.Mode == MODE_VIDEO_CAM):
             print('[EMULADOR] Emulador em modo de processamento de Video')
+            
+            
             #configurar viewer para modo de exibição de vídeo
             self.btn_run.pack_forget() # torna o botão "run" invisível
+            
             self.btn_stop.pack(fill=BOTH, expand=1) # torna o botão "stop" visível
             
-            video_path = '/home/felipersotero/Documentos/Codigos/interface-vsss/src/videos/jogadores-movimento.mp4'
-            self.capture = cv2.VideoCapture(self.VideoPath)
+            #video_path = '/home/felipersotero/Documentos/Codigos/interface-vsss/src/videos/jogadores-movimento.mp4'
+            #self.capture = cv2.VideoCapture(self.VideoPath)
+            self.capture.reset()
+            self.capture.setMode(CaptureMode.DEFAULT)
             self.cameraIsRunning = False
             self.delay = 14 #14ms
             self.processVideo()
@@ -376,7 +397,7 @@ class Emulator:
     #Método para Parar a Emulação.
     def stop(self):
         print('[EMULADOR] Emulador teve sua execução parada.')
-        if(self.capture): self.capture.release() #Libera a câmera
+        if(self.capture): self.capture.reset() #Libera a câmera
 
         if (self.clientMQTT != None):
             self.clientMQTT.loop_stop()
@@ -430,6 +451,12 @@ class Emulator:
         #parando o timer e resetando sua contagem
         self.Timer.stop()
         self.Timer.reset()
+
+        #parando thread de captura
+        self.captureThread.stop()
+        self.captureThread.join()
+
+
     
     def call_detection_system(self, input_queue, output_queue):
         #inicio da contagem de tempo
@@ -461,7 +488,8 @@ class Emulator:
     #Funções que executam os processos (execução por USB, por imagem ou )
     def processUSB(self):
         
-        ret, self.frame = self.capture.read()
+        #Id de captura
+        self.frame = self.capture.getImage()
 
         field_data_structure = (self.frame, self.debug_view, self.fieldDimensions, self.OffSetBord, self.OffSetErode, self.MatrixTop, self.BINThresh)
         ball_data_structure = (self.ballColor, self.ball)
@@ -472,15 +500,15 @@ class Emulator:
         #Pegando time atual do processamento
         Stp1 = self.Timer.getElapsedTime()
 
-        if self.cameraIsRunning and ret:
+        if self.cameraIsRunning:
         
             # Chamando a função para detecção e enviando os parâmetros necessários
             self.sent_data_queue.queue.clear()
             self.sent_data_queue.put(data_structure)
 
-            video_processor_thread = threading.Thread(target=self.call_detection_system, args=(self.sent_data_queue, self.received_data_queue))
-            video_processor_thread.daemon = True
-            video_processor_thread.start()
+            self.video_processor_thread = threading.Thread(target=self.call_detection_system, args=(self.sent_data_queue, self.received_data_queue))
+            self.video_processor_thread.daemon = True
+            self.video_processor_thread.start()
 
             # Salvando dados recebidos
             received_data = self.received_data_queue.get()
@@ -524,8 +552,8 @@ class Emulator:
     def processImage(self):
         print("[EMULADOR] Processando imagem: ",self.ImgPath)
         St1i = self.Timer.getElapsedTime()
-
-        self.frame = load_image(self.ImgPath)
+        self.capture.setImagePath(self.ImgPath)
+        self.frame = self.capture.getImage()
         
         field_data_structure = (self.frame, self.debug_view, self.fieldDimensions, self.OffSetBord, self.OffSetErode, self.MatrixTop, self.BINThresh)
         ball_data_structure = (self.ballColor, self.ball)
@@ -537,9 +565,9 @@ class Emulator:
         self.sent_data_queue.queue.clear()
         self.sent_data_queue.put(data_structure)
 
-        video_processor_thread = threading.Thread(target=self.call_detection_system, args=(self.sent_data_queue, self.received_data_queue))
-        video_processor_thread.daemon = True
-        video_processor_thread.start()
+        self.video_processor_thread = threading.Thread(target=self.call_detection_system, args=(self.sent_data_queue, self.received_data_queue))
+        self.video_processor_thread.daemon = True
+        self.video_processor_thread.start()
 
         # Salvando dados recebidos
         received_data = self.received_data_queue.get()
@@ -581,12 +609,13 @@ class Emulator:
         print(self.VideoPath)
         print("[EMULADOR] Processando vídeo")
 
-        ret, self.frame = self.capture.read()
+        self.capture.setMode(CaptureMode.DEFAULT)
+        self.frame = self.capture.getImage()
 
-        if ret:
-            self.call_detection_system(self.sent_data_queue, self.received_data_queue)
+        #if ret:
+        #    self.call_detection_system(self.sent_data_queue, self.received_data_queue)
 
-        self.viewer.window.after(self.delay, self.processVideo)
+        #self.viewer.window.after(self.delay, self.processVideo)
 
         #atualizo informações na interface
         self.infoCards.update()

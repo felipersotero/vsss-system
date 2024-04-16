@@ -239,7 +239,7 @@ class Rectangle:
         self.p4 = P4            #Ponto extremo 4
 
         #Pontos no formato array do numpy
-        self.points = np.array([P1.pos,P2.pos,P3.pos,P4.pos])
+        self.points = np.array([P1,P2,P3,P4])
 
     def getPoint(self):
         '''
@@ -276,7 +276,7 @@ class Pivot:
     '''
     Representa um ponto com identificador, ou seja, um ponto importante no jogo.
     '''
-    def __init__(self, id:ID_Pivots, Point:Point2D):
+    def __init__(self, id:ID_Pivots, Point:Point2D = Point2D(0,0)):
         self.id = id                #identificador
         self.posX = Point.px        #posição x
         self.posY = Point.py        #posição y
@@ -330,7 +330,7 @@ class AreaField:
         A classe representa uma área importante do campo, podendo ser a área
         do goleiro aliado ou inimigo, bem como  o próprio campo e o campo aliado e inimigo.
     '''
-    def __init__(self, id:ID_Field,rect:Rectangle):
+    def __init__(self, id:ID_Field,rect:Rectangle = Rectangle(Point2D(0,0),Point2D(0,0),Point2D(0,0),Point2D(0,0))):
         #Setando identificador da área
         self.Id = id
         self.rect = rect
@@ -508,8 +508,8 @@ class Capture:
         self.isCamRunning = False   # Para o caso de uma câmera de verdade
         self.frameDelay = 14        # Taxa de quadro (delay)
         self._hasGPU = useGpu       # utiliza a GPU para processar
-        self.GPU = None          # Objeto para tratar o modo GPU
-
+        self.cuda = None             # Objeto para tratar o modo GPU
+        self.idCam = 0
 
         # Endereços para imagem e vídeo
         self.imgPath = None
@@ -539,9 +539,11 @@ class Capture:
         '''
         self._hasGPU = useGpu
         if(self._hasGPU):
-            self.GPU= cv2.cuda.GpuMat()
+            self.cuda = cv2.cuda.GpuMat()
+            if self.cuda is not None:
+                print("[CAPTURA]: Construído com sucesso")
         else:
-            self.GPU = None
+            self.cuda = None
 
     # Informar o identificador da câmera
     def setIdCam(self, id):
@@ -550,7 +552,7 @@ class Capture:
             processamento.
         '''
         self.idCam = id
-
+        print("[CAPTURA]: Id da camera:", self.idCam)
         if(self.mode == CaptureMode.CAM):
             self.CAM = cv2.VideoCapture(self.idCam)
 
@@ -573,26 +575,12 @@ class Capture:
     @GNOMIO: essa função "getImage" deve ser utilizada dentro dum loop quand oem vídeo
     '''
     # Retorna a imagem da captura
-    def getImage(self):
+    def getImageNoCuda(self):
         ''' Função responsável por retornar a imagem do modo captura. 
         Ele funciona dependendo se está ou não utilizando a GPU.
         '''
-        if(self._hasGPU):
-            if self.mode == CaptureMode.IMG:
-                self.image = cv2.imread(self.imgPath)
-                self.GPUimg = self.GPU.upload(self.image)
-                return self.GPUimg
-            elif self.mode == CaptureMode.CAM:
-                ret, self.image = self.CAM.read()
-                self.GPUimg = self.GPU.upload(self.image)
-                if ret:
-                    return self.GPUimg
-                else:
-                    return self.GPUimg
-            else:
-                print("[CAPTURA]: Ocorreu um erro com os valores para a GPU")
-                return None
-        else:
+        #print("[CAPTURA]: \nModo:",self.mode, "\n:Id:",self.idCam)
+        if(not self._hasGPU):
             if self.mode == CaptureMode.IMG:
                 self.image = cv2.imread(self.imgPath)
                 return self.image
@@ -602,64 +590,120 @@ class Capture:
                 if ret:
                     return self.image
                 else:
+                    print("[CAPTURA]: Algum problema")
                     return self.image
             else:
                 print("[CAPTURA]: Não está configurado no modo imagem")
                 return None
-            
+        else:
+            print("[CAPTURE]: Cuidado, vocÊ configurou para rodar com cuda!")
+            return self.image
+    
+    #retorna a imagem da captura quando não é com cuda
+    def getImageCuda(self):
+        ''' Função responsável por retornar a imagem do modo captura. 
+        Ele funciona dependendo se está ou não utilizando a GPU.
+
+        Ela irá retornar um objeto para manipular a informação direto na GPU,
+        um endereço, que será necessário utilizar o download() no objeto para utiliza-lo
+        na CPU
+        '''
+        #print("[CAPTURA]: \nModo:",self.mode, "\n:Id:",self.idCam)
+        if(self._hasGPU):
+            if self.mode == CaptureMode.IMG:
+                self.image = cv2.imread(self.imgPath)
+                self.cuda.upload(self.image)
+                return self.cuda
+            elif self.mode == CaptureMode.CAM:
+                ret, self.image = self.CAM.read()
+                self.cuda.upload(self.image)
+                if ret:
+                    return self.cuda
+                else:
+                    print("[CAPTURA]: falha em recupera o endereço da GPU")
+                    return None
+            else:
+                print("[CAPTURA]: Ocorreu um erro com os valores para a GPU")
+                return None
+        else:
+            print("[CAPTURA]: Não configurado para rodar com CUDA")
+            return None
+    
+    #Função única do capture
+    def getImage(self):
+        '''
+            Recupera a imagem capturada!
+        '''
+        if self._hasGPU:
+            return self.getImageCuda()
+        else:
+            return self.getImageNoCuda()
+    # Resetar objeto de captura
     # Resetar objeto de captura
     def reset(self):
         '''
-            Reseta as configurções da captura.
+        Reseta as configurações da captura.
         '''
+        #print("[CAPTURA]: As informações foram resetadas")
         self.mode = MODE_DEFAULT    # Modo que representa a imagem
         self.image = None           # Representa a imagem que foi capturada
         self.isCamRunning = False   # Para o caso de uma câmera de verdade
         self.FPS = None             # Taxa de quadro
+        self.idCam = 0 
 
         # Endereços para imagem e vídeo
         self.imgPath = None
         self.videoPath = None
-        self.GPU = None
         self._hasGPU = False
 
-        # Imagem que será utilizada
-        self.img = None
-    
+        # Fechar a captura da câmera
+        if self.CAM is not None:
+            self.CAM.release()
+
+        # Liberar memória da GPU
+        if self.cuda is not None:
+            self.cuda.release()
+
     # Destruindo o objeto de captura
-    def destroy(self):
+    def __del__(self):
+        self.reset()
         del self
 
 
 
-
-#====================================================================================
-#classe padrão para um thread
-# Gerando uma classe de thread exclusiva para capturas de vídeo interna
-class Thread(threading.Thread):
-    '''
-     É uma classe para representar uma thread. Ela tem os métodos de iniciar (run) ou parar (stop)
-     É aconselhado utilizar no lugar de run() a função start().
-    '''
-    def __init__(self, mainCap=None, queueIn=None, queueOut=None, callBack=None):
+#definindo uma thread para a captura
+class CameraCaptureThread(threading.Thread):
+    def __init__(self, capture_instance:Capture, lock:threading.Lock, interval=0.0001):
+        '''
+        Classe para capturar imagens e salvar elas numa variável
+        '''
         super().__init__()
-        self._main = mainCap                # Endereço do classe dona
-        self._isRunning = True             # Variável de controle
-        self._queueIn= queueIn              # fila de receber dados
-        self._queueOut = queueOut           # fila para enviar dados
-        self._callBack = callBack           # função que está sendo chamada
+        self.capture_instance = capture_instance
+        self.interval = interval
+        self._is_running = False
+        self.lock = lock
+        self.last_image = None
 
     def run(self):
-        while self._isRunning:
-            try:
-                self._callBack()
-                time.sleep(0.006)
-            except Exception as e:
-                print(f"Erro na execução da thread: {e}")
+        self._is_running = True
+        while self._is_running:
+            # Capturar imagem
+            new_image = self.capture_instance.getImage()
+            # Atualizar a variável compartilhada
+            with self.lock:
+                self.last_image = new_image
+            time.sleep(self.interval)
 
     def stop(self):
-        self._isRunning = False
+        '''
+        Método para parar a thread
+        '''
+        self._is_running = False
 
+    def getImage(self):
+        with self.lock:
+            return self.last_image
+        
 
 #==================================== CLASSES PARA INTERFACE =========================
 #definindo função para indicar estado do controlador

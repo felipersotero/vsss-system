@@ -24,7 +24,7 @@ import modules
 
 #Classe do robô
 class Robot:
-    def __init__(self, id:ID_Robots, team:ID_Team, x, y, r, image=cv2.imread('src/images/dark_screen.png'),colorTeam = None,colorCar = None):
+    def __init__(self, id:ID_Robots, team:ID_Team, x=0, y=0, r=0, image=cv2.imread('src/images/dark_screen.png'),colorTeam = None,colorCar = None):
         '''
         @GNOMIO: Classe Robot que será utilizada no algorítmo de detecção para representar os robôs
         As características do robô são:
@@ -39,6 +39,7 @@ class Robot:
         #informando identificador
         self.id = id
         self.dimMatrix = 100
+
         #informando time
         self.team = team
         self.position = np.array([round(x, 2), round(y, 2)])
@@ -171,7 +172,7 @@ class Ball:
     '''
     @GNOMIO: A classe bola é responsável por pegar informações do objeto bola que será utilizado no processo de detecção
     '''
-    def __init__(self, x, y, r):
+    def __init__(self, x=0, y=0, r=0):
         #posição, raio e direção da boal
         self.position = np.array([int(x), int(y)])
         self.radius = int(r)
@@ -180,6 +181,9 @@ class Ball:
         #gerando bbox para sistema de colisão
         self.objLimit = Circle(Point2D(x,y),self.radius)
         self.bbox = BorderBox(GeometryType.CIRCLE, self.objLimit)
+
+        #definindo uma viewBot para a bola
+        self.viewBall = ViewBot(Point2D(self.position[0], self.position[1]),int(r+14))
 
         #Informações do tipo de objeto no sistema
         self.ObjType = ObjTypeMove.MOVING
@@ -229,6 +233,17 @@ class Ball:
 
         #Gerando uma bbox para sistema de colisões
         self.bbox = BorderBox(GeometryType.CIRCLE,self.objLimit)
+
+    #viewbot da bola
+    def predictPosition(self,timestamp):
+        '''
+        Prevê a posição do robô com base no tempo que se passou, para atualizar os valores
+        '''
+        #passo para mover a tela
+        stepPosition = self.velocity*timestamp
+
+        #transfiro os pontos de identificação
+        self.viewBall.translateViewBot(Point2D(stepPosition[0],stepPosition[1]))
 
 
 #Definição da classe campo
@@ -297,7 +312,7 @@ class ViewCapture:
         enviada. Ela irá representar, portanto, um retângulo útil na imagem total, no qual será realizado
         o processamento
     '''
-    def __init__(self, Extremes:Rectangle = None, capture:Capture = None):
+    def __init__(self, Extremes:Rectangle = Rectangle(Point2D(0,0),Point2D(0,0),Point2D(0,0),Point2D(0,0))):
         '''
             Esse classe representa a "vista" capturada pelo sistema de visão com base na imagem
             enviada. Ela irá representar, portanto, um retângulo útil na imagem total, no qual será realizado
@@ -306,7 +321,6 @@ class ViewCapture:
             Necessário, portanto, enviar as informações do retângulo e o objeto de captura
         '''
         self.Extremes = Extremes        # Extremos da view
-        self.img = capture.img          # Imagem de origem
 
     #Modificando os extremos em relação à imagem original
     def setViewCapture(self, Extremes:Rectangle):
@@ -349,20 +363,20 @@ class VisionSystem:
         #objeto de captura internas
         self._capture = capture
 
-        #Pegando a imagem de origem
-        self.imgOrigim = self._capture.getImage()
-
         #verifica se existe suporte ao CUDA
         self._hasCuda = UseCuda 
         self._GPUType = GPUType
 
+
         self._capture.GPUMode(self._hasCuda)
 
-        #Matriz associada a imagem final
+        #Verifica 
         self.GPUimg= None
+        self.CPUimg = None 
 
         #gera o objeto para utilizar o cuda
         if(self._hasCuda):
+            #variável para guardar o endereço da imagem principal
             self.GPUimg = cv2.cuda.GpuMat()
 
 
@@ -378,6 +392,9 @@ class VisionSystem:
         self.prop_px_cm = None                  # proporção pixel para cm
 
 
+        #Variáveis internas do sistema de visão que serão importantes
+
+
     #Processamento geral da imagem que irá pegar os valores necessários
     #Envio primeiro a imagem, e ele irá tratar da forma certa
     def proc(self, img):
@@ -391,6 +408,8 @@ class VisionSystem:
         '''
             @GNOMIO: função responsável por criar os objetos do sistema de visão.
             Sendo eles a bola, os robôs, o campo e as áreas do campo.
+
+            Esses objetos são inicializados sem informação, e só são cadastrados dps
         '''
         #Construção dos objetos necessários para realizar a análise
         #Objeto da bola
@@ -430,7 +449,7 @@ class VisionSystem:
     #definir novas configurações
     def setConfigEmulator(self, config:EConfig):
         '''
-            Essa função seta uma nova configuração para o sistema de visão.
+            Essa função seta uma nova configuração para o sistema de visão pelo emulador
         '''
         self.config = config
         self.toMineData()
@@ -446,8 +465,8 @@ class VisionSystem:
     # escolhe as funções da classe caso tenha ou não suporte ao cuda
     def choseModeFunctions(self):
         '''
-            Função responsável por configurar quais funções serão utilizadas
-            com base em se tem ou não GPU
+            Atualiza as funções que serão utilizadas pela GPU e pela CPU
+            Além de deixar mais eficaz.
         '''
         pass
 
@@ -458,7 +477,13 @@ class VisionSystem:
         '''
             Função que carrega imagem na CPU por meio de um caminho (imgPath). Sem usar a GPU
         '''
-        return cv2.imread(imgPath)
+        self.imgOrigim = cv2.imread(imgPath)
+        if(self._hasCuda):
+            has = cv2.cuda.GpuMat()
+            self.imgOrigi_gpu = has.upload(self.imgOrigim)
+            return self.imgOrigi_gpu
+        else:
+            return self.imgOrigim        
     
     #transformando imagem em tons de cinza
     def gray_scale_noCuda(self,img):
@@ -590,9 +615,6 @@ class VisionSystem:
             img_Reduce = Img
             self.prop_px_cm = 1
 
-        #hImg = img_Reduce.shape[0]
-        #wImg = img_Reduce.shape[1]
-
         if w > threshold and h > threshold:
             pixelWidth = min(w, h)
             convert_measures(fieldWidth, pixelWidth)
@@ -686,10 +708,16 @@ class VisionSystem:
         text = f"{team} {id}: {str(x)}, {str(y)}"
         cv2.putText(imgDegub, text , (int(xi),int(yi+ri+20)), cv2.FONT_HERSHEY_SIMPLEX, 0.4, color, 1)
         
-    # ==================== métodos com suporte ao CUDA ===========
+    # ==================== métodos com suporte ao CUDA ===============================
     '''
         As funções com suporte ao CUDA e programação na GPU tem uma lógica diferente
         de processamento, necessário jogando informações na GPU e puxando devolta quando necessário.
+    
+        O funcionamento dessas funções dependem de uma Stream, para determinar o fluxo do programa
+        assim a GPU irá executar várias operações até recuperar os valores necessários.
+
+        Uma Stream é como se fosse uma lista de instruções.
+    
     '''
     #carrega a imagem na GPU
     def load_image_Cuda(self, imgPath):
@@ -718,35 +746,35 @@ class VisionSystem:
         return img_gpu
     
     #transformando imagem em tons de cinza
-    def gray_scale_Cuda(self,img):
+    def gray_scale_Cuda(self,img, stream=None):
         '''
             #### Utilizando a GPU pelo suporte cuda. 
             Função que passa uma imagem para tons de cinza na GPU
         '''
-        return cv2.cuda.cvtColor(img, cv2.COLOR_RGB2GRAY)
+        return cv2.cuda.cvtColor(img, cv2.COLOR_RGB2GRAY, stream=stream)
     
     #aplicando o filtro mediana para possíveis ruídos
-    def median_blur_Cuda(self, img, kernelSize = 3):
+    def median_blur_Cuda(self, img, kernelSize = 3,stream=None):
         '''
             #### Utilizando a GPU pelo suporte cuda. 
             Filtro de mediana para eliminar possíveis ruídos, processamento na GPU
         '''
         medianFiler = cv2.cuda.createMedianFilter(cv2.CV_8UC1, cv2.CV_8UC1, kernelSize)
-        return medianFiler.apply(img)
+        return medianFiler.apply(img,stream=stream)
     
     #binarizando a imagem indo de um limir até 255
-    def binarize_up_Cuda(self, img, threshold=150):
+    def binarize_up_Cuda(self, img, threshold=150,stream=None):
         '''
             #### Utilizando a GPU pelo suporte cuda. 
             Aplica uma binarização na imagem utilizando o GPU. Necessário a imagem
             estar em tons de cinza pela função median_blur(). Essa função retorna o endereço
             da GPU associada a essa imagem.
         '''
-        _,bin = cv2.cuda.threshold(img, threshold, 255, cv2.THRESH_BINARY)
+        _,bin = cv2.cuda.threshold(img, threshold, 255, cv2.THRESH_BINARY,stream=stream)
         return bin
 
     #tratar ruidos com o cuda (A imagem aqui tem que já estar na GPU)
-    def trait_noise_Cuda(self, img, it=1):
+    def trait_noise_Cuda(self, img, it=1, stream = None):
         '''
             #### Utilizando a GPU pelo suporte cuda. 
             Função que irá tratar ruídos na binarização. Portanto, a imagem tem que ser binarizada pela
@@ -756,9 +784,10 @@ class VisionSystem:
         struct_elem = cv2.getStructuringElement(cv2.MORPH_CROSS, (3,3))
         d_struct_elem = cv2.cuda.createMorphologyFilter(cv2.MORPH_ERODE, img.depth(), struct_elem)
 
+        d_img = img
         # Realizar a operação de erosão na GPU
         for i in range(it):
-            d_img = d_struct_elem.apply(d_img)
+            d_img = d_struct_elem.apply(d_img, stream=stream)
 
         return d_img
     
@@ -790,7 +819,7 @@ class VisionSystem:
         return x,y,x+w,y+h
     
     #função para realçar objetos brilhantes na imagem
-    def highlight_img_Cuda(self, img, dim = 25):
+    def highlight_img_Cuda(self, img, dim = 25,stream=None):
         '''
             #### Utilizando a GPU pelo suporte cuda. 
             função para realçar objetos brilhantes na imagem.
@@ -800,12 +829,30 @@ class VisionSystem:
         imgProc = structElem.apply(img)
 
         #ajuste de contraste
-        imgTrat = cv2.cuda.add(imgProc, imgProc)
-        imgTrat = cv2.cuda.add(imgTrat, imgTrat)
+        imgTrat = cv2.cuda.add(imgProc, imgProc,stream=stream)
+        imgTrat = cv2.cuda.add(imgTrat, imgTrat, stream=stream)
         return imgTrat
     
+    #Exemplo de função utilizando o pipeline da GPU
+    def pipelineGPU(self, img_gpu):
+        # Inicializa um objeto de pipeline na GPU
+        stream = cv2.cuda.Stream()
+
+        # Executa a operação de conversão para tons de cinza
+        img_gray_gpu = cv2.cuda.cvtColor(img_gpu, cv2.COLOR_BGR2GRAY, stream=stream)
+
+        # Executa a operação de binarização
+        _, img_bin_gpu = cv2.cuda.threshold(img_gray_gpu, 128, 255, cv2.THRESH_BINARY, stream=stream)
+
+        # Executa a operação de tratamento de ruído
+        img_bin_gpu_traty = vs.trait_noise_Cuda(img_bin_gpu, stream=stream)
+
+        # Espera a conclusão de todas as operações no pipeline
+        stream.waitForCompletion()
+
+        return img_bin_gpu_traty
     #função para reduzir a imagem original
-    def reduce_window_Cuda(self, img, coorVetor, d=10):
+    def reduce_window_Cuda(self, img, coorVetor, d=10, stream=None):
         '''
         #### Utilizando a GPU pelo suporte cuda. 
         Função utilizada para reduzir a imagem a um tamanho menor.
@@ -826,13 +873,13 @@ class VisionSystem:
             matrix_gpu = cv2.cuda.GpuMat(3,3,cv2.CV_32F)
 
             #calculando a matriz de transformação de perspectiva na CPU
-            matrix_cpu = cv2.getPerspectiveTransform(src_points.download(),dst_points.download())
+            matrix_cpu = cv2.getPerspectiveTransform(src_points.download(),dst_points.download(),stream=stream)
 
             #aplicando transformação na GPU
             matrix_gpu.upload(matrix_cpu)
 
             #revisando nova imagem para processamento
-            img_Reduce = cv2.cuda.warpPerspective(img, matrix_gpu, (w,h))
+            img_Reduce = cv2.cuda.warpPerspective(img, matrix_gpu, (w,h),stream=stream)
 
             #retornando imagem reduzidaa
             return img_Reduce
@@ -841,7 +888,7 @@ class VisionSystem:
             return img
         
     #função responsável para reduzir a imagem para os contornos do campo
-    def reduce_field_Cuda(self, BinImg_gpu, Img_gpu, fieldWidth, d=10):
+    def reduce_field_Cuda(self, BinImg_gpu, Img_gpu, fieldWidth, d=10,stream=None):
         '''
             #### Utilizando a GPU pelo suporte cuda. 
             Essa função reduz a imagem original a uma imagem com base no campo detectado
@@ -908,7 +955,6 @@ class VisionSystem:
 
         return bin_Reduce, img_Reduce, cooVetor
 
-
     #puxando intervalos de cores
     def create_color_bounds_Cuda(self, color_array):
         '''
@@ -963,9 +1009,9 @@ class VisionSystem:
         yi = int(y*self.prop_px_cm)
         ri = int(r*self.prop_px_cm)
 
-        if(team == "Aliado"):
+        if(team == ID_Team.TEAM_ALLY):
             color = (255, 0, 0)
-        elif(team == "Inimigo"):
+        elif(team == ID_Team.TEAM_ENEMY):
             color = (0, 0, 255)
         else:
             color = (0, 200, 200)
@@ -999,4 +1045,39 @@ class VisionSystem:
 # Testar função principal e nova lógica
 if __name__ =='__main__':
     #executará o código de teste deste módulo com uma imagem padrão
-    print("Executado como principal")
+    capture = Capture(CaptureMode.CAM, True)
+    capture.setIdCam(0)
+    
+    #gerar objeto de sistema de detectção
+    vs = VisionSystem(None, capture, True, GPUType.NVidia)
+
+    #gerar um timer
+    timer = HighPrecisionTimer(None)
+    timer.run()
+    while True:
+        #processamento
+
+        img_gpu = capture.getImageCuda()
+        if img_gpu is None:
+            print("Falha ao capturar imagem da câmera.")
+            break
+        else:
+            t1 = timer.getElapsedTime()
+            img_proc = vs.pipelineGPU(img_gpu)
+            t2 = timer.getElapsedTime()
+
+            img = img_proc.download()
+
+
+            d = t2-t1
+            print(d)
+            cv2.imshow("Imagem-GPU", img)
+
+        if cv2.waitKey(1) & 0xFF == ord('q'):  # Espera 1 milissegundo e verifica se a tecla 'q' foi pressionada para sair do loop
+            cv2.destroyAllWindows()
+            break
+
+
+
+
+
