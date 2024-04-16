@@ -9,7 +9,7 @@ from communication import *
 import threading
 import queue
 import time
-
+from collections import deque
 import ast
 
 
@@ -47,9 +47,15 @@ class Emulator:
         self.clientSerial = None
         self.commands = None
 
+        #filas
         self.commands_queue = queue.Queue()
         self.sent_data_queue = queue.Queue()
         self.received_data_queue = queue.Queue()
+        #self.capture_queue = queue.Queue()
+        
+        #deque de no máximo 10 imagens
+        self.maxDeque = 2
+        self.capture_deque = deque(maxlen=self.maxDeque)
 
         self.viewer.config()
         self.debugFieldViewer.config()
@@ -100,8 +106,11 @@ class Emulator:
         self.hasSerial  = False         # caso Serial seja escolhido, essa  variável será true
         
         #variável de travar threads numa variável compartilhada
-        self.captureLock = threading.Lock()
         self.captureThread = None
+
+
+        #imagem padrão do emulador vindo da caputar
+        self.frame = None   
 
 
         #Thread de captura para imagem, guardando de forma paralela
@@ -340,10 +349,12 @@ class Emulator:
 
             self.capture.reset()
             self.capture.setMode(CaptureMode.CAM)
-            print("[CAPTURA]: Primeira execução")
+            
             self.capture.setIdCam(self.CamUSB)
             self.cameraIsRunning = True #Camera Não pausada
-            self.captureThread = CameraCaptureThread(capture_instance=self.capture, lock=self.captureLock)
+
+            print("[CAPTURA]: Iniciou-se a thread novamente!")
+            self.captureThread= CameraCaptureThread(main=self, capture_instance=self.capture, deque=self.capture_deque)
             self.captureThread.start()  
 
             # self.firstExecution = True
@@ -363,8 +374,11 @@ class Emulator:
             #Entrada do vídeo
             self.cameraIsRunning = False
             self.capture.reset()
-            self.capture.setMode(CaptureMode.IMG)
+            self.capture.setMode(CaptureMode.IMG)  
 
+            #inicia thread de captura
+            self.captureThread= CameraCaptureThread(main=self, capture_instance=self.capture, deque= self.capture_deque)
+            self.captureThread.start()  
 
             self.btn_stop.pack_forget() # torna o botão "run" invisível
             self.btn_run.pack(fill=BOTH, expand=1) # torna o botão "stop" visível
@@ -382,7 +396,7 @@ class Emulator:
             #video_path = '/home/felipersotero/Documentos/Codigos/interface-vsss/src/videos/jogadores-movimento.mp4'
             #self.capture = cv2.VideoCapture(self.VideoPath)
             self.capture.reset()
-            self.capture.setMode(CaptureMode.DEFAULT)
+            self.capture.setMode(CaptureMode.VIDEO)
             self.cameraIsRunning = False
             self.delay = 14 #14ms
             self.processVideo()
@@ -393,11 +407,23 @@ class Emulator:
             self.btn_stop.pack_forget() # torna o botão "run" invisível
             self.btn_run.pack(fill=BOTH, expand=1) # torna o botão "stop" visível
             self.stop() #Para o emulador.
+
  
     #Método para Parar a Emulação.
     def stop(self):
         print('[EMULADOR] Emulador teve sua execução parada.')
-        if(self.capture): self.capture.reset() #Libera a câmera
+
+        #parando a thread de callback
+        self.video_processor_thread.join()
+        
+        #parando a thread de captura
+        self.captureThread.stop()
+        self.captureThread.join()
+        
+        #print(self.capture_deque)
+        if(self.capture): 
+            self.capture.reset() #Libera a câmera
+            #self.capture_deque = deque(maxlen=self.maxDeque)
 
         if (self.clientMQTT != None):
             self.clientMQTT.loop_stop()
@@ -452,9 +478,7 @@ class Emulator:
         self.Timer.stop()
         self.Timer.reset()
 
-        #parando thread de captura
-        self.captureThread.stop()
-        self.captureThread.join()
+
 
 
     
@@ -466,16 +490,19 @@ class Emulator:
 
         frame, debug, fieldDimensions, OffSetBord, OffSetErode, MatrixTop, BINThresh, ballColor, ball, teamMainColor, enemiesMainColor, playersAllColors, allies, enemies, OffSetBord = received_data
 
-        #Chamando funções de detecção de campo, bola e jogadores
-        binary_treat, frame, rect_vertices, frame_reduce, prop_px_cm = detect_field(frame, debug, fieldDimensions, OffSetBord, OffSetErode, MatrixTop, BINThresh)
-        ballImg, ball_object, binaryBall = detect_ball(frame_reduce, ballColor, ball, prop_px_cm, debug)
-        imgDebug, binaryPlayers, binaryTeam, amountOfPlayers, amountOfAlslies, amountOfEnemies, playersWindows, alliesWindows, enemiesWindows, allies_list, enemies_list, robots = detect_players(frame_reduce, ballImg, binaryBall, binary_treat, teamMainColor, enemiesMainColor, playersAllColors, prop_px_cm, ball_object, allies, enemies, OffSetBord, rect_vertices, debug)
+        try:
+            #Chamando funções de detecção de campo, bola e jogadores
+            binary_treat, frame, rect_vertices, frame_reduce, prop_px_cm = detect_field(frame, debug, fieldDimensions, OffSetBord, OffSetErode, MatrixTop, BINThresh)
+            ballImg, ball_object, binaryBall = detect_ball(frame_reduce, ballColor, ball, prop_px_cm, debug)
+            imgDebug, binaryPlayers, binaryTeam, amountOfPlayers, amountOfAlslies, amountOfEnemies, playersWindows, alliesWindows, enemiesWindows, allies_list, enemies_list, robots = detect_players(frame_reduce, ballImg, binaryBall, binary_treat, teamMainColor, enemiesMainColor, playersAllColors, prop_px_cm, ball_object, allies, enemies, OffSetBord, rect_vertices, debug)
 
 
-        sending_data = (ball_object, allies_list, enemies_list, frame, binary_treat, binaryBall, binaryPlayers, binaryTeam, imgDebug, alliesWindows, enemiesWindows)
-        output_queue.queue.clear()
-        output_queue.put(sending_data)
+            sending_data = (ball_object, allies_list, enemies_list, frame, binary_treat, binaryBall, binaryPlayers, binaryTeam, imgDebug, alliesWindows, enemiesWindows)
+            output_queue.queue.clear()
+            output_queue.put(sending_data)
         
+        except:
+            print("[DETECTION]: Ocorreu um erro em processar. Provavel que foi imagem None")
         #finalizo contagem completa dos frames
         St2 = self.Timer.getElapsedTime()
 
@@ -489,7 +516,11 @@ class Emulator:
     def processUSB(self):
         
         #Id de captura
-        self.frame = self.capture.getImage()
+        #self.frame = self.capture.getImage()
+        while len(self.capture_deque) == 0:  # Espera até que haja pelo menos um elemento no deque
+            time.sleep(0.1)  # Espera por 0.1 segundos antes de verificar novamente
+
+        self.frame = self.capture_deque[-1]
 
         field_data_structure = (self.frame, self.debug_view, self.fieldDimensions, self.OffSetBord, self.OffSetErode, self.MatrixTop, self.BINThresh)
         ball_data_structure = (self.ballColor, self.ball)
@@ -604,6 +635,10 @@ class Emulator:
 
         #atualizo informações na interface
         self.infoCards.update()
+
+        #para a thread
+        self.captureThread.stop()
+        self.captureThread.join()
 
     def processVideo(self):
         print(self.VideoPath)

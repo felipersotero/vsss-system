@@ -11,6 +11,7 @@ from viewer import MyViewer
 import threading
 import queue
 import tkinter 
+from collections import deque
 
 # =============== CONTROLE DE IDENTIFICADORES ===============================
 #identificadores padrões dos robôs
@@ -515,7 +516,6 @@ class Capture:
         self.imgPath = None
         self.videoPath = None
 
-        self.idCam = None
         # Usa a câmera
         self.CAM = None             # Armazena o objeto de captura do OpenCV
 
@@ -590,10 +590,10 @@ class Capture:
                 if ret:
                     return self.image
                 else:
-                    print("[CAPTURA]: Algum problema")
+                    print("[CAPTURA]: Algum problema em adquirir a imagem")
                     return self.image
             else:
-                print("[CAPTURA]: Não está configurado no modo imagem")
+                print("[CAPTURA]: Não está configurado corretamente.")
                 return None
         else:
             print("[CAPTURE]: Cuidado, vocÊ configurou para rodar com cuda!")
@@ -670,39 +670,35 @@ class Capture:
         del self
 
 
-
-#definindo uma thread para a captura
 class CameraCaptureThread(threading.Thread):
-    def __init__(self, capture_instance:Capture, lock:threading.Lock, interval=0.0001):
-        '''
-        Classe para capturar imagens e salvar elas numa variável
-        '''
+    def __init__(self, main, capture_instance: Capture, deque:deque, interval=0.050):
         super().__init__()
         self.capture_instance = capture_instance
         self.interval = interval
         self._is_running = False
-        self.lock = lock
-        self.last_image = None
+        self._main = main
+        self.deque = deque
+        self.daemon = True
 
     def run(self):
         self._is_running = True
         while self._is_running:
-            # Capturar imagem
             new_image = self.capture_instance.getImage()
-            # Atualizar a variável compartilhada
-            with self.lock:
-                self.last_image = new_image
+            if new_image is None:
+                pass
+            else:
+                self.deque.append(new_image)  # Enviando a nova imagem para a fila
+            #print(self.deque[-1])
             time.sleep(self.interval)
 
     def stop(self):
-        '''
-        Método para parar a thread
-        '''
+        #liberar recursos
+        if self.capture_instance.mode == CaptureMode.CAM:
+            self.capture_instance.CAM.release()
+        print("Recursos liberados")
+        #parando
         self._is_running = False
 
-    def getImage(self):
-        with self.lock:
-            return self.last_image
         
 
 #==================================== CLASSES PARA INTERFACE =========================
