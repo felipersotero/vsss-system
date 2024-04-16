@@ -245,7 +245,6 @@ class Ball:
         #transfiro os pontos de identificação
         self.viewBall.translateViewBot(Point2D(stepPosition[0],stepPosition[1]))
 
-
 #Definição da classe campo
 
 #Classe do campo
@@ -273,16 +272,20 @@ class Field:
         #Informações do tipo de objeto
         self.ObjType = ObjTypeMove.STATIC
         self.objTypeSystem = ObjTypeVision.FIELD
-        
+
+        #tamanho e comprimento do campo
+        self.height: int = 0 
+        self.width: int = 0 
+
     #Atualizar extremos do campo, para realizar cálculos
-    def updatePos(self,pos:Point2D,width,height):
+    def updatePos(self,quad:Quad,width:int,height:int):
         '''
-            Atualiza posição do campo.
+            Atualiza novas posições do campo
         '''
-        self.posX=pos[0]
-        self.posY=pos[1]
+        self.extrems = quad
         self.width = width
         self.height = height
+
 
     #setar cada um dos pontos de interesse do campo
     def setPivotPos(self,id:ID_Pivots,px,py):
@@ -303,10 +306,7 @@ class Field:
     def setAreaRobotGoal(self, id:ID_Field,rect:Quad):
         self.goalRobotArea[id].setRect(rect)
 
-    
-    #setando pontos extremos do campo
-    def setPointsField(self, rect: Quad):
-        self.extrems 
+
 #======================|| Sistema de detecção POO||======================================#
 #Vista capturada pelo processamento, que contem a imagem base
 class ViewCapture: 
@@ -405,6 +405,8 @@ class VisionSystem:
         #Imagens
         self.frameOrigin    = None             
         '''responsável por guardar a imagem do campo'''
+        self.ballImg        = None 
+        ''' Imagem da bola que é utilizada para processar e procurar os jogadores'''
         self.fieldReduce    = None              
         '''Imagem do campo reduzida'''
         self.frameResult    = None              
@@ -420,9 +422,17 @@ class VisionSystem:
         self.binReduceField = None              # Imagem binarizada do campo reduzido tratada
         self.binField       = None              # Imagem binarizada do campo original tratada
 
+
+        #Cores dos jogadores salvas para salvar nos jogadores
+        self.allyColor      = None              # Cor do time aliado
+        self.enemyColor     = None              # Cor do time inimigo
+        self.goalAllyColor  = None              # cor do goleiro aliado
+        self.atk1AllyColor  = None              # cor do atacante 1
+        self.atk2AllyColor  = None              # cor do atacante 2
+
         #Atualiza as funções com base no modo que foi determinado para elas
         self.choseModeFunctions()
-    
+
     
     #Processamento geral da imagem que irá pegar os valores necessários
     #Envio primeiro a imagem, e ele irá tratar da forma certa
@@ -1009,8 +1019,6 @@ class VisionSystem:
             img_Reduce = img_cpu
             self.prop_px_cm = 1
 
-        #hImg = img_Reduce.shape[0]
-        #wImg = img_Reduce.shape[1]
 
         if w > threshold and h > threshold:
             pixelWidth = min(w, h)
@@ -1166,8 +1174,8 @@ class VisionSystem:
 
                             
                             
-                            #salvando extremos do objeto campo
-                            self.field.updatePos()
+                            #salvando extremos do objeto campo informando os extremos e o tamanho do campo
+                            self.field.updatePos(rect, self.fieldWidth, self.fieldHeight)
 
 
 
@@ -1188,11 +1196,65 @@ class VisionSystem:
 
 
     #Detectar a imagem da bola na imagem
-    def detect_ball_noCuda(self, img, debug):
+    def detect_ball_noCuda(self, img, colorBall, debug:bool):
         '''
             Função responsável por detectar a bola na imagem, sem usar o suporte ao Cuda.
+
+            Necessário informar a imagem que irá ser processada para encontrar a bola. A cor da bola e se irá querer exibir ela na imagem, que tem que ser informada em HSV
         '''
-        pass
+        #copiando imagem inicial
+        self.ballImg = img.copy()
+
+        #Cor laranja da bola 
+        h = colorBall[0]
+        s = colorBall[1]
+        v = colorBall[2]
+
+        hue_tolerance = 6
+        saturation_tolerance = 50
+        value_tolerance = 50
+
+        ball_lower_bound = np.array([h - hue_tolerance, max(0, s - saturation_tolerance), max(0, v - value_tolerance)])
+        ball_upper_bound = np.array([h + hue_tolerance, min(255, s + saturation_tolerance), min(255, v + value_tolerance)])
+
+        imgHSV = cv2.cvtColor(self.ballImg, cv2.COLOR_BGR2HSV)
+        self.binaryBall = cv2.inRange(imgHSV, ball_lower_bound, ball_upper_bound)
+
+        #Operações de erosão e fechamento
+        structuringElement = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5)) #(8,8)
+        self.binaryBall = cv2.morphologyEx(self.binaryBall, cv2.MORPH_CLOSE, structuringElement)
+        self.binaryBall = cv2.erode(self.binaryBall, structuringElement, iterations=1 )
+        
+        #Encontrando contornos da bola
+        contours, _ = cv2.findContours(self.binaryBall, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+        
+        if contours:
+            ballContour = max(contours, key=cv2.contourArea)
+            (xb, yb), rb = cv2.minEnclosingCircle(ballContour)
+
+            xcm = xb/self.prop_px_cm
+            ycm = yb/self.prop_px_cm
+            rcm = rb/self.prop_px_cm
+
+            #atualizando posição do objeto bola
+            self.ball.updatePosition(xcm, ycm, rcm)
+
+            #desenha caso seja preciso
+            if (debug):
+
+                rb = int(rb)
+                xb = int(xb)
+                yb = int(yb)
+
+                # Circulando bola
+                cv2.circle(self.ballImg, (xb, yb), (rb + 2), (0, 0, 255), 2)
+                text = f"Bola: {str(self.ball.position[0])}, {str(self.ball.position[1])}"
+                cv2.putText(self.ballImg, text, (int(xb),int(yb+rb+15)), cv2.FONT_HERSHEY_SIMPLEX,0.4,(0,0,255), 1)
+                cv2.arrowedLine(self.ballImg, (xb, yb), ((xb + int(ball.direction[0])), (yb + int(self.ball.direction[1]))), (0, 255, 0), 2)
+                
+        else:
+            ball = Ball(0, 0, 0)
+
 
 
     #Método para detectar os robôs com suporte ao Cuda
@@ -1245,33 +1307,17 @@ class VisionSystem:
 # Testar função principal e nova lógica
 if __name__ =='__main__':
     #executará o código de teste deste módulo com uma imagem padrão
-    capture = Capture(CaptureMode.CAM, True)
+    capture = Capture(CaptureMode.CAM, False)
     capture.setIdCam(0)
     
     #gerar objeto de sistema de detectção
-    vs = VisionSystem(None, capture, True, GPUType.NVidia)
+    vs = VisionSystem(None, capture, False, GPUType.NVidia)
 
     #gerar um timer
     timer = HighPrecisionTimer(None)
     timer.run()
     while True:
-        #processamento
-
-        img_gpu = capture.getImageCuda()
-        if img_gpu is None:
-            print("Falha ao capturar imagem da câmera.")
-            break
-        else:
-            t1 = timer.getElapsedTime()
-            img_proc = vs.pipelineGPU(img_gpu)
-            t2 = timer.getElapsedTime()
-
-            img = img_proc.download()
-
-
-            d = t2-t1
-            print(d)
-            cv2.imshow("Imagem-GPU", img)
+        #Executar algum processamento aqui utilizando a câmera!
 
         if cv2.waitKey(1) & 0xFF == ord('q'):  # Espera 1 milissegundo e verifica se a tecla 'q' foi pressionada para sair do loop
             cv2.destroyAllWindows()

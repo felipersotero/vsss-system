@@ -679,7 +679,7 @@ class CameraCaptureThread(threading.Thread):
         Essa classe é responsável por gerar a Thread que irá capturar imagens
         e salvar elas num deque, que será acessado pelo emulador.
     '''
-    def __init__(self, main, capture_instance: Capture, deque:deque, interval=0.050):
+    def __init__(self, main, capture_instance: Capture, deque:deque, interval=0.016):
         super().__init__()
         self.capture_instance = capture_instance
         self.interval = interval

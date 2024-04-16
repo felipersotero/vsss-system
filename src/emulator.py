@@ -54,7 +54,7 @@ class Emulator:
         #self.capture_queue = queue.Queue()
         
         #deque de no máximo 10 imagens
-        self.maxDeque = 2
+        self.maxDeque = 4
         self.capture_deque = deque(maxlen=self.maxDeque)
 
         self.viewer.config()
@@ -413,12 +413,8 @@ class Emulator:
     def stop(self):
         print('[EMULADOR] Emulador teve sua execução parada.')
 
-        #parando a thread de callback
-        self.video_processor_thread.join()
-        
         #parando a thread de captura
         self.captureThread.stop()
-        self.captureThread.join()
         
         #print(self.capture_deque)
         if(self.capture): 
@@ -439,6 +435,7 @@ class Emulator:
 
         #Atualiza cards
         self.infoCards.updateFuncs()
+
         #Inicializa o viewer
         if(self.Mode== MODE_USB_CAM): #Modo camera
             #Configurando Viewer para modo de exibição de câmera
@@ -516,12 +513,11 @@ class Emulator:
     def processUSB(self):
         
         #Id de captura
-        #self.frame = self.capture.getImage()
         while len(self.capture_deque) == 0:  # Espera até que haja pelo menos um elemento no deque
             time.sleep(0.1)  # Espera por 0.1 segundos antes de verificar novamente
 
         self.frame = self.capture_deque[-1]
-
+        
         field_data_structure = (self.frame, self.debug_view, self.fieldDimensions, self.OffSetBord, self.OffSetErode, self.MatrixTop, self.BINThresh)
         ball_data_structure = (self.ballColor, self.ball)
         players_data_structure = (self.teamMainColor, self.enemiesMainColor, self.playersAllColors, self.allies, self.enemies, self.OffSetBord)
