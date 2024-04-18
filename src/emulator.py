@@ -124,7 +124,11 @@ class Emulator:
         self.BINThresh = int(self.settingsTree.tree.item('I00A','value')[0])
         self.MatrixTop = int(self.settingsTree.tree.item('I00B','value')[0])
         self.FocusMode = self.settingsTree.tree.item('I00C','value')[0]
-        self.FocusValue = float(self.settingsTree.tree.item('I00D','value')[0])
+        focus_value_str = self.settingsTree.tree.item('I00D','value')[0]
+        if focus_value_str:
+            self.FocusValue = float(focus_value_str)
+        else:
+            self.FocusValue = 0
 
         #dimensão do campo
         self.fieldWidth = int(self.settingsTree.tree.item('I00F','value')[0])

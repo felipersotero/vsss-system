@@ -13,7 +13,7 @@ class settingsMenu(Frame):
         self.tree.bind("<Double-1>", self.on_double_click)
         self.tree.pack(fill=BOTH, expand=True)
         self.nodes={}
-
+        self._hasControlFocus = None
 
         #variável para evitar que mais de uma instância seja acionada na threeview
         # Assim ela só aciona uma instância por vês

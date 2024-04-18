@@ -24,7 +24,7 @@ import modules
 
 #Classe do robô
 class Robot:
-    def __init__(self, id:ID_Robots, team:ID_Team, x=0, y=0, r=0, image=cv2.imread('src/images/dark_screen.png'),colorTeam = None,colorCar = None):
+    def __init__(self, id:ID_Robots, team:ID_Team, x=0, y=0, r=0, image=cv2.imread('src/images/dark_screen.png'),colorTeam = None,colorCar1 = None, colorCar2=None):
         '''
         @GNOMIO: Classe Robot que será utilizada no algorítmo de detecção para representar os robôs
         As características do robô são:
@@ -77,7 +77,8 @@ class Robot:
 
         #informando cor (Em código HSV, falta converter)
         self.colorTeam = colorTeam
-        self.colorCar = colorCar
+        self.colorCar1 = colorCar1
+        self.colorCar2 = colorCar2
 
     #Atualizar posição do robô
     def updatePosition(self, x, y, r, image):
@@ -109,13 +110,16 @@ class Robot:
         self.detected = status
 
     #informando cores do carro
-    def setColor(self, colorTeam, colorCar):
+    def setColor(self, colorTeam, colorCar1, colorCar2):
         '''
             Seta as cores configuradas para reconhecer esse robô. A cor do time e
             a cor secundária dele.
         '''
         self.colorTeam = colorTeam
-        self.colorCar = colorCar
+
+        #Cor primária e secundária do robô
+        self.colorCar1 = colorCar1
+        self.colorCar2 = colorCar2
 
     #informando raio da borda do carro
     def setRadius(self, radius):
