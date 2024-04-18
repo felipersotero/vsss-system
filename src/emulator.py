@@ -124,7 +124,7 @@ class Emulator:
         self.BINThresh = int(self.settingsTree.tree.item('I00A','value')[0])
         self.MatrixTop = int(self.settingsTree.tree.item('I00B','value')[0])
         self.FocusMode = self.settingsTree.tree.item('I00C','value')[0]
-        self.FocusValue = self.settingsTree.tree.item('I00D','value')[0]
+        self.FocusValue = float(self.settingsTree.tree.item('I00D','value')[0])
 
         #dimensão do campo
         self.fieldWidth = int(self.settingsTree.tree.item('I00F','value')[0])
@@ -168,6 +168,9 @@ class Emulator:
         self.comMode = self.format_var(self.comMode)
         self.CUDAService = self.format_var(self.CUDAservice)
         
+        #variável de controle de foco da câmera
+        self.FocusMode = self.format_var(self.FocusMode)
+
         #verifica se foi solicitado DEBUG do código
         if(self.debug_view == 'true'):
             self.DEBUGA = True
@@ -226,7 +229,12 @@ class Emulator:
             self.hasMqtt = False
 
         #tratar os valores de captura para aplicar as variações que eu quero
-        
+        if self.FocusMode == 'automatico':
+            self._focusMode = FocusMode.AUTO
+        elif self.FocusMode == 'manual':
+            self._focusMode = FocusMode.MANUAL
+        else: 
+            self._focusMode = FocusMode.AUTO
 
 
         #Atualizo o card
@@ -355,7 +363,54 @@ class Emulator:
             self.capture.setMode(CaptureMode.CAM)
             
             self.capture.setIdCam(self.CamUSB)
-            self.cameraIsRunning = True #Camera Não pausada
+
+            #verifica se tem suporte a controle de foco
+            if self.settingsTree._hasControlFocus:
+                if self._focusMode == FocusMode.AUTO:
+                    self.capture.setModeFocus(self._focusMode)
+                else: #foco manual
+                    self._focusMode = FocusMode.MANUAL
+                    self.capture.setModeFocus(self._focusMode)
+                    self.capture.setFocusManual(self.FocusValue)
+            else: #a árvore de variáveis não verificou se tem controle de foco
+                if self._focusMode == FocusMode.AUTO:
+                    #Verifico se tem suporte
+                    if not self.capture.setModeFocus(FocusMode.AUTO):
+                        print("[EMULADOR]: Câmera não suporta controle de foco")
+                        #atualizo a arvore 
+                        self.settingsTree.att_node_id('I00C','AUTOMATICO')
+                        self.settingsTree.att_node_id('I00D','')
+                        self.settingsTree.save_to_json('config')
+
+                        #executa sem setar o modo
+                    else:
+                        self.settingsTree.att_node_id('I00C','AUTOMATICO')
+                        self.settingsTree.att_node_id('I00D','')
+                        self.settingsTree.save_to_json('config')
+
+                        #executa sem setar o modo
+                else: #foco manual
+                    self._focusMode = FocusMode.MANUAL
+                    if not self.capture.setModeFocus(FocusMode.MANUAL):
+                        self._focusMode = FocusMode.MANUAL
+                        print("[EMULADOR]: Câmera não suporta controle de foco")
+                        #atualizo a arvore
+                        self.settingsTree.att_node_id('I00C','AUTOMATICO')
+                        self.settingsTree.att_node_id('I00D','')
+                        self.settingsTree.save_to_json('config')
+
+                        #executa sem setar o modo
+                    else:
+                        self.capture.setFocusManual(self.FocusValue)
+                        print("[EMULADOR]: Foco manual com valor setado de ", self.FocusValue)
+                        #atualizo a arvore
+                        self.settingsTree.att_node_id('I00C','MANUAL')
+                        self.settingsTree.att_node_id('I00D',self.FocusValue)
+                        self.settingsTree.save_to_json('config')
+            
+            
+            #seta a flag de que a câmera está funcionando
+            self.cameraIsRunning = True 
             
             print("[CAPTURA]: Iniciou-se a thread novamente!")
             self.captureThread= CameraCaptureThread(main=self, capture_instance=self.capture, deque=self.capture_deque)

@@ -550,10 +550,17 @@ class Capture:
 
     # define qual a forma que a câmera irá tratar o foco
     def setModeFocus(self, mode:FocusMode = FocusMode.AUTO):
+        '''
+            Função que seta um modo do controle automático de foco.
+            Ela retorna _True_ se a operação for possível e retorna _False_ em caso
+            que a câmera não suporta esse controle de foco.
+        '''
         if self.mode == CaptureMode.CAM and self._hasCamera and (self.CAM is not None):
             if mode == FocusMode.AUTO:
                 if not self.CAM.set(cv2.CAP_PROP_AUTOFOCUS, 0):
                     print("[CAPTURA]: Câmera não suporta controle de foco")
+                    self.modeCam = FocusMode.AUTO
+                    self._camHasFocusControl = False
                     return False
                 else: #suporta controle de foco
                     self.modeCam = mode
@@ -563,6 +570,7 @@ class Capture:
             elif mode == FocusMode.MANUAL:
                 if not self.CAM.set(cv2.CAP_PROP_FOCUS, self.focusManual):
                     print("[CAPTURA]: Câmera não suporta controle de foco")
+                    self._camHasFocusControl = False
                     return False
                 else: #suporta controle de foco
                     self.modeCam = mode
@@ -570,19 +578,29 @@ class Capture:
                     return True
             else:
                 print("[CAPTURA]: Erro grave! Variável corrompida")
+                self._camHasFocusControl = False
+                self.modeCam = FocusMode.AUTO
                 return False 
         else:   
             print("[CAPTURA]: primeiro coloque no modo câmera!")
+            self._camHasFocusControl = False
+            self.modeCam = FocusMode.AUTO
             return False
 
     #define qual o valor atribuído ao foco
-    def setFocusManual(self, value:int):
+    def setFocusManual(self, value:float):
+        '''
+            Seto um valor para o controle por software do foco da câmera
+        '''
         if self.mode == CaptureMode.CAM and self._hasCamera and self._camHasFocusControl:
             if self.modeCam == FocusMode.AUTO:
-                print("[CAPTURE]: Modo configurado para automático. Essa ação não é possível")
+                #Mudando para controle automático, caso tenha suporte
+                #self.CAM.set(cv2.CAP_PROP_AUTOFOCUS, 0)
+                print("[CAPTURE]: Modo configurado para automático")
             elif self.modeCam == FocusMode.MANUAL and (self.CAM is not None):
                 self.focusManual = np.clip(value, 0, 255)
                 self.CAM.set(cv2.CAP_PROP_FOCUS, self.focusManual)  # Altere este valor para ajustar o foco
+                #print("[CAPTURA]: A camera foi configurada para foco manual")
         else:
             print("[CAPTURA]: A câmera não tem suporte ao controle, ou não foi configurada para câmera")
 
