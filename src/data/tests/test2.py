@@ -1,71 +1,38 @@
 import tkinter as tk
-from tkinter import ttk
-import serial.tools.list_ports
 
-class TempWindow:
-    def __init__(self, parent):
-        self.parent = parent
-        self.parent.title("Selecionar tipo de comunicação")
+class ColorSquare(tk.Frame):
+    def __init__(self, master=None):
+        super().__init__(master, bg="white")
+        self.square_size = 10
+        self.status = "parado"
+        self.square = tk.Canvas(self, width=self.square_size, height=self.square_size, bd=1, relief="solid", bg="white")
+        self.square.pack(side=tk.LEFT, padx=5)
+        self.text_var = tk.StringVar()
+        self.text_var.set("Parado")
+        self.text_label = tk.Label(self, textvariable=self.text_var, bg="white")
+        self.text_label.pack(side=tk.LEFT)
+        self.button = tk.Button(self, text="Iniciar", command=self.toggle_status)
+        self.button.pack(side=tk.LEFT, padx=5)
 
-        # Frame principal
-        self.frame = ttk.Frame(self.parent)
-        self.frame.pack(padx=10, pady=10)
-
-        # Label de seleção de comunicação
-        self.label_comm = ttk.Label(self.frame, text="Selecione o tipo de comunicação:")
-        self.label_comm.grid(row=0, column=0, padx=5, pady=5)
-
-        # Combobox para seleção de comunicação
-        self.combobox_comm = ttk.Combobox(self.frame, values=["MQTT", "SERIAL","Nenhuma"])
-        self.combobox_comm.grid(row=0, column=1, padx=5, pady=5)
-        self.combobox_comm.bind("<<ComboboxSelected>>", self.show_serial_options)
-
-        # Label de seleção de porta serial
-        self.label_serial = ttk.Label(self.frame, text="Selecione a porta serial:")
-        self.label_serial.grid(row=1, column=0, padx=5, pady=5)
-        self.label_serial.grid_remove()  # Inicialmente oculto
-
-        # Combobox para seleção de porta serial
-        self.combobox_serial = ttk.Combobox(self.frame)
-        self.combobox_serial.grid(row=1, column=1, padx=5, pady=5)
-        self.combobox_serial.grid_remove()  # Inicialmente oculto
-
-        # Botão de voltar
-        self.button_back = ttk.Button(self.frame, text="Voltar", command=self.destroy_window)
-        self.button_back.grid(row=2, column=0, padx=5, pady=5)
-
-        # Botão de confirmar
-        self.button_confirm = ttk.Button(self.frame, text="Confirmar", command=self.on_confirm)
-        self.button_confirm.grid(row=2, column=1, padx=5, pady=5)
-
-    def show_serial_options(self, event):
-        selected_comm = self.combobox_comm.get()
-        if selected_comm == "SERIAL":
-            self.label_serial.grid()
-            self.combobox_serial.grid()
-            self.populate_serial_ports()
+    def toggle_status(self):
+        if self.status == True:
+            self.set_status("parado")
         else:
-            self.label_serial.grid_remove()
-            self.combobox_serial.grid_remove()
+            self.set_status("executando")
 
-    def populate_serial_ports(self):
-        serial_ports = [port.device for port in serial.tools.list_ports.comports()]
-        self.combobox_serial["values"] = serial_ports
+    def set_status(self, status):
+        self.status = status
+        if status == True:
+            self.square.config(bg="green")
+            self.text_var.set("Em execução")
+            self.button.config(text="Parar")
+        elif status == False:
+            self.square.config(bg="red")
+            self.text_var.set("Parado")
+            self.button.config(text="Iniciar")
 
-    def destroy_window(self):
-        self.parent.destroy()
-
-    def on_confirm(self):
-        selected_comm = self.combobox_comm.get()
-        selected_port = self.combobox_serial.get() if selected_comm == "SERIAL" else None
-        print("Comunicação selecionada:", selected_comm)
-        print("Porta serial selecionada:", selected_port)
-        # Adicione aqui a lógica que deseja executar ao confirmar a seleção
-
-def main():
-    root = tk.Tk()
-    temp_window = TempWindow(root)
-    root.mainloop()
-
-if __name__ == "__main__":
-    main()
+# Exemplo de uso
+root = tk.Tk()
+square_frame = ColorSquare(root)
+square_frame.pack()
+root.mainloop()
