@@ -49,7 +49,6 @@ class ControlWindow:
         #thread para processamento
         self.queueIn = queue.Queue()                        # fila para enviar dados para a thread
         self.queueOut = queue.Queue()                       # fila para receber dados da thread
-        self.processThread = Thread(self,self.queueIn,self.queueOut,self.callBack)
 
         #configurando a janela
         self.config()                                       # Configurando frames

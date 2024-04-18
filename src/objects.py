@@ -497,6 +497,15 @@ class CaptureMode:
     IMG: int = 2
     VIDEO: int = 3
 
+#enumeração para o modo de focalização da câmera
+class FocusMode:
+    '''
+        Representar qual o modo de foco da câmera, se é automático ou manual
+    '''
+    AUTO: int = 0
+    MANUAL: int =1 
+
+
 # PertenceAoEmulador
 class Capture:
     '''
@@ -509,13 +518,18 @@ class Capture:
             E também informo se vou ou não utilizar GPU (True ou False)
         '''
         self.mode = mode
-        self.image = None           # Representa a imagem que foi capturada
-        self.isCamRunning = False   # Para o caso de uma câmera de verdade
-        self.frameDelay = 14        # Taxa de quadro (delay)
-        self._hasGPU = useGpu       # utiliza a GPU para processar
-        self.cuda = None             # Objeto para tratar o modo GPU
-        self.idCam = 0
+        self.image = None                               # Representa a imagem que foi capturada
+        self.isCamRunning = False                       # Para o caso de uma câmera de verdade
+        self.frameDelay = 14                            # Taxa de quadro (delay)
+        self._hasGPU = useGpu                           # utiliza a GPU para processar
+        self.cuda = None                                # Objeto para tratar o modo GPU
+        self.idCam = 0                                  # identificador da câmera que será utilizada
+        self.modeCam: FocusMode = FocusMode.AUTO        # ela é inicialmente feita no modo automático
+        self.focusManual = 155                          # aqui eu guardo o valor 
 
+        self._camHasFocusControl = False                # flag que indica se a câmera tem controle de foco
+        self._hasCamera = False                         # Flag interna para avisar que existe uma câmera criada
+        
         # Endereços para imagem e vídeo
         self.imgPath = None
         self.videoPath = None
@@ -533,6 +547,44 @@ class Capture:
             Esse modo pode ser vídeo, camera ou imagem.
         '''
         self.mode = mode
+
+    # define qual a forma que a câmera irá tratar o foco
+    def setModeFocus(self, mode:FocusMode = FocusMode.AUTO):
+        if self.mode == CaptureMode.CAM and self._hasCamera and (self.CAM is not None):
+            if mode == FocusMode.AUTO:
+                if not self.CAM.set(cv2.CAP_PROP_AUTOFOCUS, 0):
+                    print("[CAPTURA]: Câmera não suporta controle de foco")
+                    return False
+                else: #suporta controle de foco
+                    self.modeCam = mode
+                    self._camHasFocusControl = True
+
+                    return True
+            elif mode == FocusMode.MANUAL:
+                if not self.CAM.set(cv2.CAP_PROP_FOCUS, self.focusManual):
+                    print("[CAPTURA]: Câmera não suporta controle de foco")
+                    return False
+                else: #suporta controle de foco
+                    self.modeCam = mode
+                    self._camHasFocusControl = True
+                    return True
+            else:
+                print("[CAPTURA]: Erro grave! Variável corrompida")
+                return False 
+        else:   
+            print("[CAPTURA]: primeiro coloque no modo câmera!")
+            return False
+
+    #define qual o valor atribuído ao foco
+    def setFocusManual(self, value:int):
+        if self.mode == CaptureMode.CAM and self._hasCamera and self._camHasFocusControl:
+            if self.modeCam == FocusMode.AUTO:
+                print("[CAPTURE]: Modo configurado para automático. Essa ação não é possível")
+            elif self.modeCam == FocusMode.MANUAL and (self.CAM is not None):
+                self.focusManual = np.clip(value, 0, 255)
+                self.CAM.set(cv2.CAP_PROP_FOCUS, self.focusManual)  # Altere este valor para ajustar o foco
+        else:
+            print("[CAPTURA]: A câmera não tem suporte ao controle, ou não foi configurada para câmera")
 
     #Seta a configura para o GPU
     def GPUMode(self, useGpu:BooleanVar):
@@ -558,8 +610,22 @@ class Capture:
         self.idCam = id
         print("[CAPTURA]: Id da camera:", self.idCam)
         if(self.mode == CaptureMode.CAM):
-            self.CAM = cv2.VideoCapture(self.idCam)
+            try:
+                self.CAM = cv2.VideoCapture(self.idCam)
 
+                #verifica se foi possível criar essa câmera
+                if not self.CAM.isOpened():
+                    print("[CAPTURA]: Ocorreu um erro ao abrir a câmera!")
+                    self.CAM.release()
+                    return False
+                else:
+                    self._hasCamera = True
+                    print("[CAPTURA]: Criou a câmera:")
+                    return True
+            except:
+                print("[CAPTURA]: Ocorreu um erro em abrir a câmera")
+                return False
+            
     # Informar o endereço das imagens e dos vídeos
     def setImagePath(self, pathImg):
         '''
@@ -667,6 +733,12 @@ class Capture:
         # Liberar memória da GPU
         if self.cuda is not None:
             self.cuda.release()
+
+        self.modeCam: FocusMode = FocusMode.AUTO        # ela é inicialmente feita no modo automático
+        self.focusManual = 155                          # aqui eu guardo o valor 
+        
+        self._hasCamera = False                         # Flag interna para avisar que existe uma câmera criada
+        self._camHasFocusControl = False                # flag que indica se a câmera tem controle de foco
 
     # Destruindo o objeto de captura
     def __del__(self):

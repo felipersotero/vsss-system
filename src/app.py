@@ -204,8 +204,10 @@ class App:
         self.menu.add_node(AlgRec,'offsetW','Borda da janela', value='10')
         self.menu.add_node(AlgRec,'offSetErode','offSet da Erosão', value='3')
         self.menu.add_node(AlgRec,'Threshold','Binarização Threshold', value='245')
-        self.menu.add_node(AlgRec,'DimMatrx','Dim. Matriz TOPHAT', value='25')
-        self.menu.add_node(AlgRec,'DebugAlg','Debug do Algorítmo', value='False')     
+        self.menu.add_node(AlgRec,'DimMatrx','Dim. Matriz TOPHAT', value='25')    
+        self.menu.add_node(AlgRec,'FocoCam','Modo do Foco', value='Automatico')
+        self.menu.add_node(AlgRec,'FocoValue','Valor do Foco', value='')
+
 
         FieldSize=self.menu.add_node(SysVision,'fieldDimensions','Dimensões do campo (cm)', value='')
         self.menu.add_node(FieldSize,'fieldWidth','Largura (menor)', value='130')
@@ -244,7 +246,7 @@ class App:
         self.menu.save_to_json('config')
 
         self.emulator.init()
-        self.menu.att_node_id('I01F','Em execução.')
+        self.menu.att_node_id('I020','Em execução.')
         self.menu.save_to_json('config')
 
     def stop_emulate(self):
@@ -252,7 +254,7 @@ class App:
         self.btn_stop.pack_forget()
         self.btn_run.pack(fill=BOTH, expand=1)
         
-        self.menu.att_node_id('I01F','Parado')
+        self.menu.att_node_id('I020','Parado')
         self.menu.save_to_json('config')
 
     #pegar as informações da tela

@@ -123,28 +123,30 @@ class Emulator:
         self.OffSetErode = int(self.settingsTree.tree.item('I009','value')[0])
         self.BINThresh = int(self.settingsTree.tree.item('I00A','value')[0])
         self.MatrixTop = int(self.settingsTree.tree.item('I00B','value')[0])
+        self.FocusMode = self.settingsTree.tree.item('I00C','value')[0]
+        self.FocusValue = self.settingsTree.tree.item('I00D','value')[0]
 
         #dimensão do campo
-        self.fieldWidth = int(self.settingsTree.tree.item('I00E','value')[0])
-        self.fieldHeight = int(self.settingsTree.tree.item('I00F','value')[0])
+        self.fieldWidth = int(self.settingsTree.tree.item('I00F','value')[0])
+        self.fieldHeight = int(self.settingsTree.tree.item('I010','value')[0])
 
         #cores
-        self.mainColor = self.settingsTree.tree.item('I011','value')[0]
-        self.player1Color1 = self.settingsTree.tree.item('I012','value')[0]
-        self.player1Color2 = self.settingsTree.tree.item('I013','value')[0]
-        self.player2Color1 = self.settingsTree.tree.item('I014','value')[0]
-        self.player2Color2 = self.settingsTree.tree.item('I015','value')[0]
-        self.player3Color1 = self.settingsTree.tree.item('I016','value')[0]
-        self.player3Color2 = self.settingsTree.tree.item('I017','value')[0]
-        self.enemiesMainColor = self.settingsTree.tree.item('I018','value')[0]
-        self.ballColor = self.settingsTree.tree.item('I019','value')[0]
+        self.mainColor = self.settingsTree.tree.item('I012','value')[0]
+        self.player1Color1 = self.settingsTree.tree.item('I013','value')[0]
+        self.player1Color2 = self.settingsTree.tree.item('I014','value')[0]
+        self.player2Color1 = self.settingsTree.tree.item('I015','value')[0]
+        self.player2Color2 = self.settingsTree.tree.item('I016','value')[0]
+        self.player3Color1 = self.settingsTree.tree.item('I017','value')[0]
+        self.player3Color2 = self.settingsTree.tree.item('I018','value')[0]
+        self.enemiesMainColor = self.settingsTree.tree.item('I019','value')[0]
+        self.ballColor = self.settingsTree.tree.item('I01A','value')[0]
 
         #variáveis que influenciam no desenvolvimento 
-        self.debug_view = self.settingsTree.tree.item('I01B','value')[0]
-        self.comMode = self.settingsTree.tree.item('I01C','value')[0]
-        self.serialPort = self.settingsTree.tree.item('I01D','value')[0]
-        self.CUDAservice = self.settingsTree.tree.item('I01E','value')[0]
-        self.EXECMode = self.settingsTree.tree.item('I01F','value')[0]
+        self.debug_view = self.settingsTree.tree.item('I01C','value')[0]
+        self.comMode = self.settingsTree.tree.item('I01D','value')[0]
+        self.serialPort = self.settingsTree.tree.item('I01E','value')[0]
+        self.CUDAservice = self.settingsTree.tree.item('I01F','value')[0]
+        self.EXECMode = self.settingsTree.tree.item('I020','value')[0]
 
         #modo de uso do emulador
         self.UseMode = self.format_var(self.UseMode)
@@ -222,6 +224,9 @@ class Emulator:
             self.hasConection = False
             self.hasSerial = False
             self.hasMqtt = False
+
+        #tratar os valores de captura para aplicar as variações que eu quero
+        
 
 
         #Atualizo o card
@@ -361,7 +366,7 @@ class Emulator:
 
             # Chamando thread para processamento de vídeo
             self.showInformation()
-            
+
             #Trabalhando com filas e threads
             if (self.hasConection == True):
                 self.communication_thread = threading.Thread(target=self.send_data, args=(self.commands_queue,), daemon=True)
@@ -553,10 +558,10 @@ class Emulator:
 
         self.totalTime = (Stp2-Stp1)  
         self.realTime = self.Timer.getElapsedTime()/1000.0        #tempo em segundos                              #tempo atual que se passou                                            #Em ms
-        self.FPStime = (1000/self.totalTime) if (self.totalTime != 0) else 0      #Calculando FPS
-        self.infoCards.update()
+        self.FPStime = (1000/self.totalTime) if (self.totalTime != 0) else 0      
 
         if self.cameraIsRunning:
+            #Aqui tem um tempo de delay fixo entre as execuções da função
             self.viewer.window.after(self.delay, self.processUSB)
 
     def processImage(self):
@@ -636,7 +641,7 @@ class Emulator:
             #Adicionando conteúdos
             self.setContentRobots()
 
-            self.viewer.window.after(self.delay, self.showInformation)
+            self.viewer.window.after(20, self.showInformation)
         else:
             print('Não está no modo câmera')
     #Método para processar o vídeo
