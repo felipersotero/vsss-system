@@ -81,19 +81,6 @@ class Robot:
     # def set_cv2Perspective(self, perspective):                              
     #     self.CV2Perspective = perspective
     
-    # #Função de debug para imprimir informações do robô
-    # def infos(self):
-    #     info_str='''
-    #         =======================
-    #         |Informações do robô {}|
-    #         Equipe: {}
-    #         Posição: {}
-    #         Velocidade: {}
-    #         Raio: {}
-    #         =======================
-    #     '''.format(self.id, self.team,self.pos, self.vel, self.radio)
-    #     print(info_str)
-    
     # #Adicionando a informação da janela na imagem cuja posição está o robô
     # def set_window(self, x, y, w, h):
     #     self.window = np.array([[x, y], [x, y+h], [x+w, y+h], [x+w, y]])
@@ -279,28 +266,6 @@ def reduce_window(img, coorVetor, d=10):
     except:
         #Ocorreu um erro, então retorna a janela já inicial
         return img
-    
-    
-def list_players(teamList):
-    amount = len(teamList)
-
-    for i in range(amount):
-        print(teamList[i].team, teamList[i].id)
-        print("Posição: x =", teamList[i].pos[0], " y =", teamList[i].pos[1])
-    
-    print("====================")
-
-#Função para identificar equipe
-def find_team(windowsCar, colorTeam, colorEnemy):
-    #Irá a partir da imagem descobrir se é ou não um carro aliado e inimigo
-    # Verifica a cor, e dependendo disso irá retornar 2 valores:
-    # 1 -> Aliado
-    # 0 -> Inimigo
-    # Além disso, retorna o objeto Robô com as informações necessárias.
-    
-    #Processo de filtragem
-    
-    return 0
 
 def create_color_bounds(color_array):
     h = color_array[0]
@@ -643,6 +608,16 @@ def detect_players(img, ballImg, binaryBall, binaryField, alliesColor, enemiesCo
             # print("Tamanho da janela: ", winSize)
             initPt = np.float32([[xi-(winSize/2),yi-(winSize/2)],[xi+(winSize/2),yi-(winSize/2)],[xi-(winSize/2),yi+(winSize/2)],[xi+(winSize/2),yi+(winSize/2)]])
             endPt = np.float32([[0,0],[winSize,0],[0,winSize],[winSize,winSize]])
+
+            print(f"Pontos iniciais dos jogadores detectados: {initPt/prop_px_cm}")
+            borderPointsConv = initPt/prop_px_cm
+
+            if(debug):
+                for point in borderPointsConv:
+                    xb = int(point[0]*prop_px_cm)
+                    yb = int(point[1]*prop_px_cm)
+                    
+                    cv2.circle(imgDegub, (xb, yb), 1, (255, 0, 0), 2)
 
             #Matriz de transformação para nova perspectiva
             perspecMatrix = cv2.getPerspectiveTransform(initPt, endPt)

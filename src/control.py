@@ -119,6 +119,7 @@ class Control:
 
         return formatted_value
 
+    # Funções para desenhar caminhos discretizados na imagem
     def drawPath(self, imgDebug, prop_px_cm):
         self.getCoordinates()
         
@@ -174,7 +175,7 @@ class Control:
     
     def processDiscreteControl(self, imgDebug, prop_px_cm):
         self.getCoordinates()
-        t = 20
+        t = 50
 
         if self.possibleRecognition[0] and self.ball_coordinates is not None:
             
@@ -216,31 +217,26 @@ class Control:
     def controlRobotDiscrete(self, rho, alpha, beta):
         absAlpha = abs(alpha)
 
-        Kr = 20
-        Ka = 0.5
-        Kb = 0
+        # Kr = 10
+        # Ka = 0.5
+        # Kb = 0
 
-        # if absAlpha > math.pi /2 :
-        #     Kr = 0
-        #     # Ka = 170
-        #     Ka = 130
-        #     Kb = 0
-        # elif absAlpha> math.pi /4:
-        #     Kr = 0
-        #     # Ka = 130
-        #     Ka = 80
-        #     Kb = 0
-        # elif absAlpha> math.pi /6:
-        #     # Kr = 10
-        #     Kr = 1
-        #     # Ka = 100
-        #     Ka = 30
-        #     Kb = 0
-
-        # else :
-        #     Kr = 30
-        #     Ka = 0
-        #     Kb = 0
+        if absAlpha > math.pi /2 :
+            Kr = 0
+            Ka = 0.5
+            Kb = 0
+        elif absAlpha> math.pi /4:
+            Kr = 2
+            Ka = 0.4
+            Kb = 0
+        elif absAlpha> math.pi /6:
+            Kr = 5
+            Ka = 0.25
+            Kb = 0
+        else :
+            Kr = 10
+            Ka = 0
+            Kb = 0
 
         v = Kr * rho
         w = Ka * alpha + Kb * beta
