@@ -42,31 +42,23 @@ class settingsMenu(Frame):
         if item:
             if self.tree.item(item,'text') in color_editables:
                 #Caso isso aconteça, ele irá exibir um frame para modificar as cores e verificar o código
-                # print("Calibrar a cor foi clicada")
-                # self.tree.tag_configure('custom_color', background='lightblue')
-                # self.tree.item(item, tags=('custom_color'))
                 if not self._hasChild:
                     self.open_color_pick_window(item)
 
             elif self.tree.item(item, 'text') == 'Modo de Uso':
-                if not self._hasChild:
-                    self.open_mode_window(self.tree, item)
+                self.open_mode_window(self.tree, item)
 
             elif self.tree.item(item, 'text') == 'Imagem Path':
-                if not self._hasChild:
-                    self.load_file(self.tree, item)
+                self.load_file(self.tree, item)
 
             elif self.tree.item(item, 'text') == 'Vídeo Path':
-                if not self._hasChild:
-                    self.load_file(self.tree, item)
+                self.load_file(self.tree, item)
 
             elif self.tree.item(item, 'text') == 'Debug':
-                if not self._hasChild:
-                    self.open_select_window(self.tree, item)
+                self.open_select_window(self.tree, item)
             
             elif self.tree.item(item, 'text') == 'CUDA':
-                if not self._hasChild:
-                    self.open_select_window(self.tree, item)
+                self.open_select_window(self.tree, item)
                 
             # selecionando modo de conexão do computador
             elif self.tree.item(item, 'text') == 'Comunicação':
@@ -81,35 +73,25 @@ class settingsMenu(Frame):
             elif self.tree.item(item, 'text') in editable_items:
                 self.tree.item(item, tags=('edit',))
                 name = str(self.tree.item(item)['text'])
-                txt = "Adicione o novo valor da variável " + name
-                entry = simpledialog.askstring("Editar variável", txt)
+                title = "Editar Variável "+name
+                txt = "Adicione o novo valor da variável "+name
+                entry = simpledialog.askstring(title, txt)
                 if entry is not None:
                     self.tree.set(item,'Valor',entry)
                     self.nodes[item] = entry
                 self.tree.item(item,tags=())
             else:
                 #Em caso negativo, ele não apenas irá retornar à configuração padrão
-                print("Escolher a cor não foi encontrada")
-                #self.app_edit.pack_forget()
-                
-                #Modifica à variável de estado para colocar os dados
+                pass
+
 
     def load_file(self, tree, item):
-        #informa que tem filho
-        self._hasChild = True
-
         file_path = filedialog.askopenfilename()
         if file_path:
             self.tree.set(item,'Valor', file_path)
             self.nodes[item] = file_path
 
-            #informa que foi liberado a janela
-            self._hasChild = False 
-
     def open_mode_window(self, tree, item):
-        #informa que já tem filho
-        self._hasChild = True 
-
         self.item = item
         self.tree = tree
 
@@ -132,8 +114,6 @@ class settingsMenu(Frame):
             self.tree.set(item,'Valor',mode_picked)
             self.nodes[item] = mode_picked
 
-            #informa que foi liberado a janela
-            self._hasChild = False 
             new_window.destroy()
 
 
@@ -153,9 +133,7 @@ class settingsMenu(Frame):
 
     #Janela se seleção true false
     def open_select_window(self, tree, item):
-        #informa que abriu a janela
-        self._hasChild = True
-
+ 
         self.item = item
         self.tree = tree
 
@@ -181,7 +159,6 @@ class settingsMenu(Frame):
             self.nodes[item] = mode_picked
 
             #informa que foi liberado a janela
-            self._hasChild = False 
             new_window.destroy()
 
         options = ['true', 'false']
@@ -189,6 +166,7 @@ class settingsMenu(Frame):
 
         pick_var = StringVar()
 
+        
         #label
         txt = "Modo da Variável "+str(name)
         label = Label(new_window, bg = "white", text=txt)
@@ -276,9 +254,9 @@ class settingsMenu(Frame):
 
         #destroi janela
         def destroy_window():            
-            self.root.destroy()
             #libera funcionalidades
-            self._hasChild = True
+            self._hasChild = False
+            self.root.destroy()
 
         #adiciona um protocolo para fechar de maneira segura a janela
         new_window.protocol("WM_DELETE_WINDOW",destroy_window)
@@ -471,7 +449,7 @@ class settingsMenu(Frame):
 
 
                         #Adiciona um protocolo a new_window para desligar a câmera
-                        new_window.protocol("WM_DELETE_WINDOW",close_window)
+                        self.root.protocol("WM_DELETE_WINDOW",close_window)
 
                         #Criando os labels
                         #Escolhe o modo de foco da imagem
