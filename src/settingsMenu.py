@@ -346,7 +346,7 @@ class settingsMenu(Frame):
                     
                 else: 
                     #verifico se suporta controle automático de foco
-                    if  self.cap.setModeFocus():
+                    if  not self.cap.setModeFocus():
                         self._hasControlFocus = False 
                         messagebox.showwarning("Alerta de suporte", "Câmera não suporta controle automático de foco.")
                         #seta valores como automático
@@ -405,6 +405,7 @@ class settingsMenu(Frame):
                             else:
                                 #considera como Manual, pois a variável só pode assumir dois valore
                                 self._focusValue = focusScale.get()
+                                self.cap.setModeFocus(FocusMode.MANUAL)
                                 self.cap.setFocusManual(self._focusValue)
                                 try:
                                     img = self.cap.getImage()
@@ -419,6 +420,7 @@ class settingsMenu(Frame):
                         #função que confirma e salva os valores
                         def Confirm_stats():
                             if(self._modeFocusWindows == 'AUTOMATICO'):
+                                self.cap.setModeFocus(FocusMode.AUTO)
                                 self.tree.set(item, 'Valor', self._modeFocusWindows)
                                 self.tree.set('I00D', 'Valor', "")
                                 self.nodes[item] = self._modeFocusWindows
@@ -426,11 +428,15 @@ class settingsMenu(Frame):
                             elif (self._modeFocusWindows == 'MANUAL'):
                                 #puxando valor configurado
                                 self._focusValue = focusScale.get()
+                                self.cap.setModeFocus(FocusMode.MANUAL)
+                                self.cap.setFocusManual(self._focusValue)
+                                self._focusValue = focusScale.get()
                                 self.tree.set(item, 'Valor', 'MANUAL')
                                 self.tree.set('I00D', 'Valor', self._focusValue)
                                 self.nodes[item] = 'MANUAL'
                                 self.nodes['I00D'] = self._focusValue
                             else: #supor que é automático
+                                self.cap.setModeFocus(FocusMode.AUTO)
                                 self.tree.set(item, 'Valor', 'AUTOMATICO')
                                 self.tree.set('I00D', 'Valor', "")
                                 self.nodes[item] = 'AUTOMATICO'
@@ -442,9 +448,10 @@ class settingsMenu(Frame):
                             self._modeFocusWindows = modecombobox.get()
                             if(self._modeFocusWindows == 'AUTOMATICO'):
                                 focusScale['state'] = DISABLED
-                            else: 
+                            else:  
                                 focusScale['state'] = NORMAL
                                 self._focusValue = focusScale.get()
+                                self.cap.setModeFocus(FocusMode.MANUAL)
                                 self.cap.setFocusManual(self._focusValue)
 
 

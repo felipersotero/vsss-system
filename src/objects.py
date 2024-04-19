@@ -555,7 +555,7 @@ class Capture:
             Ela retorna _True_ se a operação for possível e retorna _False_ em caso
             que a câmera não suporta esse controle de foco.
         '''
-        if self.mode == CaptureMode.CAM and self._hasCamera and (self.CAM is not None):
+        if self.mode == CaptureMode.CAM and (self.CAM is not None):
             if mode == FocusMode.AUTO:
                 if not self.CAM.set(cv2.CAP_PROP_AUTOFOCUS, 0):
                     print("[CAPTURA]: Câmera não suporta controle de foco")
@@ -592,8 +592,8 @@ class Capture:
         '''
             Seto um valor para o controle por software do foco da câmera
         '''
-        if self.mode == CaptureMode.CAM and self._hasCamera and self._camHasFocusControl:
-            if self.modeCam == FocusMode.AUTO:
+        if self.mode == CaptureMode.CAM and self._camHasFocusControl:
+            if self.modeCam == FocusMode.AUTO and (self.CAM is not None):
                 #Mudando para controle automático, caso tenha suporte
                 #self.CAM.set(cv2.CAP_PROP_AUTOFOCUS, 0)
                 print("[CAPTURE]: Modo configurado para automático")
