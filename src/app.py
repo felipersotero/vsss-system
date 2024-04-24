@@ -71,7 +71,7 @@ class App:
 
         #inicia looping principal
         root.mainloop()
-    
+
     #configarando menu
 
     #configurando a janela do projeto

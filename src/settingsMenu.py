@@ -1,4 +1,5 @@
 from modules import *
+from objects import FocusMode
 from viewer import MyViewer
 from objects import *
 
@@ -20,6 +21,7 @@ class settingsMenu(Frame):
         self._hasChild = False 
         ''' Variável interna que informa que a classe já tem uma instância em uso, para não permitir mais de uma instância de janelas filho.'''
         # self.color_editables = ['Cor principal', 'J1 Cor 1', 'J1 Cor 2', 'J2 Cor 1', 'J2 Cor 2', 'J3 Cor 1', 'J3 Cor 2', 'Cor inimigos', 'Cor da bola']
+
 
     #Adicionando um nó
     def add_node(self, parent,id, name, value):
@@ -319,190 +321,113 @@ class settingsMenu(Frame):
         
         self.mode = self.tree.item('I006','value')[0]
         self.camPath = int(self.tree.item('I003','value')[0])
-
-        #puxando viewer do emulador para imprimir as imagens lá
-        viewer = self.app.viewer
-        viewer.config()
         
-        #Objeto de captura
-        self.cap = Capture(CaptureMode.CAM, False) 
 
         #estado configurado no menu
         self._modeFocusWindows = 'AUTOMATICO'
         self._focusValue = 0 
 
         if self.mode == "camera":
-            if  self.app.emulator.cameraIsRunning:
-                messagebox.showwarning("Cuidado", "A câmera já está sendo utilizada! Por favor, desligue o emulador, ou libere a câmera.")
-                self._hasChild = False 
-            else:
-                #Apenas executa esse modo de cor da janela caso o emulador não já esteja sendo utilizado
+            #Apenas executa esse modo de cor da janela caso o emulador não já esteja sendo utilizado
+            # verifico se a câmera funciona                
+            #verifico se suporta controle automático de foco
+            # Suporta controle automático de foco
+            self._hasControlFocus = True 
+            #gera janela
+            new_window = Toplevel(self.tree, bg="white")
+            new_window.title("Calibração do Foco")
+            self.root = new_window
+            #adicionando ícones
+            try:
+                if(self.app.system == 'Windows'):
+                    self.root.iconbitmap('src/data/icon.ico')
+                elif(self.app.system =='Linux'):
+                    self.root.iconbitmap('src/data/icon.ico')
+                else:
+                    self.root.iconbitmap('src/data/icon.ico')
+            except:
+                print("[APP]: Problemas em acessar o ícone")
 
-                # verifico se a câmera funciona
-                if not self.cap.setIdCam(self.camPath):
-                    #verifico se a câmera liga
-                    messagebox.showerror("Erro na Captura", "Não foi possível ligar a câmera")
-                    self._hasChild = False
-                    
-                else: 
-                    #verifico se suporta controle automático de foco
-                    if  not self.cap.setModeFocus():
-                        self._hasControlFocus = False 
-                        messagebox.showwarning("Alerta de suporte", "Câmera não suporta controle automático de foco.")
-                        #seta valores como automático
-                        self.tree.set(item, 'Valor', 'AUTOMATICO')
-                        self.tree.set('I00D', 'Valor', "")
-                        self.nodes[item] = 'AUTOMATICO'
-                        self.nodes['I00D'] = ''         
-                        self._hasChild = False      
-                    else: 
-                        # Suporta controle automático de foco
-                        self._hasControlFocus = True 
-
-                        #gera janela
-                        new_window = Toplevel(self.tree, bg="white")
-                        new_window.title("Calibração do Foco")
-                        self.root = new_window
-                        
-                        #adicionando ícones
-                        try:
-                            if(self.app.system == 'Windows'):
-                                self.root.iconbitmap('src/data/icon.ico')
-                            elif(self.app.system =='Linux'):
-                                self.root.iconbitmap('src/data/icon.ico')
-                            else:
-                                self.root.iconbitmap('src/data/icon.ico')
-                        except:
-                            print("[APP]: Problemas em acessar o ícone")
-
-                        #definindo funções que vou utilizar
-                        def close_window():
-                            if self.mode =="camera": 
-                                try: self.cap.reset()
-                                except: self.cap = None
-                            viewer.resetConfig()    # reseto viewer
-
-                            self._focusValue = 0
-                            self._hasControlFocus = False
-                            self._modeFocusWindows = None
-
-                            self.root.destroy()     # destruo
-                            self._hasChild = False
-                        
-                        #função que captura informações e exibe no viewer
-                        def CaptureShow():
-                            #verifica o modo
-                            if self._modeFocusWindows == 'AUTOMATICO':
-                                try:
-                                    img = self.cap.getImage()
-                                    if img is not None:
-                                        viewer.show(img)
-                                    self.root.after(14, CaptureShow)
-                                except cv2.Error as e:
-                                    print("[CAPTURE]: Erro no OpenCV", e)
-                                except Exception as e:    
-                                    print("[CAPTURE]: Há algum problema comacaptura de imagens:\n", e)
-                            else:
-                                #considera como Manual, pois a variável só pode assumir dois valore
-                                self._focusValue = focusScale.get()
-                                self.cap.setModeFocus(FocusMode.MANUAL)
-                                self.cap.setFocusManual(self._focusValue)
-                                try:
-                                    img = self.cap.getImage()
-                                    if img is not None:
-                                        viewer.show(img)
-                                    self.root.after(14, CaptureShow)
-                                except cv2.Error as e:
-                                    print("[CAPTURE]: Erro no OpenCV", e)
-                                except Exception as e:    
-                                    print("[CAPTURE]: Há algum problema comacaptura de imagens:\n", e)
-                            
-                        #função que confirma e salva os valores
-                        def Confirm_stats():
-                            if(self._modeFocusWindows == 'AUTOMATICO'):
-                                self.cap.setModeFocus(FocusMode.AUTO)
-                                self.tree.set(item, 'Valor', self._modeFocusWindows)
-                                self.tree.set('I00D', 'Valor', "")
-                                self.nodes[item] = self._modeFocusWindows
-                                self.nodes['I00D'] = ''
-                            elif (self._modeFocusWindows == 'MANUAL'):
-                                #puxando valor configurado
-                                self._focusValue = focusScale.get()
-                                self.cap.setModeFocus(FocusMode.MANUAL)
-                                self.cap.setFocusManual(self._focusValue)
-                                self._focusValue = focusScale.get()
-                                self.tree.set(item, 'Valor', 'MANUAL')
-                                self.tree.set('I00D', 'Valor', self._focusValue)
-                                self.nodes[item] = 'MANUAL'
-                                self.nodes['I00D'] = self._focusValue
-                            else: #supor que é automático
-                                self.cap.setModeFocus(FocusMode.AUTO)
-                                self.tree.set(item, 'Valor', 'AUTOMATICO')
-                                self.tree.set('I00D', 'Valor', "")
-                                self.nodes[item] = 'AUTOMATICO'
-                                self.nodes['I00D'] = ''
-                                
-                        
-                        #definindo evento
-                        def on_select(event):
-                            self._modeFocusWindows = modecombobox.get()
-                            if(self._modeFocusWindows == 'AUTOMATICO'):
-                                focusScale['state'] = DISABLED
-                            else:  
-                                focusScale['state'] = NORMAL
-                                self._focusValue = focusScale.get()
-                                self.cap.setModeFocus(FocusMode.MANUAL)
-                                self.cap.setFocusManual(self._focusValue)
-
-
-                        #Adiciona um protocolo a new_window para desligar a câmera
-                        self.root.protocol("WM_DELETE_WINDOW",close_window)
-
-                        #Criando os labels
-                        #Escolhe o modo de foco da imagem
-                        modoFrame = Frame(self.root, bg="white")
-                        modoFrame.pack()
-
-                        modoTextLabel = Label(modoFrame, text="Configuração do foco da câmera: ", bg="white")
-                        modoTextLabel.grid(row=0, column=0, padx=5,pady=5)
-
-                        modecombobox = ttk.Combobox(modoFrame, values =['AUTOMATICO', 'MANUAL'],state="readonly")
-                        modecombobox.set("AUTOMATICO")
-                        modecombobox.grid(row=0, column=1, padx=5, pady=5)
-                        
-                        #verifica se a câmera tem controle de 
-                        #adicionando evento no combobox
-                        modecombobox.bind("<<ComboboxSelected>>", on_select)
-
-                        #escolhe o valor do foco da imagem
-                        focusFrame = Frame(self.root, bg="white")
-                        focusFrame.pack()
-
-                        focusText = Label(focusFrame, text="Focus: ", bg="white")
-                        focusText.grid(row=0, column=0, padx=5,pady=5)
-
-                        focusScale = Scale(focusFrame, from_=0, to=255, resolution=0.1, orient=HORIZONTAL, bg="white")
-                        focusScale.grid(row=0, column=1, padx=5, pady=5)
-
-                        focusScale['state'] = DISABLED
-                        
-                        #label explicativo
-                        i2= Frame(self.root,  bg="white")
-                        i2.pack()
-                        i2text = Label(i2, text="Deseja Confirmar?", bg="white")
-                        i2text.pack()
-                        #label para realizar a ação de confirmar ou voltar a tela
-                        actionFrame = Frame(self.root, bg="white")
-                        actionFrame.pack()
-
-                        btnVoltar = Button(actionFrame, text="Voltar", command = close_window)
-                        btnVoltar.grid(row=0, column=0, padx=5, pady=5)
-
-                        btnConfirm = Button(actionFrame, text = "Confirmar", command=Confirm_stats )
-                        btnConfirm.grid(row=0, column=1, padx=5, pady=5)
-
-                        #Inicia captura de imagens
-                        CaptureShow()
+            #definindo funções que vou utilizar
+            def close_window():
+                self._focusValue = 0
+                self._hasControlFocus = False
+                self._modeFocusWindows = None
+                self.root.destroy()     # destruo
+                self._hasChild = False
+                
+            #função que confirma e salva os valores
+            def Confirm_stats():
+                if(self._modeFocusWindows == 'AUTOMATICO'):
+                    self.tree.set(item, 'Valor', self._modeFocusWindows)
+                    self.tree.set('I00D', 'Valor', "")
+                    self.nodes[item] = self._modeFocusWindows
+                    self.nodes['I00D'] = ''
+                elif (self._modeFocusWindows == 'MANUAL'):
+                    #puxando valor configurado
+                    self._focusValue = focusScale.get()
+                    self._focusValue = focusScale.get()
+                    self.tree.set(item, 'Valor', 'MANUAL')
+                    self.tree.set('I00D', 'Valor', self._focusValue)
+                    self.nodes[item] = 'MANUAL'
+                    self.nodes['I00D'] = self._focusValue
+                else: #supor que é automático
+                    self.tree.set(item, 'Valor', 'AUTOMATICO')
+                    self.tree.set('I00D', 'Valor', "")
+                    self.nodes[item] = 'AUTOMATICO'
+                    self.nodes['I00D'] = ''
+                
+                close_window()
+            
+            #definindo evento
+            def on_select(event):
+                self._modeFocusWindows = modecombobox.get()
+                if(self._modeFocusWindows == 'AUTOMATICO'):
+                    print("Está no foco automático")
+                    focusScale['state'] = DISABLED
+                else:  
+                    print("Está no foco manual")
+                    focusScale['state'] = NORMAL
+                    self._focusValue = focusScale.get()
+            
+            #Adiciona um protocolo a new_window para desligar a câmera
+            self.root.protocol("WM_DELETE_WINDOW",close_window)
+            #Criando os labels
+            #Escolhe o modo de foco da imagem
+            modoFrame = Frame(self.root, bg="white")
+            modoFrame.pack()
+            modoTextLabel = Label(modoFrame, text="Configuração do foco da câmera: ", bg="white")
+            modoTextLabel.grid(row=0, column=0, padx=5,pady=5)
+            modecombobox = ttk.Combobox(modoFrame, values =['AUTOMATICO', 'MANUAL'],state="readonly")
+            modecombobox.set("AUTOMATICO")
+            modecombobox.grid(row=0, column=1, padx=5, pady=5)
+            
+            #verifica se a câmera tem controle de 
+            #adicionando evento no combobox
+            modecombobox.bind("<<ComboboxSelected>>", on_select)
+            #escolhe o valor do foco da imagem
+            focusFrame = Frame(self.root, bg="white")
+            focusFrame.pack()
+            focusText = Label(focusFrame, text="Focus: ", bg="white")
+            focusText.grid(row=0, column=0, padx=5,pady=5)
+            focusScale = Scale(focusFrame, from_=0, to=255, resolution=0.1, orient=HORIZONTAL, bg="white")
+            focusScale.grid(row=0, column=1, padx=5, pady=5)
+            focusScale['state'] = DISABLED
+            
+            #label explicativo
+            i2= Frame(self.root,  bg="white")
+            i2.pack()
+            i2text = Label(i2, text="Deseja Confirmar?", bg="white")
+            i2text.pack()
+            #label para realizar a ação de confirmar ou voltar a tela
+            actionFrame = Frame(self.root, bg="white")
+            actionFrame.pack()
+            btnVoltar = Button(actionFrame, text="Voltar", command = close_window)
+            btnVoltar.grid(row=0, column=0, padx=5, pady=5)
+            btnConfirm = Button(actionFrame, text = "Confirmar", command=Confirm_stats )
+            btnConfirm.grid(row=0, column=1, padx=5, pady=5)
+            #Inicia captura de imagens
+            #CaptureShow()
         else:
             messagebox.showwarning("Cuidado!", "Tem que estar selecionado o modo de captura por câmera")
 

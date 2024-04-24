@@ -1,45 +1,38 @@
 import cv2
+import numpy as np
 
-# Inicialização da Captura de Vídeo
-cap = cv2.VideoCapture(0)
+# Carregar a imagem binarizada
+imagem = cv2.imread('src/data/tests/carrosBin.png', cv2.IMREAD_GRAYSCALE)
 
-# Configuração da GPU
-cv2.cuda.setDevice(0)  # Seleciona o dispositivo GPU (se houver mais de uma)
-cuda_stream = cv2.cuda_Stream()  # Cria um fluxo CUDA
+# Encontrar contornos na imagem
+contornos, _ = cv2.findContours(imagem, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
-# Carregar Modelo ou Funções de Processamento para GPU (exemplo)
-dnn_net = cv2.dnn.readNetFromCaffe(proto_text='model.prototxt', caffe_model='model.caffemodel')
-dnn_net.setPreferableBackend(cv2.dnn.DNN_BACKEND_CUDA)
-dnn_net.setPreferableTarget(cv2.dnn.DNN_TARGET_CUDA)
+# Criar uma máscara em branco para os quadrados
+mascara = np.zeros_like(imagem)
 
-while True:
-    # Captura de um frame da câmera
-    ret, frame = cap.read()
-    if not ret:
-        break
+# Iterar sobre os contornos encontrados
+for contorno in contornos:
+    perimetro = cv2.arcLength(contorno, True)
+    approx = cv2.approxPolyDP(contorno, 0.04 * perimetro, True)
+    if len(approx) == 4:
+        # Verificar se é um quadrado
+        x, y, w, h = cv2.boundingRect(approx)
+        aspect_ratio = float(w) / h
+        if 0.7 <= aspect_ratio <= 1.3:
+            # Desenhar contorno do quadrado na máscara
+            cv2.drawContours(mascara, [contorno], 0, 255, -1)
 
-    # Processamento de imagem na GPU
-    gpu_frame = cv2.cuda_GpuMat()
-    gpu_frame.upload(frame, stream=cuda_stream)
+# Garantir que a máscara seja do tipo uint8
+mascara = np.uint8(mascara)
 
-    # Exemplo: detecção de objetos usando uma rede neural na GPU
-    blob = cv2.dnn.blobFromImage(gpu_frame, scalefactor=1.0, size=(300, 300), mean=(104.0, 177.0, 123.0))
-    dnn_net.setInput(blob, scalefactor=1.0, mean=(104.0, 177.0, 123.0))
-    detections = dnn_net.forward()
+# Converter a máscara para o tipo cv2.UMat
+mascara = cv2.UMat(mascara)
 
-    # Transferir resultados de volta para a CPU (se necessário)
-    detections = detections.download(stream=cuda_stream)
+# Aplicar a máscara na imagem original para remover os objetos que não são quadrados
+imagem_resultante = cv2.bitwise_and(imagem, imagem, mask=mascara)
 
-    # Pós-processamento ou exibição dos resultados
-    # ...
-
-    # Exibir o frame processado
-    cv2.imshow('Frame', frame)
-
-    # Verificação de evento de saída
-    if cv2.waitKey(1) & 0xFF == ord('q'):
-        break
-
-# Liberação de Recursos
-cap.release()
+# Mostrar a imagem resultante
+cv2.imshow('Imagem Resultante', imagem_resultante)
+cv2.imshow('Imagem original', imagem)
+cv2.waitKey(0)
 cv2.destroyAllWindows()

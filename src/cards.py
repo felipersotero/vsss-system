@@ -10,9 +10,9 @@ class Card:
         self.frame = Frame(master, bg="white")
         self.frame.grid(row=0, column=0)
 
-        self.contentFrame = Frame(self.frame)
+        self.contentFrame = Frame(self.frame, bg='white')
         self.contentFrame.grid(row=0, column=0)
-        self.imageFrame = Frame(self.frame)
+        self.imageFrame = Frame(self.frame, bg='white')
         self.imageFrame.grid(row=0, column=1)
 
         self.titleLabel = Label(self.contentFrame, text=title, font=("Helvetica", 11), bg="white")

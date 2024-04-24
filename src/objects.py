@@ -12,7 +12,7 @@ import threading
 import queue
 import tkinter 
 from collections import deque
-
+from settingsMenu import *
 # =============== CONTROLE DE IDENTIFICADORES ===============================
 #identificadores padrões dos robôs
 class ID_Robots:
@@ -494,6 +494,7 @@ class CaptureMode:
     '''
     DEFAULT: int = 0
     CAM: int = 1
+    DEFAULT = CAM
     IMG: int = 2
     VIDEO: int = 3
 
@@ -558,31 +559,33 @@ class Capture:
         if self.mode == CaptureMode.CAM and (self.CAM is not None):
             if mode == FocusMode.AUTO:
                 if not self.CAM.set(cv2.CAP_PROP_AUTOFOCUS, 0):
-                    print("[CAPTURA]: Câmera não suporta controle de foco")
+                    #print("[CAPTURA]: Câmera não suporta controle de foco")
                     self.modeCam = FocusMode.AUTO
                     self._camHasFocusControl = False
                     return False
                 else: #suporta controle de foco
+                    #print("[CAPTURA]: Câmera configurada para foco automático")
                     self.modeCam = mode
                     self._camHasFocusControl = True
 
                     return True
             elif mode == FocusMode.MANUAL:
                 if not self.CAM.set(cv2.CAP_PROP_FOCUS, self.focusManual):
-                    print("[CAPTURA]: Câmera não suporta controle de foco")
+                    #print("[CAPTURA]: Câmera não suporta controle de foco")
                     self._camHasFocusControl = False
                     return False
                 else: #suporta controle de foco
+                    #print("[CAPTURA]: Câmera configurada para foco automático")
                     self.modeCam = mode
                     self._camHasFocusControl = True
                     return True
             else:
-                print("[CAPTURA]: Erro grave! Variável corrompida")
+                #print("[CAPTURA]: Erro grave! Variável corrompida")
                 self._camHasFocusControl = False
                 self.modeCam = FocusMode.AUTO
                 return False 
         else:   
-            print("[CAPTURA]: primeiro coloque no modo câmera!")
+            #print("[CAPTURA]: primeiro coloque no modo câmera!")
             self._camHasFocusControl = False
             self.modeCam = FocusMode.AUTO
             return False
@@ -594,16 +597,16 @@ class Capture:
         '''
         if self.mode == CaptureMode.CAM and self._camHasFocusControl:
             if self.modeCam == FocusMode.AUTO and (self.CAM is not None):
-                #Mudando para controle automático, caso tenha suporte
-                #self.CAM.set(cv2.CAP_PROP_AUTOFOCUS, 0)
-                print("[CAPTURE]: Modo configurado para automático")
+                #print("[CAPTURA]: Câmera em modo automático")
+                pass
             elif self.modeCam == FocusMode.MANUAL and (self.CAM is not None):
                 self.focusManual = np.clip(value, 0, 255)
                 self.CAM.set(cv2.CAP_PROP_FOCUS, self.focusManual)  # Altere este valor para ajustar o foco
-                #print("[CAPTURA]: A camera foi configurada para foco manual")
         else:
-            print("[CAPTURA]: A câmera não tem suporte ao controle, ou não foi configurada para câmera")
-
+            #print("[CAPTURA]: A câmera não tem suporte ao controle, ou não foi configurada para câmera")
+            pass 
+    
+    
     #Seta a configura para o GPU
     def GPUMode(self, useGpu:BooleanVar):
         '''
@@ -625,7 +628,7 @@ class Capture:
             Informa o identificador da câmera que será utilizada para o 
             processamento.
         '''
-        self.idCam = id
+        self.idCam = int(id)
         print("[CAPTURA]: Id da camera:", self.idCam)
         if(self.mode == CaptureMode.CAM):
             try:
@@ -643,6 +646,8 @@ class Capture:
             except:
                 print("[CAPTURA]: Ocorreu um erro em abrir a câmera")
                 return False
+        else:
+            return False
             
     # Informar o endereço das imagens e dos vídeos
     def setImagePath(self, pathImg):
@@ -769,7 +774,7 @@ class CameraCaptureThread(threading.Thread):
         Essa classe é responsável por gerar a Thread que irá capturar imagens
         e salvar elas num deque, que será acessado pelo emulador.
     '''
-    def __init__(self, main, capture_instance: Capture, deque:deque, interval=0.016):
+    def __init__(self, main, settingMenu,capture_instance: Capture, deque:deque, interval=0.016):
         super().__init__()
         self.capture_instance = capture_instance
         self.interval = interval
@@ -777,18 +782,32 @@ class CameraCaptureThread(threading.Thread):
         self._main = main
         self.deque = deque
         self.daemon = True
+        self.menu = settingMenu
 
     def run(self):
         self._is_running = True
         while self._is_running:
-            new_image = self.capture_instance.getImage()
-            if new_image is None:
-                pass
-            else:
-                self.deque.append(new_image)  # Enviando a nova imagem para a fila
-            #print(self.deque[-1])
-            time.sleep(self.interval)
+            #procura imagem
+            if self.capture_instance.mode == FocusMode.AUTO:
+                #print("FOCO AUTOMÁTICO")
+                new_image = self.capture_instance.getImage()
+                if new_image is None:
+                    pass
+                else:
+                    self.deque.append(new_image)  # Enviando a nova imagem para a fila
+                #print(self.deque[-1])
+                time.sleep(self.interval)
+            else: #modo manual
 
+                self.capture_instance.setFocusManual(self._main.FocusValue)
+                new_image = self.capture_instance.getImage()
+                #print(self.capture_instance.modeCam, ' :', self.capture_instance.focusManual)
+                if new_image is None:
+                    pass
+                else:
+                    self.deque.append(new_image)  # Enviando a nova imagem para a fila
+                #print(self.deque[-1])
+                time.sleep(self.interval)
     def stop(self):
         #liberar recursos
         if self.capture_instance.mode == CaptureMode.CAM:

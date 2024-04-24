@@ -97,6 +97,11 @@ class Emulator:
         self.communication = False       # verifica se está ok a comunicação
         self.CUDAselected = False        # variável para indicar que foi selecionado o cuda
 
+        #variáveis da câmera
+        self.FocusValue = 0                         # Variável com o valor do foco da câmera
+        self.FocusMode: FocusMode =FocusMode.AUTO
+
+
         #Variável relativa ao tipo de conexão escolhida pelo usuário
         self.comSelected = None         # Será uma string {nenhuma, MQTT ou Serial}
         self.hasConection = False       # verifica se foi selecionada alguma conexão
@@ -110,9 +115,8 @@ class Emulator:
 
         #imagem padrão do emulador vindo da caputar
         self.frame = None   
+        
 
-
-        #Thread de captura para imagem, guardando de forma paralela
     def load_vars(self):
         self.CamUSB = int(self.settingsTree.tree.item('I003','value')[0])
         self.ImgPath = self.settingsTree.tree.item('I004','value')[0]
@@ -366,71 +370,104 @@ class Emulator:
             self.capture.reset()
             self.capture.setMode(CaptureMode.CAM)
             
-            self.capture.setIdCam(self.CamUSB)
-
-            #verifica se tem suporte a controle de foco
-            if self.settingsTree._hasControlFocus:
-                if self._focusMode == FocusMode.AUTO:
-                    self.capture.setModeFocus(self._focusMode)
-                else: #foco manual
-                    self._focusMode = FocusMode.MANUAL
-                    self.capture.setModeFocus(self._focusMode)
-                    self.capture.setFocusManual(self.FocusValue)
-            else: #a árvore de variáveis não verificou se tem controle de foco
-                if self._focusMode == FocusMode.AUTO:
-                    #Verifico se tem suporte
-                    if not self.capture.setModeFocus(FocusMode.AUTO):
-                        print("[EMULADOR]: Câmera não suporta controle de foco")
-                        #atualizo a arvore 
-                        self.settingsTree.att_node_id('I00C','AUTOMATICO')
-                        self.settingsTree.att_node_id('I00D','')
-                        self.settingsTree.save_to_json('config')
-
-                        #executa sem setar o modo
-                    else:
-                        self.settingsTree.att_node_id('I00C','AUTOMATICO')
-                        self.settingsTree.att_node_id('I00D','')
-                        self.settingsTree.save_to_json('config')
-
-                        #executa sem setar o modo
-                else: #foco manual
-                    self._focusMode = FocusMode.MANUAL
-                    if not self.capture.setModeFocus(FocusMode.MANUAL):
+            if self.capture.setIdCam(self.CamUSB):
+                #verifica se tem suporte a controle de foco
+                if self.settingsTree._hasControlFocus:
+                    if self._focusMode == FocusMode.AUTO:
+                        self.capture.setModeFocus(self._focusMode)
+                    else: #foco manual
                         self._focusMode = FocusMode.MANUAL
-                        print("[EMULADOR]: Câmera não suporta controle de foco")
-                        #atualizo a arvore
-                        self.settingsTree.att_node_id('I00C','AUTOMATICO')
-                        self.settingsTree.att_node_id('I00D','')
-                        self.settingsTree.save_to_json('config')
-
-                        #executa sem setar o modo
-                    else:
+                        self.capture.setModeFocus(self._focusMode)
                         self.capture.setFocusManual(self.FocusValue)
-                        print("[EMULADOR]: Foco manual com valor setado de ", self.FocusValue)
-                        #atualizo a arvore
-                        self.settingsTree.att_node_id('I00C','MANUAL')
-                        self.settingsTree.att_node_id('I00D',self.FocusValue)
-                        self.settingsTree.save_to_json('config')
-            
-            
-            #seta a flag de que a câmera está funcionando
-            self.cameraIsRunning = True 
-            
-            print("[CAPTURA]: Iniciou-se a thread novamente!")
-            self.captureThread= CameraCaptureThread(main=self, capture_instance=self.capture, deque=self.capture_deque)
-            self.captureThread.start()  
+                else: #a árvore de variáveis não verificou se tem controle de foco
+                    if self._focusMode == FocusMode.AUTO:
+                        #Verifico se tem suporte
+                        if not self.capture.setModeFocus(FocusMode.AUTO):
+                            print("[EMULADOR]: Câmera não suporta controle de foco")
+                            #atualizo a arvore 
+                            self.settingsTree.att_node_id('I00C','AUTOMATICO')
+                            self.settingsTree.att_node_id('I00D','')
+                            self.settingsTree.save_to_json('config')
 
-            # self.firstExecution = True
-            self.processUSB()
+                            #executa sem setar o modo
+                        else:
+                            self.settingsTree.att_node_id('I00C','AUTOMATICO')
+                            self.settingsTree.att_node_id('I00D','')
+                            self.settingsTree.save_to_json('config')
 
-            # Chamando thread para processamento de vídeo
-            self.showInformation()
+                            #executa sem setar o modo
+                    else: #foco manual
+                        self._focusMode = FocusMode.MANUAL
+                        if not self.capture.setModeFocus(FocusMode.MANUAL):
+                            self._focusMode = FocusMode.MANUAL
+                            print("[EMULADOR]: Câmera não suporta controle de foco")
+                            #atualizo a arvore
+                            self.settingsTree.att_node_id('I00C','AUTOMATICO')
+                            self.settingsTree.att_node_id('I00D','')
+                            self.settingsTree.save_to_json('config')
 
-            #Trabalhando com filas e threads
-            if (self.hasConection == True):
-                self.communication_thread = threading.Thread(target=self.send_data, args=(self.commands_queue,), daemon=True)
-                self.communication_thread.start()
+                            #executa sem setar o modo
+                        else:
+                            self.capture.setFocusManual(self.FocusValue)
+                            print("[EMULADOR]: Foco manual com valor setado de ", self.FocusValue)
+                            #atualizo a arvore
+                            self.settingsTree.att_node_id('I00C','MANUAL')
+                            self.settingsTree.att_node_id('I00D',self.FocusValue)
+                            self.settingsTree.save_to_json('config')
+                
+                
+                #seta a flag de que a câmera está funcionando
+                self.cameraIsRunning = True 
+                
+                print("[CAPTURA]: Iniciou-se a thread novamente!")
+                self.captureThread= CameraCaptureThread(main=self, settingMenu=self.settingsTree, capture_instance=self.capture, deque=self.capture_deque)
+                self.captureThread.start()  
 
+                # self.firstExecution = True
+                self.processUSB()
+
+                # Chamando thread para processamento de vídeo
+                self.showInformation()
+
+                #Trabalhando com filas e threads
+                if (self.hasConection == True):
+                    self.communication_thread = threading.Thread(target=self.send_data, args=(self.commands_queue,), daemon=True)
+                    self.communication_thread.start()
+            else:
+                messagebox.showerror("Erro ao criar o objeto de captura", "O equipamento não tem permissão para funcionar, ou não existe câmera com esse index.")
+                
+                #libera recursos
+                #print(self.capture_deque)
+                if(self.capture): 
+                    self.capture.reset() #Libera a câmera
+                    #self.capture_deque = deque(maxlen=self.maxDeque)
+
+                if (self.clientMQTT != None):
+                    self.clientMQTT.loop_stop()
+                    self.clientMQTT.disconnect()
+                    self.hasConection = False
+                    self.hasMqtt = False
+                
+                if(self.clientSerial != None):
+                    print(self.clientSerial)
+                    close_serial(self.clientSerial)
+                    self.hasConection = False
+                    self.hasSerial = False
+
+                self.cameraIsRunning = False 
+                self.btn_stop.pack_forget()
+                self.btn_run.pack(fill = BOTH, expand =1 )
+
+                self.Mode = MODE_DEFAULT
+                self.viewer.default_mode()
+                self.debugFieldViewer.default_mode()
+
+                self.infoCards.update()
+
+                self.Timer.stop()
+                self.Timer.reset()
+
+                self.stop()
                 
         elif(self.Mode ==  MODE_IMAGE): #Modo Imagem
             print('[EMULADOR] Emulador em modo de processamento de Imagem')
@@ -441,7 +478,7 @@ class Emulator:
             self.capture.setMode(CaptureMode.IMG)  
 
             #inicia thread de captura
-            self.captureThread= CameraCaptureThread(main=self, capture_instance=self.capture, deque= self.capture_deque)
+            self.captureThread= CameraCaptureThread(main=self, settingMenu=self.settingsTree,capture_instance=self.capture, deque= self.capture_deque)
             self.captureThread.start()  
 
             self.btn_stop.pack_forget() # torna o botão "run" invisível
@@ -478,8 +515,10 @@ class Emulator:
         print('[EMULADOR] Emulador teve sua execução parada.')
 
         #parando a thread de captura
-        self.captureThread.stop()
-        
+        try:
+            self.captureThread.stop()
+        except:
+            print('[EMULADOR]: thread foi forçada a terminar.')
         #print(self.capture_deque)
         if(self.capture): 
             self.capture.reset() #Libera a câmera
@@ -572,10 +611,12 @@ class Emulator:
         self.realTime = self.Timer.getElapsedTime() /1000
         #atualizo informações na interface
         self.infoCards.update()
-        
+    
+
     #Funções que executam os processos (execução por USB, por imagem ou )
     def processUSB(self):
-        
+        #carrega informações de focus
+
         #Id de captura
         while len(self.capture_deque) == 0:  # Espera até que haja pelo menos um elemento no deque
             time.sleep(0.1)  # Espera por 0.1 segundos antes de verificar novamente
@@ -656,6 +697,7 @@ class Emulator:
         # self.commands_queue.queue.clear()
         # self.commands_queue.put(self.commands)
 
+        binaryPlayers = detect_squares(binaryPlayers)
         #Exibindo dados em tela
         self.viewer.show(frame)
         if(self.DEBUGA == True):
@@ -688,7 +730,7 @@ class Emulator:
         if self.cameraIsRunning:
             #Atualizo informações do cards sobre funcionalidade
             self.infoCards.updateFuncs()
-
+            binaryPlayers = detect_squares(binaryPlayers)
             self.viewer.show(self.frame)
             if(self.DEBUGA == True):
                 self.debugFieldViewer.show(self.binary_treat)

@@ -418,7 +418,7 @@ class VisionSystem:
         self.imgReduce      = None              
         '''Imagem reduzida para utilizar no processamento'''
 
-        #Imagens binarizadas
+        #Imagens binarizadas utilizadas no código
         self.binaryObjects  = None              # Imagem binária dos objetos
         self.binaryPlayers  = None              # Imagem Binária dos Jogadores
         self.binaryTeam     = None              # Imagem Binária do Time
@@ -433,6 +433,21 @@ class VisionSystem:
         self.goalAllyColor  = None              # cor do goleiro aliado
         self.atk1AllyColor  = None              # cor do atacante 1
         self.atk2AllyColor  = None              # cor do atacante 2
+
+        #cores padrões dos objetos para o sistema:    #Carrega os vetores de cores claras e escuras de objetos gerais 
+        self.objectsDarkColor = np.array([0,10,130]) #[0,10,150]
+        self.objectsLightColor = np.array([179,255,255])
+
+        #definições estruturais do código
+        self.playerRadius = (7.5/2)*np.sqrt(2)
+        self.mainColorRadius = (7.5/4)*np.sqrt(5)
+        self.secColorRadius = (self.playerRadius/2)
+
+        self.ally_lower_bound   = None          # valor mínimo para detectar aliados
+        self.ally_upper_bound   = None          # valor máximo para detectar os aliados
+        self.enemy_lower_bound  = None          # valor mínimo para detectar inimigos
+        self.enemy_upper_bound  = None          # valor máximo para detectar inimigos
+
 
         #Atualiza as funções com base no modo que foi determinado para elas
         self.choseModeFunctions()
@@ -712,8 +727,11 @@ class VisionSystem:
             Ajusto a constante de proporcionaldiade de px para cm. 
             Representada pela variável: prop_px_cm
         '''
+        #atualizando proporções para realizar os devidos cálculos
         self.prop_px_cm = w_px / w_cm
-
+        self.playerRadius = self.playerRadius * self.prop_px_cm
+        self.mainColorRadius = self.playerRadius * self.prop_px_cm
+        self.secColorRadius = (self.playerRadius / 2)
     #função para listar os jogadores
     def list_players(self, teamList):
         '''
@@ -788,7 +806,66 @@ class VisionSystem:
         cv2.circle(imgDegub, (xi, yi), (ri + 5), color, 2)
         text = f"{team} {id}: {str(x)}, {str(y)}"
         cv2.putText(imgDegub, text , (int(xi),int(yi+ri+20)), cv2.FONT_HERSHEY_SIMPLEX, 0.4, color, 1)
-        
+    
+    #função para tratar imagem e retornar os objetos mais próximos de quadrados
+    def isSquare_noCuda(self, contorno):
+        '''
+            Essa função trata da imagem e verifica se ele é um robô e não um ruído.
+            Isso é realizado verificando se é ou não próximo de um quadrado.
+        '''
+        perimetro = cv2.arcLength(contorno, True)
+        approx = cv2.approxPolyDP(contorno, 0.04 * perimetro, True)
+        if len(approx) == 4:
+            # Verificar se é um quadrado
+            x, y, w, h = cv2.boundingRect(approx)
+            aspect_ratio = float(w) / h
+            if 0.7 <= aspect_ratio <= 1.3: #Esses valores foram chutados
+                # Desenhar contorno do quadrado na máscara
+                return True
+            else:
+                return False
+
+    #função que trata a imagem binarizada dos jogadores e retorna apenas eles na imagem
+    def detect_squares_noCuda(self, imgBin):
+        '''
+            Essa função trata uma imagem e retorna a imagem binarizada apenas com os objetos mais próximos do quadrado bem como os contornos deles.
+
+            O retorno é na ordem:
+             - 1º: Imagem_binarizada_tratada;
+             - 2º:  lista_de_contornos
+        '''
+        try:
+            # Encontrar contornos
+            contours, _ = cv2.findContours(imgBin, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+            # Criar uma máscara em branco para os quadrados
+            mascara = np.zeros_like(imgBin)
+
+            contours_treat = []
+            # Iterar sobre os contornos encontrados para encontrar os quadrados
+            for contorno in contours:
+                perimetro = cv2.arcLength(contorno, True)
+                approx = cv2.approxPolyDP(contorno, 0.04 * perimetro, True)
+                if len(approx) == 4:
+                    # Verificar se é um quadrado
+                    x, y, w, h = cv2.boundingRect(approx)
+                    aspect_ratio = float(w) / h
+                    if 0.7 <= aspect_ratio <= 1.3:
+                        # Desenhar contorno do quadrado na máscara
+                        cv2.drawContours(mascara, [contorno], 0, 255, -1)
+                        contours_treat.append(contorno)
+
+            # Aplicar a máscara na imagem binarizada
+            bin_res = cv2.bitwise_and(imgBin, imgBin, mask=mascara)
+
+            # Retorna a imagem tratada
+            return bin_res, contours_treat
+
+        except Exception as e:
+            # Se ocorrer uma exceção, retorna a imagem original
+            print("Erro ao processar imagem:", e)
+            return imgBin, contours
+
     # ==================== métodos com suporte ao CUDA ===============================
     '''
         As funções com suporte ao CUDA e programação na GPU tem uma lógica diferente
@@ -1190,6 +1267,7 @@ class VisionSystem:
                                 for vertex in rv:
                                     x,y = vertex 
                                     cv2.circle(self.frameOrigin, (x,y),4,(0,255,0),-1)
+                        
                         except:
                             print("[VisionSystem]: Não conseguiu desenhar na imagem")
                             pass
@@ -1257,6 +1335,7 @@ class VisionSystem:
                 cv2.arrowedLine(self.ballImg, (xb, yb), ((xb + int(ball.direction[0])), (yb + int(self.ball.direction[1]))), (0, 255, 0), 2)
                 
         else:
+            #dito que a bola esá zerada
             ball = Ball(0, 0, 0)
 
 
@@ -1265,10 +1344,49 @@ class VisionSystem:
     def detect_players_noCuda(self, img, debug):
         '''
             Função responsável por detectar os robôs na imagem, sem usar o suporte ao Cuda.
+        
+            Ao chamar essa função, ela irá varrer os objetos da imagem e detectar neles os robôs.
+            Com isso,
         '''
-        pass
+        # copia endereço da imagem
+        imgDbg = img
 
-    #métodos com suporte ao CUDA
+        #imagem para HSV
+        imgHSV = cv2.cvtColor(imgDbg, cv2.COLOR_BGR2HSV)
+
+        # encontrando os objetos
+        objects = cv2.inRange(imgHSV, self.objectsDarkColor, self.objectsLightColor)
+
+        #Exclui a bola dos objetos identificados
+        self.binaryPlayers = cv2.subtract(objects, self.binaryBall)
+
+        #REALIZA operações de fechamento e erosão para melhorar a imagem binária dos robôs
+        structuringElement = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
+        self.binaryPlayers = cv2.erode(self.binaryPlayers, structuringElement, iterations=1)
+
+        structuringElement = cv2.getStructuringElement(cv2.MORPH_RECT, (11, 11))
+        self.binaryPlayers = cv2.morphologyEx(self.binaryPlayers, cv2.MORPH_CLOSE, structuringElement)
+
+        #Reconhecimento de jogadores
+        binaryAllTeam = cv2.inRange(imgHSV, self.ally_lower_bound, self.ally_upper_bound) #Por enquanto, isso  não faz nada, só exibe na tela de debug todo o time reconhecido
+
+        #encontra os contornos de todos os jogadores
+        structuringElement = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5,5))
+        
+        players, _ = cv2.findContours(self.binaryPlayers, cv2.RETR_TREE, cv2.CHAIN_APPROX_NONE)
+
+        # trato a imagem para deixar apenas os objetos 
+        self.binaryPlayers, players = self.detect_squares_noCuda(players)
+
+        #varre os objetos
+        for currentPlayers in players:
+            #verificar tamanho do objeto
+            (xi, yi), ri = cv2.minEnclosingCircle(currentPlayers)
+
+
+
+
+    # ==================== métodos com suporte ao CUDA
 
     #===========| Definindo funções principais | ============================
     #Métodos sem suporte ao cuda
