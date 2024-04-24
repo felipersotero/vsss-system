@@ -1,3 +1,4 @@
+from detectorV2 import VisionSystem
 from modules import *
 from settingsMenu import *
 from viewer import MyViewer, WindowsViewer
@@ -11,7 +12,6 @@ import queue
 import time
 from collections import deque
 import ast
-
 
 class Emulator:
     def __init__(self,App):
@@ -116,6 +116,8 @@ class Emulator:
         #imagem padrão do emulador vindo da caputar
         self.frame = None   
         
+        #criando um objeto que será responsável por guardar as informações do emulador
+        self.EConfig: EConfig 
 
     def load_vars(self):
         self.CamUSB = int(self.settingsTree.tree.item('I003','value')[0])
@@ -247,6 +249,7 @@ class Emulator:
 
         #Atualizo o card
         self.infoCards.updateFuncs()
+
    
     def format_var(self, var):
         var = unidecode.unidecode(var)
@@ -334,6 +337,25 @@ class Emulator:
         self.playersAllColors = np.array([self.player1Colors, self.player2Colors, self.player3Colors])
 
         self.ballColor = string_to_int_array(self.ballColor)
+
+        #Gero o EConfig para realizar o processamento
+        self.EConfig = EConfig(
+            offSetWindow    =   self.OffSetBord,
+            offSetErode     =   self.OffSetErode,
+            dimMatrix       =   self.MatrixTop,
+            Trashhold       =   self.BINThresh,
+            FieldWidth      =   self.fieldWidth ,
+            FieldHeight     =   self.fieldHeight,
+            ballColor       =   self.ballColor,
+            allyColor       =   self.mainColor,
+            enemyColor      =   self.enemiesMainColor,
+            goalAllyColor1  =   self.player1Color1,
+            goalAllyColor2  =   self.player1Color2,
+            atk1AllyColor1  =   self.player2Color1,
+            atk1AllyColor2  =   self.player2Color2,
+            atk2AllyColor1  =   self.player3Color1,
+            atk2AllyColor2  =   self.player3Color2
+        )
 
         #Inicializa o viewer
         if(self.Mode== MODE_USB_CAM): #Modo camera
@@ -478,13 +500,11 @@ class Emulator:
             self.capture.setMode(CaptureMode.IMG)  
 
             #inicia thread de captura
-            self.captureThread= CameraCaptureThread(main=self, settingMenu=self.settingsTree,capture_instance=self.capture, deque= self.capture_deque)
-            self.captureThread.start()  
 
             self.btn_stop.pack_forget() # torna o botão "run" invisível
             self.btn_run.pack(fill=BOTH, expand=1) # torna o botão "stop" visível
-            self.processImage()
-            
+            #self.processImage()
+            self.processImageNew()
         elif(self.Mode == MODE_VIDEO_CAM):
             print('[EMULADOR] Emulador em modo de processamento de Video')
             
@@ -664,6 +684,7 @@ class Emulator:
             #Aqui tem um tempo de delay fixo entre as execuções da função
             self.viewer.window.after(self.delay, self.processUSB)
 
+    #processando a imagem utilizando o antigo sistema de visão
     def processImage(self):
         print("[EMULADOR] Processando imagem: ",self.ImgPath)
         St1i = self.Timer.getElapsedTime()
@@ -721,10 +742,46 @@ class Emulator:
         #atualizo informações na interface
         self.infoCards.update()
 
-        #para a thread
-        self.captureThread.stop()
-        self.captureThread.join()
+    #processando uma imagem utilizando o novo sistema de visão
+    def processImageNew(self):
+        print("[EMULADOR] Processando imagem: ",self.ImgPath)
+        St1i = self.Timer.getElapsedTime()
+        self.capture.setImagePath(self.ImgPath)
+        self.frame = self.capture.getImage()
 
+        #verificando se funciona
+        self.vs = VisionSystem(self.EConfig, UseCuda=False, GPUType=None)
+
+        
+        #Método de RUN
+        result = self.vs.proc(self.frame, debug=self.DEBUGA)
+
+
+        #Exibindo dados em tela
+        self.viewer.show(frame) # type: ignore
+        if(self.DEBUGA == True):
+            binary_treat, binaryBall, binaryPlayers, binaryTeam = self.vs.getDebugImages()
+            print("tá funcionando em debug")
+            self.debugFieldViewer.show(binary_treat)# type: ignore
+            self.debugObjectsViewer.show(binaryBall)# type: ignore
+            self.debugPlayersViewer.show(binaryPlayers)# type: ignore
+            self.debugTeamViewer.show(binaryTeam)# type: ignore
+        self.resultViewer.show(result)# type: ignore
+
+        #Adicionando conteúdos
+        self.setContentRobots()
+
+      # self.call_detection_system()
+        St2i = self.Timer.getElapsedTime()
+        self.totalTime = (St2i - St1i)                       #tempo em mili 
+        #segundos
+        
+        self.realTime = self.Timer.getElapsedTime() / 1000
+
+        #atualizo informações na interface
+        self.infoCards.update()
+    
+    
     #Método para exibir informações
     def showInformation(self):
         if self.cameraIsRunning:

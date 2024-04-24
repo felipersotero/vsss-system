@@ -728,7 +728,7 @@ def detect_players(img, ballImg, binaryBall, binaryField, alliesColor, enemiesCo
 
                             enemiesCount += 1
 
-                else:
+                else: #É um aliado
                     mainColorContour = max(mainColorContours, key=cv2.contourArea)
 
                     #for currentMainColor in mainColorContour:

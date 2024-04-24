@@ -13,6 +13,7 @@ import queue
 import tkinter 
 from collections import deque
 from settingsMenu import *
+
 # =============== CONTROLE DE IDENTIFICADORES ===============================
 #identificadores padrões dos robôs
 class ID_Robots:
@@ -189,19 +190,82 @@ class ModeControlW:
     
 # ================== CONTROLE DE ESTRUTURA DE DADOS ========================
 #Configurações da Emulação que serão inviadas para o sistema de visão realizar os cálculos
+
 class EConfig:
     '''
         É uma estrutura com as informações passadas pelo emulador ao sistema de visão
         o sistema de visão irá pegar essas informações e se configurar da forma necessária
+        terão as variáveis necessárias
     '''
-    def __init__(self, offSetWindow =10, offSetErode = 0 ,dimMatrix = 25, Trashhold = 235 ):
-        self.offSetWindow = offSetWindow
-        self.offSetErode = offSetErode
-        self.dimMatrix = dimMatrix
-        self.Trashhold = Trashhold
+    def __init__(self, offSetWindow =10, offSetErode = 0 ,dimMatrix = 25, Trashhold = 235
+                 ,FieldWidth = 0, FieldHeight=0, allyColor=[0,0,0], enemyColor=[0,0,0],ballColor = [0,0,0]
+                 , goalAllyColor1=[0,0,0], goalAllyColor2=[0,0,0], atk1AllyColor1=[0,0,0],atk1AllyColor2=[0,0,0], atk2AllyColor1=[0,0,0]
+                 , atk2AllyColor2=[0,0,0]):
+        '''
+            Essas são as variáveis base que o sistema de visão utiliza para realizar seu processamento
+            são elas as cores dos times, e offsets do cálculo
+        '''
+        #setando variáveis de configuração do sistema de visão
+        self.offSetWindow       = offSetWindow          # valor mínimo da borda da janela
+        self.offSetErode        = offSetErode           # quantidade mínima de erosão
+        self.dimMatrix          = dimMatrix             # dimensão da matrix de convolução
+        self.Trashhold          = Trashhold             # limiar de binarização do sistema
         
+        self.fieldWidth         = FieldWidth            # comprimento do campo
+        self.fieldHeight        = FieldHeight           # largura do campo
+        self.allyColor          = allyColor             # Cor principal do time
+        self.enemyColor         = enemyColor            # Cor principal dos inimigos
+
+        self.ballColor          = ballColor             # cor da bola
+        self.goalAllyColor1     = goalAllyColor1        # cor 1 do goleiro aliado
+        self.goalAllyColor2     = goalAllyColor2        # cor 2 do goleiro aliado
+        self.atk1AllyColor1     = atk1AllyColor1        # cor 1 do atacante 1
+        self.atk1AllyColor2     = atk1AllyColor2        # cor 2 do atacante 1
+        self.atk2AllyColor1     = atk2AllyColor1        # cor 1 do atacante 2
+        self.atk2AllyColor2     = atk2AllyColor2        # cor 2 do atacante 2
+
+    #métodos para setar uma variável não precisando ser na inicialização do objeto
+    def setOffSetValues(self, ofsWindow, ofsErode, ofsMatrix, ofsTrashhold):
+        self.offSetWindow       = ofsWindow          # valor mínimo da borda da janela
+        self.offSetErode        = ofsErode           # quantidade mínima de erosão
+        self.dimMatrix          = ofsMatrix             # dimensão da matrix de convolução
+        self.Trashhold          = ofsTrashhold             # limiar de binarização do sistema
+
+    #setando as cores pin
+    def setMainColors(self, allyColor, EnemyColor, ballColor):
+        '''
+            Método para cores principais (aliadas e inimigas)
+        '''
+        self.allyColor = allyColor
+        self.enemyColor = EnemyColor
+        self.bollColor = ballColor
+
+    #setando as cores individuais
+    def setAllyColors(self, g1c1,g1c2, a1c1,a1c2,a2c1,a2c2):
+        '''
+            Setando as cores principais dos robôs do sistema
+        '''
+        self.goalAllyColor1     = g1c1        # cor 1 do goleiro aliado
+        self.goalAllyColor2     = g1c2        # cor 2 do goleiro aliado
+        self.atk1AllyColor1     = a1c1        # cor 1 do atacante 1
+        self.atk1AllyColor2     = a1c2        # cor 2 do atacante 1
+        self.atk2AllyColor1     = a2c1        # cor 1 do atacante 2
+        self.atk2AllyColor2     = a2c2        # cor 2 do atacante 2
+
+    
+    #setando dimensões do campo
+    def setFieldDimensions(self, width, height):
+        '''
+            Setando dimensões do campo comprimento e largura
+        '''
+        self.fieldHeight    = height
+        self.fieldWidth     = width
+
     #Deletar este objeto em tempo de execução
     def delete(self):
+        '''
+            Deletando o objeto de configuração para liberar memória
+        '''
         del self
 
 # =============== CONTROLE DE CLASSES ===============================
@@ -367,6 +431,9 @@ class ViewBot:
         Classe de view que representa uma janela da imagem onde o robô se encontra.
     '''
     def __init__(self, Position:Point2D, DimMatrix: int):
+        '''
+        Classe de view que representa uma janela da imagem onde o robô se encontra.
+        '''
         #Centro (x,y)
         self.center = Position.pos
 
@@ -424,6 +491,18 @@ class ViewBot:
         '''
         return self.rect.points
     
+    #setando nova dimensão do viewBot
+    def setDimension(self, newDimension):
+        #passo
+        self.DimMatrix = newDimension
+        self.step = self.DimMatrix/2.0
+
+        #Encontrando pontos
+        self.Pe1 = self.center + np.array([-1,-1])*self.step
+        self.Pe2 = self.center + np.array([1,-1])*self.step
+        self.Pe3 = self.center + np.array([1,1])*self.step
+        self.Pe4 = self.center + np.array([-1,1])*self.step
+
 #========================| Gerando classe Timer | ==============================
 
 #configurando objeto timer de alta precisão para pegar o passar do tempo de processamento
@@ -855,3 +934,4 @@ class StateSquare(Frame):
             self.square.config(bg="red")
             self.text_var.set("Parado")
             self.button.config(text="Iniciar processamento")
+

@@ -18,10 +18,11 @@ import re
 
 #Bibliotecas 
 from detector import *
-
+from detectorV2 import *
 
 #suporte a GPU
 from cv2 import cuda
 import platform 
 import pycuda.driver as pycuda
 import numba
+from objects import *

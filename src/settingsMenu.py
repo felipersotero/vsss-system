@@ -1,5 +1,4 @@
 from modules import *
-from objects import FocusMode
 from viewer import MyViewer
 from objects import *
 
