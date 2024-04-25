@@ -1,6 +1,15 @@
-from modules import *
 from viewer import MyViewer
 from objects import *
+from modules import *
+from tkinter import *
+from tkinter import ttk
+from tkinter.ttk import Treeview, Scrollbar, Entry, Style
+from tkinter import simpledialog, messagebox, filedialog
+import cv2
+import serial
+import serial.tools.list_ports
+import numpy as np
+
 
 class settingsMenu(Frame):
     def __init__(self, App, master=None, **kwargs):

@@ -12,7 +12,7 @@ import queue
 import tkinter 
 from collections import deque
 from settingsMenu import *
-from modules import *
+
 
 
 from tkinter import *
@@ -183,6 +183,8 @@ MODE_VIDEO_CAM:int = 3
 ''' Constante de emulação:  Modo de emulação por meio de um vídeo'''
 MODE_IMAGE:int = 2
 ''' Constante de emulação:  Modo de emulação por meio de uma imagem'''
+
+
 MODE_CONTROL_ROBOT: int = 4
 ''' Constante de emulação:  Emulador sendo utilizado na janela de controle'''
 
@@ -207,7 +209,7 @@ class EConfig:
     def __init__(self, offSetWindow =10, offSetErode = 0 ,dimMatrix = 25, Trashhold = 235
                  ,FieldWidth = 0, FieldHeight=0, allyColor=[0,0,0], enemyColor=[0,0,0],ballColor = [0,0,0]
                  , goalAllyColor1=[0,0,0], goalAllyColor2=[0,0,0], atk1AllyColor1=[0,0,0],atk1AllyColor2=[0,0,0], atk2AllyColor1=[0,0,0]
-                 , atk2AllyColor2=[0,0,0]):
+                 , atk2AllyColor2=[0,0,0], emulatorMode = MODE_IMAGE):
         '''
             Essas são as variáveis base que o sistema de visão utiliza para realizar seu processamento
             são elas as cores dos times, e offsets do cálculo
@@ -230,6 +232,8 @@ class EConfig:
         self.atk1AllyColor2     = atk1AllyColor2        # cor 2 do atacante 1
         self.atk2AllyColor1     = atk2AllyColor1        # cor 1 do atacante 2
         self.atk2AllyColor2     = atk2AllyColor2        # cor 2 do atacante 2
+
+        self.emulatorMode       = emulatorMode          # modo da emulação
 
     #métodos para setar uma variável não precisando ser na inicialização do objeto
     def setOffSetValues(self, ofsWindow, ofsErode, ofsMatrix, ofsTrashhold):
@@ -267,6 +271,11 @@ class EConfig:
         '''
         self.fieldHeight    = height
         self.fieldWidth     = width
+
+    #setando a forma do emulador
+    def setEmulatorMode(self, eMod):
+        self.emulatorMode = eMod 
+
 
     #Deletar este objeto em tempo de execução
     def delete(self):

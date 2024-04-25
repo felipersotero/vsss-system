@@ -18,6 +18,7 @@ import threading
 import queue
 import modules
 from objects import *
+
 #======================|| DEFINIÇÕES DE CLASSES ||======================================#
 
 # ====================== DEFINIÇÕES DAS CLASSES DE OBJETO DO SISTEMA ==================
@@ -247,6 +248,27 @@ class Ball:
         self.lastPosition = self.position
         self.newPosition = self.position 
 
+    #setando posição da bola
+    def setPosition(self,x,y,r):
+        '''
+        Função responsável para setar o objeto no projeto
+        nesse caso o deslocamento se torna nulo
+        '''
+        #Atualizando raio
+        self.radius = int(r)
+
+        #Atualizando posições do sistema
+        self.newPosition = np.array([int(x), int(y)])
+        self.position = self.newPosition 
+
+        self.lastPosition = self.position
+
+        #calculando a direção. No set a direção é 0
+        self.direction = self.newPosition - self.lastPosition
+
+        #Atualizando posição da borderbox
+        self.updateBbox()
+
     #atualizando posição da bola
     def updatePosition(self, x, y,r):
         '''
@@ -258,7 +280,8 @@ class Ball:
         #Atualizando posições do sistema
         self.lastPosition = self.position
         self.newPosition = np.array([int(x), int(y)])
-
+        self.position = self.newPosition 
+        
         #atualizando direção
         self.direction = self.newPosition - self.lastPosition
 
@@ -428,8 +451,9 @@ class VisionSystem:
             self._capture.GPUMode(self._hasCuda)
 
         #Verifica 
-        self.GPUimg= None
-        self.CPUimg = None 
+        self.GPUimg         = None
+        self.CPUimg         = None 
+        self.emulatorMode   = MODE_IMAGE                #supõe que é imagem
 
         #gera o objeto para utilizar o cuda
         if(self._hasCuda):
@@ -438,23 +462,23 @@ class VisionSystem:
 
 
         #configurações do campo comprimento e largura
-        self.fieldWidth = 0                     # largura do campo
-        self.fieldHeight = 0                    # altura do campo
-        self.prop_px_cm = 1                     # proporção pixel para cm
+        self.fieldWidth     = 0                     # largura do campo
+        self.fieldHeight    = 0                    # altura do campo
+        self.prop_px_cm     = 1                     # proporção pixel para cm
         
         self.debug = debug                      # verifica se o processamento usará ou não o debug
 
         #Variáveis internas do sistema de visão que serão importantes para o processamento
         #Configurações
-        self.offSetWindow = 10                 
+        self.offSetWindow   = 10                 
         '''Tamanho extra de janela utilizada'''
-        self.offSetErode = 0                    
+        self.offSetErode    = 0                    
         '''Quantidade padrão de erosões na imagem'''
-        self.dimMatrix = 25                     
+        self.dimMatrix      = 25                     
         '''Dimensão da matriz de convolução na imagem'''
-        self.Thrashhold = 235                   
+        self.Thrashhold     = 235                   
         '''Limiar de binarização da imagem'''
-        self.pixelWidth = 1
+        self.pixelWidth     = 1
         '''Tamanho de um pixel normal'''
 
         #Imagens
@@ -505,13 +529,13 @@ class VisionSystem:
         self.enemy_upper_bound  = None          # valor máximo para detectar inimigos
 
         # variáveis internas para realizar o tratamento de dados
-        self.playersCount = 0
-        self.alliesCount = 0
-        self.enemiesCount = 0
+        self.playersCount   = 0
+        self.alliesCount    = 0
+        self.enemiesCount   = 0
 
         self.playersWindows = [None, None, None, None, None, None]
 
-        self.alliesWindows = [None, None, None]
+        self.alliesWindows  = [None, None, None]
         self.enimiesWindows = [None, None, None]
 
 
@@ -532,21 +556,13 @@ class VisionSystem:
         self.detect_field_noCuda(img,debug)
         
         
-        #cv2.imshow("CAMPO REDUZIDO apos funcao",self.fieldReduce)
-
-
         #detectando bola
         self.detect_ball_noCuda(self.fieldReduce, self.ballColor, debug)
-
-        #cv2.imshow("imagem da bola ",self.ballImg)
-        #cv2.imshow("imagem da bola binarizada ",self.binaryBall)
 
         #detectando jogadores
         self.detect_players_noCuda(self.fieldReduce, debug)
 
-        cv2.waitKey(0)
-        cv2.destroyAllWindows
-        return self.frameResult
+        return self.fieldReduce
 
     #Puxando as imagens de debug
     def getDebugImages(self):
@@ -616,6 +632,7 @@ class VisionSystem:
         self.atk1AllyColor2 = self.config.atk1AllyColor2 
         self.atk2AllyColor1 = self.config.atk2AllyColor1
         self.atk2AllyColor2 = self.config.atk2AllyColor2
+        self.emulatorMode   = self.config.emulatorMode
 
     #definir novas configurações
     def setConfigEmulator(self, config:EConfig):
@@ -633,6 +650,104 @@ class VisionSystem:
         '''
         return self.viewCapture
     
+    #definindo modo para resetar configurações
+    def _resetVs(self):
+        '''
+            Responsável por resetar as configurações do Sistema de Visão, sendo necessário
+            recarregar o código do Emulador.
+        '''
+        #recria objetos para não ter problema na próxima execução
+        self.createObjs()
+
+        #Verifica 
+        self.GPUimg         = None
+        self.CPUimg         = None 
+        self.emulatorMode   = MODE_IMAGE                #supõe que é imagem
+
+        #gera o objeto para utilizar o cuda
+        if(self._hasCuda):
+            #variável para guardar o endereço da imagem principal
+            self.GPUimg = cv2.cuda.GpuMat()
+
+
+        #configurações do campo comprimento e largura
+        self.fieldWidth     = 0                     # largura do campo
+        self.fieldHeight    = 0                     # altura do campo
+        self.prop_px_cm     = 1                     # proporção pixel para cm
+        
+        self.debug = False                          # verifica se o processamento usará ou não o debug
+
+        #Variáveis internas do sistema de visão que serão importantes para o processamento
+        #Configurações
+        self.offSetWindow   = 10                 
+        '''Tamanho extra de janela utilizada'''
+        self.offSetErode    = 0                    
+        '''Quantidade padrão de erosões na imagem'''
+        self.dimMatrix      = 25                     
+        '''Dimensão da matriz de convolução na imagem'''
+        self.Thrashhold     = 235                   
+        '''Limiar de binarização da imagem'''
+        self.pixelWidth     = 1
+        '''Tamanho de um pixel normal'''
+
+        #Imagens
+        self.frameOrigin    = None             
+        '''responsável por guardar a imagem do campo'''
+        self.ballImg        = None 
+        ''' Imagem da bola que é utilizada para processar e procurar os jogadores'''
+        self.fieldReduce    = None              
+        '''Imagem do campo reduzida'''
+        self.frameResult    = None              
+        '''Imagem final já reduzida e processada'''
+        self.imgReduce      = None              
+        '''Imagem reduzida para utilizar no processamento'''
+
+        #Imagens binarizadas utilizadas no código
+        self.binaryObjects  = None              # Imagem binária dos objetos
+        self.binaryPlayers  = None              # Imagem Binária dos Jogadores
+        self.binaryTeam     = None              # Imagem Binária do Time
+        self.binaryBall     = None              # Imagem binária da bola
+        self.binReduceField = None              # Imagem binarizada do campo reduzido tratada
+        self.binField       = None              # Imagem binarizada do campo original tratada
+
+
+        #Cores dos jogadores salvas para salvar nos jogadores
+        self.ballColor          = None              # Cor da bola
+        self.allyColor          = None              # Cor do time aliado
+        self.enemyColor         = None              # Cor do time inimigo
+        self.goalAllyColor1     = None              # cor 1 do goleiro aliado
+        self.goalAllyColor2     = None              # cor 2 do goleiro aliado
+        self.atk1AllyColor1     = None              # cor 1 do atacante 1
+        self.atk1AllyColor2     = None              # cor 2 do atacante 1
+        self.atk2AllyColor1     = None              # cor 1 do atacante 2
+        self.atk2AllyColor2     = None              # cor 2 do atacante 2
+
+        #cores padrões dos objetos para o sistema:    #Carrega os vetores de cores claras e escuras de objetos gerais 
+        self.objectsDarkColor = np.array([0,10,130]) #[0,10,150]
+        self.objectsLightColor = np.array([179,255,255])
+
+        #definições estruturais do código
+        self.playerRadius       = 0
+        self.mainColorRadius    = 0
+        self.secColorRadius     = 0
+
+        #definições úteis dentro do código
+        self.ally_lower_bound   = None          # valor mínimo para detectar aliados
+        self.ally_upper_bound   = None          # valor máximo para detectar os aliados
+        self.enemy_lower_bound  = None          # valor mínimo para detectar inimigos
+        self.enemy_upper_bound  = None          # valor máximo para detectar inimigos
+
+        # variáveis internas para realizar o tratamento de dados
+        self.playersCount   = 0
+        self.alliesCount    = 0
+        self.enemiesCount   = 0
+
+        self.playersWindows = [None, None, None, None, None, None]
+
+        self.alliesWindows  = [None, None, None]
+        self.enimiesWindows = [None, None, None]
+
+
     # escolhe as funções da classe caso tenha ou não suporte ao cuda
     def choseModeFunctions(self):
         '''
@@ -902,19 +1017,34 @@ class VisionSystem:
         y = robot.position[1]
         r = robot.radius
 
-        id = robot.id
-        team = robot.team
 
+        #Configurando prints
+        if robot.team == ID_Team.TEAM_ALLY:
+            team = "Ally"
+            color = (255,0,0)
+            if robot.id == ID_Robots.ROBOT_ALLY_GOAL:
+                id = "Goal"
+            elif robot.id == ID_Robots.ROBOT_ALLY_1:
+                id = "Atk 1"
+            elif robot.id == ID_Robots.ROBOT_ALLY_2:
+                id = "Atk 2"
+        elif robot.team == ID_Team.TEAM_ENEMY:
+            team = "Enemy"
+            color = (0,0,255)
+            if robot.id == ID_Robots.ROBOT_ENEMY_GOAL:
+                id = "Goal"
+            elif robot.id == ID_Robots.ROBOT_ENEMY_1:
+                id = "Atk 1"
+            elif robot.id == ID_Robots.ROBOT_ENEMY_2:
+                id = "Atk 2"
+        else:
+            team = "N/A"
+            id = "N/A"
+            color = (0,255,0)
+        
         xi = int(x*self.prop_px_cm)
         yi = int(y*self.prop_px_cm)
         ri = int(r*self.prop_px_cm)
-
-        if(team == "Aliado"):
-            color = (255, 0, 0)
-        elif(team == "Inimigo"):
-            color = (0, 0, 255)
-        else:
-            color = (0, 200, 200)
 
         cv2.circle(imgDegub, (xi, yi), (ri + 5), color, 2)
         text = f"{team} {id}: {str(x)}, {str(y)}"
@@ -965,9 +1095,11 @@ class VisionSystem:
                     x, y, w, h = cv2.boundingRect(approx)
                     aspect_ratio = float(w) / h
                     if 0.7 <= aspect_ratio <= 1.2:
-                        # Desenhar contorno do quadrado na máscara
-                        cv2.drawContours(mascara, [contorno], 0, 255, -1)
-                        contours_treat.append(contorno)
+                        #verifico o tamanho, para que seja um tamanho considerável
+                        if np.sqrt(w*w+h*h) >= (7.5/4)*np.sqrt(2)*self.prop_px_cm:
+                            # Desenhar contorno do quadrado na máscara
+                            cv2.drawContours(mascara, [contorno], 0, 255, -1)
+                            contours_treat.append(contorno)
 
             # Aplicar a máscara na imagem binarizada
             bin_res = cv2.bitwise_and(imgBin, imgBin, mask=mascara)
@@ -996,7 +1128,8 @@ class VisionSystem:
         - colorS: cor secundária em HSV, na forma de array [H,S,V]
 
         '''
-        if window is None or colorP is None or colorS is None:
+        if (window is None) or (colorP is None) or (colorS is None):
+            print("[VS] / [DP]: Algum argumento passado é None!")
             return False
 
         first_lower_bound, first_upper_bound = self.create_color_bounds_noCuda(colorP)
@@ -1004,23 +1137,27 @@ class VisionSystem:
 
         # None é considerado falso em python, tambem
         if not first_color_contours:
+            print("[VS] / [DP]: Primeira cor não foi encontrada")
             return False
 
         first_color_contour = max(first_color_contours, key=cv2.contourArea)
         (xc1, yc1), rc1 = cv2.minEnclosingCircle(first_color_contour)
 
         if rc1 < 0.4 * self.secColorRadius:
+            print("[VS] / [DP]: Segunda cor não foi encontrada")
             return False
 
         second_lower_bound, second_upper_bound = self.create_color_bounds_noCuda(colorS)
         second_color_contours = self.find_binary_contours_noCuda(window, second_lower_bound, second_upper_bound)
 
         if not second_color_contours:
+            print("[VS] / [DP]: Segunda cor não foi encontrada")
             return False
 
         second_color_contour = max(second_color_contours, key=cv2.contourArea)
         (xc2, yc2), rc2 = cv2.minEnclosingCircle(second_color_contour)
 
+        print("[VS] / [DP]: Tudo corretamente")
         return rc2 >= 0.4 * self.secColorRadius
 
     # ==================== métodos com suporte ao CUDA ===============================
@@ -1160,7 +1297,7 @@ class VisionSystem:
         _, img_bin_gpu = cv2.cuda.threshold(img_gray_gpu, 128, 255, cv2.THRESH_BINARY, stream=stream)
 
         # Executa a operação de tratamento de ruído
-        img_bin_gpu_traty = vs.trait_noise_Cuda(img_bin_gpu, stream=stream)
+        img_bin_gpu_traty = self.trait_noise_Cuda(img_bin_gpu, stream=stream)
 
         # Espera a conclusão de todas as operações no pipeline
         stream.waitForCompletion()
@@ -1375,10 +1512,10 @@ class VisionSystem:
                 binary = self.binarize_up_noCuda(imgProc, self.Thrashhold)
 
                 #tratando ruídos da imagem binarizada
-                binary_treat = self.trait_noise_noCuda(binary, self.offSetErode)
+                self.binaryObjects = self.trait_noise_noCuda(binary, self.offSetErode)
 
                 #reduzindo imagem e gerando ViewRect
-                self.binReduceField, self.fieldReduce, coorVetor = self.reduce_field_noCuda(binary_treat, self.frameOrigin, self.fieldWidth, self.offSetWindow)
+                self.binReduceField, self.fieldReduce, coorVetor = self.reduce_field_noCuda(self.binaryObjects, self.frameOrigin, self.fieldWidth, self.offSetWindow)
 
                 #encontra extremos do paralelogramo
                 contours, _ = cv2.findContours(self.binReduceField, cv2.RETR_EXTERNAL,cv2.CHAIN_APPROX_SIMPLE)
@@ -1422,11 +1559,11 @@ class VisionSystem:
 
                             if(debug):
                                 #Desenhar os vértices do retângulo na imagem original (Desenhando os retângulos no campo)
-                                cv2.polylines(self.frameOrigin, [rv], True, (0,0,255), 4)
+                                cv2.polylines(img, [rv], True, (0,0,255), 4)
 
                                 for vertex in rv:
                                     x,y = vertex 
-                                    cv2.circle(self.frameOrigin, (x,y),4,(0,255,0),-1)
+                                    cv2.circle(img, (x,y),4,(0,255,0),-1)
                         
                         except:
                             print("[VisionSystem]: Não conseguiu desenhar na imagem")
@@ -1485,7 +1622,7 @@ class VisionSystem:
             rcm = rb/self.prop_px_cm
 
             #atualizando posição do objeto bola
-            self.ball.updatePosition(xcm, ycm, rcm)
+            self.ball.setPosition(xcm, ycm, rcm)
 
             #desenha caso seja preciso
             if (debug):
@@ -1521,10 +1658,10 @@ class VisionSystem:
         imgHSV = cv2.cvtColor(imgDbg, cv2.COLOR_BGR2HSV)
 
         # encontrando os objetos
-        objects = cv2.inRange(imgHSV, self.objectsDarkColor, self.objectsLightColor)
+        Objects = cv2.inRange(imgHSV, self.objectsDarkColor, self.objectsLightColor)
 
         #Exclui a bola dos objetos identificados
-        self.binaryPlayers = cv2.subtract(objects, self.binaryBall)
+        self.binaryPlayers = cv2.subtract(Objects, self.binaryBall)
 
 
         #REALIZA operações de fechamento e erosão para melhorar a imagem binária dos robôs
@@ -1548,10 +1685,7 @@ class VisionSystem:
         
         # trato a imagem para deixar apenas os objetos 
         self.binaryPlayers, players = self.detect_squares_noCuda(self.binaryPlayers)
-
-        cv2.imshow("binP apF",self.binaryPlayers)  
         
-
         #variáveis úteis
         winSize = int(18*self.prop_px_cm)
         endPt = np.float32([[0,0],[winSize,0],[0,winSize],[winSize,winSize]])
@@ -1565,13 +1699,17 @@ class VisionSystem:
             #verificar tamanho do objeto
             (xi, yi), ri = cv2.minEnclosingCircle(currentPlayers)
 
-            xcm = xi/self.prop_px_cm
-            ycm = xi/self.prop_px_cm
-            rcm = xi/self.prop_px_cm
 
             if(ri > 0.5*self.playerRadius and ri < 1.5*self.playerRadius and self.playersCount < 6):
+                #Calcula valor das coordenadas do objeto
+                xcm = xi/self.prop_px_cm
+                ycm = xi/self.prop_px_cm
+                rcm = xi/self.prop_px_cm
+
                 #ponto inicial 
                 initPt = np.float32([[xi-(winSize/2),yi-(winSize/2)],[xi+(winSize/2),yi-(winSize/2)],[xi-(winSize/2),yi+(winSize/2)],[xi+(winSize/2),yi+(winSize/2)]])
+
+                if(debug): cv2.circle(imgDbg, (int(xi), int(yi)), (int(ri) + 5), (0, 255, 0), 2)
 
                 #Matriz de transformação para nova perspectiva
                 perspecMatrix = cv2.getPerspectiveTransform(initPt, endPt)
@@ -1596,14 +1734,12 @@ class VisionSystem:
 
                         # verifificar se é um objeto certo com base no tamanho
                         if( rc >= 0.5 * self.mainColorRadius and self.enemiesCount <3):
-                            print("Inimigo encontrado")
-                            str1 ="[INIMIGO] Player {} da janela".format(self.enemiesCount)
-                            cv2.imshow(str1, windowActual)
+
                             #será o primeiro robô
                             self.enemyTeam[self.enemiesCount].setPosition(xcm, ycm, rcm,image = windowActual)
                             self.enemyTeam[self.enemiesCount].setStatus(True)
 
-                            if(debug): self.draw_player_circle_noCuda(imgDbg, self.enemyTeam(self.enemiesCount))
+                            if(debug): self.draw_player_circle_noCuda(imgDbg, self.enemyTeam[self.enemiesCount])
 
                             #garante não contar mais do que deve
                             if self.enemiesCount < 3:                        
@@ -1617,62 +1753,55 @@ class VisionSystem:
 
                     (xc,yc), rc = cv2.minEnclosingCircle(self.mainColorContour)
                     rc = int(rc)
-                    
+
                     #verifica tamanho do objeto
                     if(rc >= 0.5*self.mainColorRadius and self.alliesCount <3):
                         #passo 1 - detecta se é o goleiro
                         if self.alliesCount == ID_Robots.ROBOT_ALLY_GOAL:
-                            if self.allyTeam[ID_Robots.ROBOT_ALLY_GOAL].getStatus(): 
+                            if not self.allyTeam[ID_Robots.ROBOT_ALLY_GOAL].getStatus(): 
+                                print("[VS]: Procurando robô goleiro")
                                 if self.detect_ally_robot_noCuda(windowActual, self.goalAllyColor1, self.goalAllyColor2):
+                                    print("[VS]: Robô goleiro encontrado")
                                     bot = self.allyTeam[ID_Robots.ROBOT_ALLY_GOAL]
                                     bot.setPosition(xcm,ycm,rcm,windowActual)
                                     bot.setStatus(True)
                                     
-                                    str1 ="[aliado] Player {} da janela".format(ID_Robots.ROBOT_ALLY_GOAL)
-                                    cv2.imshow(str1, windowActual)
-
                         #passo 2 - detecta se é o atacante 2
                         elif self.alliesCount == ID_Robots.ROBOT_ALLY_1:
-                            if self.allyTeam[ID_Robots.ROBOT_ALLY_1].getStatus(): 
+                            if not self.allyTeam[ID_Robots.ROBOT_ALLY_1].getStatus(): 
+                                print("[VS]: Procurando atacante 1")
                                 if self.detect_ally_robot_noCuda(windowActual, self.atk1AllyColor1, self.atk1AllyColor2):
+                                    print("[VS]: Robô goleiro encontrado")
                                     bot = self.allyTeam[ID_Robots.ROBOT_ALLY_1]
                                     bot.setPosition(xcm,ycm,rcm,windowActual)
                                     bot.setStatus(True)
-
-                                    str1 ="[aliado] Player {} da janela".format(ID_Robots.ROBOT_ALLY_1)
-                                    cv2.imshow(str1, windowActual)
-
+                                    
                         #passo 3 - detecta  se é o atacante 3
                         elif self.alliesCount == ID_Robots.ROBOT_ALLY_2:
-                            if self.allyTeam[ID_Robots.ROBOT_ALLY_2].getStatus(): 
+                            if not self.allyTeam[ID_Robots.ROBOT_ALLY_2].getStatus(): 
+                                print("[VS]: Procurando atacante 2")
                                 if self.detect_ally_robot_noCuda(windowActual, self.atk2AllyColor1, self.atk2AllyColor2):    
+                                    print("[VS]: Robô goleiro encontrado")
                                     bot = self.allyTeam[ID_Robots.ROBOT_ALLY_2]
                                     bot.setPosition(xcm,ycm,rcm,windowActual)
                                     bot.setStatus(True)
 
-                                    str1 ="[aliado] Player {} da janela".format(ID_Robots.ROBOT_ALLY_2)
-                                    cv2.imshow(str1, windowActual)
                         
+
                         #debug na imagem desenhando seta das direções
                         if(debug):
                             #algorítmo para desenhar as linhas
                             h = 50
                             dx, dy = self.allyTeam[self.alliesCount].direction[:2]
-                            if dx == 0:
-                                Dx = 0
-                                Dy = h if dy > 0 else -h
-                            else:
-                                theta = np.arctan(dy / dx)
-                                Dx = h * np.cos(theta) * np.sign(dx)
-                                Dy = h * np.sin(theta) * np.sign(dy)
-
+                            bot = self.allyTeam[self.alliesCount]
                             #garantindo que são valor inteiros
                             xi = int(xi)
                             yi = int(yi)
                             ri = int(ri)
-                        
-                            cv2.arrowedLine(imgDbg, (xi, yi), (xi+int(Dx), yi+int(Dy)), (0,255,0), 2)
-                                
+
+                            cv2.arrowedLine(imgDbg, (xi, yi), (xi+dx, yi+dy), (0,255,0), 2)
+                            self.draw_player_circle_noCuda(imgDbg, bot)
+
                         #garante não contar mais do que deve
                         if self.alliesCount < 3:                        
                             #sobe a contagem de aliados
@@ -1690,12 +1819,12 @@ class VisionSystem:
 
                             # verifificar se é um objeto certo com base no tamanho
                             if( rc >= 0.5 * self.mainColorRadius and self.enemiesCount <3):
-                                print("Inimigo encontrado")
+                                print("Encontrou um inimigo na primeira 2")
                                 #será o primeiro robô
                                 self.enemyTeam(self.enemiesCount).setPosition(xcm, ycm, rcm,image = windowActual)
                                 self.enemyTeam(self.enemiesCount).setStatus(True)
 
-                                if(debug): self.draw_player_circle_noCuda(imgDbg, self.enemyTeam(self.enemiesCount))
+                                #if(debug): self.draw_player_circle_noCuda(imgDbg, self.enemyTeam(self.enemiesCount))
 
                                 #garante não contar mais do que deve
                                 if self.enemiesCount < 3:                        
@@ -1745,19 +1874,4 @@ class VisionSystem:
 
 # Testar função principal e nova lógica
 if __name__ =='__main__':
-    #executará o código de teste deste módulo com uma imagem padrão
-    capture = Capture(CaptureMode.CAM, False)
-    capture.setIdCam(0)
-    
-    #gerar objeto de sistema de detectção
-    vs = VisionSystem(None, capture, False, GPUType.NVidia)
-
-    #gerar um timer
-    timer = HighPrecisionTimer(None)
-    timer.run()
-    while True:
-        #Executar algum processamento aqui utilizando a câmera!
-        
-        if cv2.waitKey(1) & 0xFF == ord('q'):  # Espera 1 milissegundo e verifica se a tecla 'q' foi pressionada para sair do loop
-            cv2.destroyAllWindows()
-            break
+    print("Utilizada em função de main")

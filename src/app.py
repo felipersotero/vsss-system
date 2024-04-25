@@ -215,12 +215,12 @@ class App:
 
         CalColor=self.menu.add_node(SysVision,'ColorCalibration','Calibração das Cores', value='')
         self.menu.add_node(CalColor,'mainColor','Cor principal', value='[ 90 128 128]')
-        self.menu.add_node(CalColor,'j1Color1','J1 Cor 1', value='[ 90 128 128]')
-        self.menu.add_node(CalColor,'j1Color2','J1 Cor 2', value='[ 90 128 128]')
-        self.menu.add_node(CalColor,'j2Color1','J2 Cor 1', value='[ 90 128 128]')
-        self.menu.add_node(CalColor,'j2Color2','J2 Cor 2', value='[ 90 128 128]')
-        self.menu.add_node(CalColor,'j3Color1','J3 Cor 1', value='[ 90 128 128]')
-        self.menu.add_node(CalColor,'j3Color2','J3 Cor 2', value='[ 90 128 128]')
+        self.menu.add_node(CalColor,'j1Color1','Goal Cor 1', value='[ 90 128 128]')
+        self.menu.add_node(CalColor,'j1Color2','Goal Cor 2', value='[ 90 128 128]')
+        self.menu.add_node(CalColor,'j2Color1','Atk1 Cor 1', value='[ 90 128 128]')
+        self.menu.add_node(CalColor,'j2Color2','Atk1 Cor 2', value='[ 90 128 128]')
+        self.menu.add_node(CalColor,'j3Color1','Atk2 Cor 1', value='[ 90 128 128]')
+        self.menu.add_node(CalColor,'j3Color2','Atk2 Cor 2', value='[ 90 128 128]')
         self.menu.add_node(CalColor,'enemyColor','Cor inimigos', value='[ 90 128 128]')   
         self.menu.add_node(CalColor,'ballColor','Cor da bola', value='[9 93 220]')
         

@@ -343,7 +343,7 @@ def draw_player_circle(imgDegub, robot, prop_px_cm=1):
     cv2.putText(imgDegub, text , (int(xi),int(yi+ri+20)), cv2.FONT_HERSHEY_SIMPLEX, 0.4, color, 1)
 
 #função para tratar imagem e retornar os objetos mais próximos de quadrados
-def isSquare(contorno):
+def isSquare(contorno, prop_px_cm):
     '''
         Essa função trata da imagem e verifica se ele é um robô e não um ruído.
         Isso é realizado verificando se é ou não próximo de um quadrado.
@@ -355,8 +355,11 @@ def isSquare(contorno):
         x, y, w, h = cv2.boundingRect(approx)
         aspect_ratio = float(w) / h
         if 0.7 <= aspect_ratio <= 1.3: #Esses valores foram chutados
-            # Desenhar contorno do quadrado na máscara
-            return True
+            if np.sqrt(w*w+h*h) >= (7.5/4)*np.sqrt(2)*prop_px_cm:
+                # Desenhar contorno do quadrado na máscara
+                return True
+            else:
+                return False
         else:
             return False
 
@@ -638,14 +641,10 @@ def detect_players(img, ballImg, binaryBall, binaryField, alliesColor, enemiesCo
     mainColorRadius = (7.5/4)*np.sqrt(5)*prop_px_cm
     secColorRadius = (playerRadius/2)
 
-    print("Cor e player radius:", mainColorRadius, " ", playerRadius, " ", prop_px_cm)
-
-    # print("Raio do jogador: ", playerRadius)
-    # print("Raio da cor principal: ", mainColorRadius)
     #procura quais objetos são realmente 
     for currentPlayer in players:
         #verifica se o objeto é um quadrado
-        if isSquare(currentPlayer):
+        if isSquare(currentPlayer, prop_px_cm):
             #Encontrando posição de cada um dos carros identificados
             (xi,yi), ri = cv2.minEnclosingCircle(currentPlayer)
 

@@ -353,12 +353,13 @@ class Emulator:
             ballColor       =   self.ballColor,
             allyColor       =   self.teamMainColor,
             enemyColor      =   self.enemiesMainColor,
-            goalAllyColor1  =   self.player1Color1,
-            goalAllyColor2  =   self.player1Color2,
-            atk1AllyColor1  =   self.player2Color1,
-            atk1AllyColor2  =   self.player2Color2,
-            atk2AllyColor1  =   self.player3Color1,
-            atk2AllyColor2  =   self.player3Color2
+            goalAllyColor1  =   string_to_int_array(self.player1Color1),
+            goalAllyColor2  =   string_to_int_array(self.player1Color2),
+            atk1AllyColor1  =   string_to_int_array(self.player2Color1),
+            atk1AllyColor2  =   string_to_int_array(self.player2Color2),
+            atk2AllyColor1  =   string_to_int_array(self.player3Color1),
+            atk2AllyColor2  =   string_to_int_array(self.player3Color2),
+            emulatorMode    =   self.Mode 
         )
 
         self.vs.setConfigEmulator(self.EConfig)
@@ -717,11 +718,7 @@ class Emulator:
         self.ball = ball_object
         self.allies = allies_list
         self.enemies = enemies_list
-
-        # Enviando dados para o processamento
-        # self.commands = recieve_data(self, self.ball, self.allies, self. enemies, self.clientMQTT)
-        # self.commands_queue.queue.clear()
-        # self.commands_queue.put(self.commands)
+        St2i = self.Timer.getElapsedTime()
 
         binaryPlayers = detect_squares(binaryPlayers)
         #Exibindo dados em tela
@@ -738,7 +735,6 @@ class Emulator:
         self.setContentRobots()
 
       # self.call_detection_system()
-        St2i = self.Timer.getElapsedTime()
         self.totalTime = (St2i - St1i)                       #tempo em mili 
         #segundos
         
@@ -759,10 +755,13 @@ class Emulator:
         #Método de RUN
         result = self.vs.proc(self.frame, debug=self.DEBUGA)
 
+        #retornando valores
+        St2i = self.Timer.getElapsedTime()
+
         #Exibindo dados em tela
         self.viewer.show(self.frame) # type: ignore
 
-        """         if(self.DEBUGA == True):
+        if(self.DEBUGA == True):
             binary_treat, binaryBall, binaryPlayers, binaryTeam = self.vs.getDebugImages()
             self.debugFieldViewer.show(binary_treat)# type: ignore
             self.debugObjectsViewer.show(binaryBall)# type: ignore
@@ -773,8 +772,9 @@ class Emulator:
         #Adicionando conteúdos
         self.setContentRobots()
 
-      # self.call_detection_system()
-        St2i = self.Timer.getElapsedTime()
+        #resetando configurações já que é modo imagem
+        self.vs._resetVs()
+
         self.totalTime = (St2i - St1i)                       #tempo em mili 
         #segundos
         
@@ -789,7 +789,6 @@ class Emulator:
         if self.cameraIsRunning:
             #Atualizo informações do cards sobre funcionalidade
             self.infoCards.updateFuncs()
-            binaryPlayers = detect_squares(binaryPlayers)
             self.viewer.show(self.frame)
             if(self.DEBUGA == True):
                 self.debugFieldViewer.show(self.binary_treat)
