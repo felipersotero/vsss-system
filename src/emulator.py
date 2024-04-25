@@ -117,7 +117,10 @@ class Emulator:
         self.frame = None   
         
         #criando um objeto que será responsável por guardar as informações do emulador
-        self.EConfig: EConfig 
+        self.EConfig = EConfig()
+
+        #verificando se funciona
+        self.vs = VisionSystem(capture=self.capture, UseCuda=False, GPUType=None)
 
     def load_vars(self):
         self.CamUSB = int(self.settingsTree.tree.item('I003','value')[0])
@@ -338,6 +341,7 @@ class Emulator:
 
         self.ballColor = string_to_int_array(self.ballColor)
 
+
         #Gero o EConfig para realizar o processamento
         self.EConfig = EConfig(
             offSetWindow    =   self.OffSetBord,
@@ -347,7 +351,7 @@ class Emulator:
             FieldWidth      =   self.fieldWidth ,
             FieldHeight     =   self.fieldHeight,
             ballColor       =   self.ballColor,
-            allyColor       =   self.mainColor,
+            allyColor       =   self.teamMainColor,
             enemyColor      =   self.enemiesMainColor,
             goalAllyColor1  =   self.player1Color1,
             goalAllyColor2  =   self.player1Color2,
@@ -357,6 +361,7 @@ class Emulator:
             atk2AllyColor2  =   self.player3Color2
         )
 
+        self.vs.setConfigEmulator(self.EConfig)
         #Inicializa o viewer
         if(self.Mode== MODE_USB_CAM): #Modo camera
             print('[EMULADOR] Emulador em modo de processamento de imagem da Camera USB')
@@ -749,23 +754,20 @@ class Emulator:
         self.capture.setImagePath(self.ImgPath)
         self.frame = self.capture.getImage()
 
-        #verificando se funciona
-        self.vs = VisionSystem(self.EConfig, UseCuda=False, GPUType=None)
 
         
         #Método de RUN
         result = self.vs.proc(self.frame, debug=self.DEBUGA)
 
-
         #Exibindo dados em tela
-        self.viewer.show(frame) # type: ignore
-        if(self.DEBUGA == True):
+        self.viewer.show(self.frame) # type: ignore
+
+        """         if(self.DEBUGA == True):
             binary_treat, binaryBall, binaryPlayers, binaryTeam = self.vs.getDebugImages()
-            print("tá funcionando em debug")
             self.debugFieldViewer.show(binary_treat)# type: ignore
             self.debugObjectsViewer.show(binaryBall)# type: ignore
             self.debugPlayersViewer.show(binaryPlayers)# type: ignore
-            self.debugTeamViewer.show(binaryTeam)# type: ignore
+            self.debugTeamViewer.show(binaryTeam)# type: ignore """
         self.resultViewer.show(result)# type: ignore
 
         #Adicionando conteúdos

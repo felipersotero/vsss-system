@@ -1,5 +1,6 @@
 import tkinter as tk
 from modules import *
+from PIL import Image, ImageTk, ImageGrab
 
 class Card:
     def __init__(self, master, title, color):

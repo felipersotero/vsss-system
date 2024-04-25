@@ -638,6 +638,8 @@ def detect_players(img, ballImg, binaryBall, binaryField, alliesColor, enemiesCo
     mainColorRadius = (7.5/4)*np.sqrt(5)*prop_px_cm
     secColorRadius = (playerRadius/2)
 
+    print("Cor e player radius:", mainColorRadius, " ", playerRadius, " ", prop_px_cm)
+
     # print("Raio do jogador: ", playerRadius)
     # print("Raio da cor principal: ", mainColorRadius)
     #procura quais objetos são realmente 

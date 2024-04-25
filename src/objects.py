@@ -6,13 +6,20 @@
 '''
 import numpy as np
 import time
-from modules import *
 from viewer import MyViewer
 import threading
 import queue
 import tkinter 
 from collections import deque
 from settingsMenu import *
+from modules import *
+
+
+from tkinter import *
+from tkinter import ttk
+from tkinter.ttk import Treeview, Scrollbar, Entry, Style
+from tkinter import simpledialog, messagebox, filedialog
+import cv2
 
 # =============== CONTROLE DE IDENTIFICADORES ===============================
 #identificadores padrões dos robôs
@@ -267,6 +274,32 @@ class EConfig:
             Deletando o objeto de configuração para liberar memória
         '''
         del self
+
+    #função para puxar as configurações
+    def setConfigs(self, offSetWindow =10, offSetErode = 0 ,dimMatrix = 25, Trashhold = 235
+                 ,FieldWidth = 0, FieldHeight=0, allyColor=[0,0,0], enemyColor=[0,0,0],ballColor = [0,0,0]
+                 , goalAllyColor1=[0,0,0], goalAllyColor2=[0,0,0], atk1AllyColor1=[0,0,0],atk1AllyColor2=[0,0,0], atk2AllyColor1=[0,0,0]
+                 , atk2AllyColor2=[0,0,0] ):
+                #setando variáveis de configuração do sistema de visão
+        self.offSetWindow       = offSetWindow          # valor mínimo da borda da janela
+        self.offSetErode        = offSetErode           # quantidade mínima de erosão
+        self.dimMatrix          = dimMatrix             # dimensão da matrix de convolução
+        self.Trashhold          = Trashhold             # limiar de binarização do sistema
+        
+        self.fieldWidth         = FieldWidth            # comprimento do campo
+        self.fieldHeight        = FieldHeight           # largura do campo
+        self.allyColor          = allyColor             # Cor principal do time
+        self.enemyColor         = enemyColor            # Cor principal dos inimigos
+
+        self.ballColor          = ballColor             # cor da bola
+        self.goalAllyColor1     = goalAllyColor1        # cor 1 do goleiro aliado
+        self.goalAllyColor2     = goalAllyColor2        # cor 2 do goleiro aliado
+        self.atk1AllyColor1     = atk1AllyColor1        # cor 1 do atacante 1
+        self.atk1AllyColor2     = atk1AllyColor2        # cor 2 do atacante 1
+        self.atk2AllyColor1     = atk2AllyColor1        # cor 1 do atacante 2
+        self.atk2AllyColor2     = atk2AllyColor2        # cor 2 do atacante 2
+
+
 
 # =============== CONTROLE DE CLASSES ===============================
 #Classe auxiliar para configurar os pontos extremos que irão reconhecer o robô, para análise de colisão.
@@ -592,7 +625,7 @@ class Capture:
         Classe responsável por ser o intermédio entre a forma de capturar informações
         e o emulador.
     '''
-    def __init__(self, mode: CaptureMode.DEFAULT, useGpu:BooleanVar):
+    def __init__(self, mode: CaptureMode.DEFAULT, useGpu:bool):
         '''
             Inicializo o objeto informando o modo de captura: DEFAULT, CAM, IMG ou Video.
             E também informo se vou ou não utilizar GPU (True ou False)
@@ -687,7 +720,7 @@ class Capture:
     
     
     #Seta a configura para o GPU
-    def GPUMode(self, useGpu:BooleanVar):
+    def GPUMode(self, useGpu:bool):
         '''
             Função responsável por setar um modo da GPU.
             UseGPU é um booleano que irá dizer se irá ou não utilizar
