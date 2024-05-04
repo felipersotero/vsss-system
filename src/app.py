@@ -48,8 +48,9 @@ class App:
         self.result = MyViewer(self.tab6)
 
         self.cards = []
-        for i in range(6):
-            self.card = Card(self.players_infos, f"Jogador {i+1}", "white")
+        self.names = ['Goleiro (A)', 'Atacante 1 (A)','Atacante 2 (A)','Goleiro (E)', 'Atacante 1 (E)','Atacante 2 (E)' ]
+        for name in self.names:
+            self.card = Card(self.players_infos, "{}".format(name), "white")
             self.cards.append(self.card)
 
         for i, card in enumerate(self.cards):

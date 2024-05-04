@@ -340,14 +340,15 @@ class Quad:
     '''
     def __init__(self, P1:Point2D, P2:Point2D, P3:Point2D, P4:Point2D):
         ''' Necessário informar 4 pontos para ele interpretar e juntar'''
-        self.p1 = P1            #Ponto extremo 1
-        self.p2 = P2            #Ponto extremo 2
-        self.p3 = P3            #Ponto extremo 3
-        self.p4 = P4            #Ponto extremo 4
+        self.p1 = P1                #Ponto extremo 1
+        self.p2 = P2                #Ponto extremo 2
+        self.p3 = P3                #Ponto extremo 3
+        self.p4 = P4                #Ponto extremo 4
 
         #Pontos no formato array do numpy
         self.points = np.array([P1,P2,P3,P4])
 
+    #puxar os pontos
     def getPoint(self):
         '''
             Retorna os pontos associados a esse Quadrilátero num array

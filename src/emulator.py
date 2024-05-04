@@ -263,31 +263,31 @@ class Emulator:
         msg=f"""
         [EMULADOR]
         ====Emulador===
-        CamUSB: {self.CamUSB}
-        ImgPath: {self.ImgPath}
-        VideoPath: {self.VideoPath}
-        UseMode: {self.UseMode}
+        CamUSB          : {self.CamUSB}
+        ImgPath         : {self.ImgPath}
+        VideoPath       : {self.VideoPath}
+        UseMode         : {self.UseMode}
         
-        OffSetBord: {self.OffSetBord}
-        OffSetErode: {self.OffSetErode}
-        BINThresh: {self.BINThresh}
-        MatrixTop: {self.MatrixTop}
+        OffSetBord      : {self.OffSetBord}
+        OffSetErode     : {self.OffSetErode}
+        BINThresh       : {self.BINThresh}
+        MatrixTop       : {self.MatrixTop}
         
-        fieldWidth: {self.fieldWidth}
-        fieldHeight: {self.fieldHeight}
+        fieldWidth      : {self.fieldWidth}
+        fieldHeight     : {self.fieldHeight}
 
-        mainColor: {self.mainColor}
-        player1Color1: {self.player1Color1}
-        player1Color2: {self.player1Color2}
-        player2Color1: {self.player2Color1}
-        player2Color2: {self.player2Color2}
-        player3Color1: {self.player3Color1}
-        player3Color2: {self.player3Color2}
-        enemiesMainColor: {self.enemiesMainColor}
-        ballColor: {self.ballColor}
+        ally Color      : {self.mainColor}
+        Goleiro CorP    : {self.player1Color1}
+        Goleiro CorS    : {self.player1Color2}
+        Atk1    CorP    : {self.player2Color1}
+        Atk1    CorS    : {self.player2Color2}
+        Atk2    CorP    : {self.player3Color1}
+        Atk2    CorS    : {self.player3Color2}
+        Enemies Color   : {self.enemiesMainColor}
+        ballColor       : {self.ballColor}
         
-        debug_view: {self.debug_view}
-        EXECMode: {self.EXECMode}
+        debug_view      : {self.debug_view}
+        EXECMode        : {self.EXECMode}
         """.encode('utf-8')
 
         print(msg.decode('utf-8', errors='replace'))
@@ -353,12 +353,12 @@ class Emulator:
             ballColor       =   self.ballColor,
             allyColor       =   self.teamMainColor,
             enemyColor      =   self.enemiesMainColor,
-            goalAllyColor1  =   string_to_int_array(self.player1Color1),
-            goalAllyColor2  =   string_to_int_array(self.player1Color2),
-            atk1AllyColor1  =   string_to_int_array(self.player2Color1),
-            atk1AllyColor2  =   string_to_int_array(self.player2Color2),
-            atk2AllyColor1  =   string_to_int_array(self.player3Color1),
-            atk2AllyColor2  =   string_to_int_array(self.player3Color2),
+            goalAllyColor1  =   np.array(string_to_int_array(self.player1Color1)),
+            goalAllyColor2  =   np.array(string_to_int_array(self.player1Color2)),
+            atk1AllyColor1  =   np.array(string_to_int_array(self.player2Color1)),
+            atk1AllyColor2  =   np.array(string_to_int_array(self.player2Color2)),
+            atk2AllyColor1  =   np.array(string_to_int_array(self.player3Color1)),
+            atk2AllyColor2  =   np.array(string_to_int_array(self.player3Color2)),
             emulatorMode    =   self.Mode 
         )
 
@@ -750,24 +750,26 @@ class Emulator:
         self.capture.setImagePath(self.ImgPath)
         self.frame = self.capture.getImage()
 
-
-        
-        #Método de RUN
+        #Método de RUN para imagem
         result = self.vs.proc(self.frame, debug=self.DEBUGA)
 
         #retornando valores
         St2i = self.Timer.getElapsedTime()
 
         #Exibindo dados em tela
-        self.viewer.show(self.frame) # type: ignore
+        self.viewer.show(self.frame)
 
         if(self.DEBUGA == True):
             binary_treat, binaryBall, binaryPlayers, binaryTeam = self.vs.getDebugImages()
-            self.debugFieldViewer.show(binary_treat)# type: ignore
-            self.debugObjectsViewer.show(binaryBall)# type: ignore
-            self.debugPlayersViewer.show(binaryPlayers)# type: ignore
-            self.debugTeamViewer.show(binaryTeam)# type: ignore """
-        self.resultViewer.show(result)# type: ignore
+            self.debugFieldViewer.show(binary_treat)
+            self.debugObjectsViewer.show(binaryBall)
+            self.debugPlayersViewer.show(binaryPlayers)
+            self.debugTeamViewer.show(binaryTeam)
+        self.resultViewer.show(result)
+
+        # puxando informações do sistema de visão
+        self.allies     = self.vs.allyTeam
+        self.enemies    = self.vs.enemyTeam
 
         #Adicionando conteúdos
         self.setContentRobots()
@@ -779,6 +781,8 @@ class Emulator:
         #segundos
         
         self.realTime = self.Timer.getElapsedTime() / 1000
+
+        self.FPStime = int(1000/self.totalTime)
 
         #atualizo informações na interface
         self.infoCards.update()
@@ -832,6 +836,11 @@ class Emulator:
                 self.cards[i+3].set_content(self.enemies[i].id, self.enemies[i].detected, self.enemies[i].position, self.enemies[i].radius, self.enemies[i].image)
             else:
                 self.cards[i+3].set_content("#0", False, ["0.0000", "0.0000"], "0.0000", None)
+
+    #Nova forma de adicionar conteúdo dos robôs
+    def setContentRobotsNew(self):
+        pass 
+
 
     # Verifica se tem um serviço cuda no computador
     def hasCudaDevice(self):

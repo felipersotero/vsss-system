@@ -214,15 +214,10 @@ def reduce_field(BinImg, Img, fieldWidth, prop_px_cm, d=10):
         # print(f"offset: {d}")
         #Vetor das coordenadas
         cooVetor = [x,y,w,h]
-        pontosIniciais = np.float32([[x-d,y-d],[x+w+d,y-d],[x-d,y+h+d],[x+w+d,y+h+d]])
-        novosExtremos = np.float32([[0,0],[w,0],[0,h],[w,h]])
 
-        #Matriz de transformação para nova perspectiva
-        matrizPerspectiva = cv2.getPerspectiveTransform(pontosIniciais,novosExtremos)
-
-        #revisando nova imagem para processamento
-        img_Reduce = cv2.warpPerspective(Img, matrizPerspectiva, (w,h))
-        bin_Reduce = cv2.warpPerspective(BinImg, matrizPerspectiva, (w,h))
+        # Extrair região de interesse da imagem
+        img_Reduce = Img[int(y-d):int(y+h+d), int(x-d):int(x+w+d)]
+        bin_Reduce = BinImg[int(y-d):int(y+h+d), int(x-d):int(x+w+d)]
 
     except:
         #Se ele não conseguir, retorna a imagem inicial...
@@ -641,6 +636,10 @@ def detect_players(img, ballImg, binaryBall, binaryField, alliesColor, enemiesCo
     mainColorRadius = (7.5/4)*np.sqrt(5)*prop_px_cm
     secColorRadius = (playerRadius/2)
 
+    #print("Cor e player radius:", mainColorRadius, " ", playerRadius, " ", prop_px_cm)
+
+    # print("Raio do jogador: ", playerRadius)
+    # print("Raio da cor principal: ", mainColorRadius)
     #procura quais objetos são realmente 
     for currentPlayer in players:
         #verifica se o objeto é um quadrado
@@ -749,8 +748,9 @@ def detect_players(img, ballImg, binaryBall, binaryField, alliesColor, enemiesCo
                         for i in range(3):
                             firstColorFound = False
                             secondColorFound = False
-
+                            
                             first_lower_bound, first_upper_bound = create_color_bounds(playersAllColors[i][0])
+
                             firstColorContours = find_binary_contours(playersWindows[playersCount], first_lower_bound, first_upper_bound)
                             if firstColorContours:
                                 firstColorContour = max(firstColorContours, key=cv2.contourArea)
