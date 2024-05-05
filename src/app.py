@@ -46,6 +46,7 @@ class App:
         self.debugPlayers = MyViewer(self.tab4)
         self.debugTeam = MyViewer(self.tab5)
         self.result = MyViewer(self.tab6)
+        self.virtualVision = MyViewer(self.tab51)   #Mostra a virtualização da imagem
 
         self.cards = []
         self.names = ['Goleiro (A)', 'Atacante 1 (A)','Atacante 2 (A)','Goleiro (E)', 'Atacante 1 (E)','Atacante 2 (E)' ]
@@ -173,6 +174,7 @@ class App:
         self.tab3 = Frame(self.tabs)
         self.tab4 = Frame(self.tabs)
         self.tab5 = Frame(self.tabs)
+        self.tab51 = Frame(self.tabs)
         self.tab6 = Frame(self.tabs)
 
         self.tab1.configure(background="black")
@@ -180,6 +182,7 @@ class App:
         self.tab3.configure(background="black")
         self.tab4.configure(background="black")
         self.tab5.configure(background="black")
+        self.tab51.configure(background='black')
         self.tab6.configure(background="black")
 
         self.tabs.add(self.tab1, text="Imagem")
@@ -187,6 +190,7 @@ class App:
         self.tabs.add(self.tab3, text="Debug bola")
         self.tabs.add(self.tab4, text="Debug jogadores")
         self.tabs.add(self.tab5, text="Debug time")
+        self.tabs.add(self.tab51, text = "Virtual")
         self.tabs.add(self.tab6, text="Resultado")
 
         self.tabs.place(relx=0, rely=0, relwidth=1, relheight=1)
@@ -242,7 +246,7 @@ class App:
     def init_emulate(self):
         print("[APP] Emulação Iniciada")
         self.emulator.load_vars()
-        self.emulator.show_variables()
+        #self.emulator.show_variables()
         
         self.menu.save_to_json('config')
 

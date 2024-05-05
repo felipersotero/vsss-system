@@ -24,6 +24,7 @@ class Emulator:
         self.debugPlayersViewer = App.debugPlayers
         self.debugTeamViewer = App.debugTeam
         self.resultViewer = App.result
+        self.virtualResult = App.virtualVision
 
         #informações para exibir
         self.cards = App.cards
@@ -62,6 +63,7 @@ class Emulator:
         self.debugPlayersViewer.config()
         self.debugTeamViewer.config()
         self.resultViewer.config()
+        self.virtualResult.config()
 
         # Objetos
         self.field = None
@@ -766,7 +768,7 @@ class Emulator:
             self.debugPlayersViewer.show(binaryPlayers)
             self.debugTeamViewer.show(binaryTeam)
         self.resultViewer.show(result)
-
+        self.virtualResult.show(self.vs.virtualImg)
         # puxando informações do sistema de visão
         self.allies     = self.vs.allyTeam
         self.enemies    = self.vs.enemyTeam

@@ -333,6 +333,30 @@ class Point2D:
         '''
         return self.pos 
     
+    #Definindo operações com Point2D
+    #definindo a soma (x,y)+(a,b) = (x+a, y+b)
+    def __add__(self, other):
+        return Point2D(self.px +other.px, self.py+other.py)
+
+    #definindo a subtração de dois pontos (x,y)-(a,b) = (x-a,y-b)
+    def __sub__(self, other):
+        return Point2D(self.px - other.px, self.py-other.py)
+    
+    #definindo multiplicação entre esses dois pontos 2D
+    def __mul__(self, other):
+        #Multiplicação por escalar (x,y)*k = (kx,ky)
+        if isinstance(other, (int, float)):
+            # Se 'other' for um escalar, realizar multiplicação por escalar
+            return Point2D(self.px * other, self.py * other)
+        
+        #multiplicação por uma instância (x,y) * (a,b) = (x*a,y*b) => Necessário criar uma lógica
+        elif isinstance(other, Point2D): 
+            # Se 'other' for um vetor, realizar produto escalar
+            return Point2D(self.px * other.px, self.py * other.py)
+        else:
+            # Caso contrário, lançar uma exceção ou retornar None
+            raise TypeError("Operação de multiplicação não suportada para o tipo de objeto passado.")
+
 #Definição de um Quadrilátero 
 class Quad:
     '''
