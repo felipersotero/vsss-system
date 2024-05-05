@@ -443,11 +443,11 @@ class Field:
         #desenhar extremos
         pts = self.extrems.getPoint()
 
-        i=50
+
         for pt in pts:
             x,y = pt.getPos()
-            cv2.circle(self.master.frameResult, (x,y),6,(0,0,20+i),-1)
-            i+=50
+            cv2.circle(self.master.frameResult, (x,y),6,(0,0,255),-1)
+
         #desenhar centro
         #cv2.circle(self.master.frameResult, self.center,6,(0,0,255),-1)
         
@@ -546,7 +546,7 @@ class VisionSystem:
 
         # Coordenada do ponto de origem do novo sistema de coordenadas
         self.xnv     = 67                    
-        self.ynv     = 405        
+        self.ynv     = 402        
 
         #coordenadas dos pontos importantes na imagem virtual
         #extremos do campo virtual
@@ -702,7 +702,46 @@ class VisionSystem:
         if debug:
             self.field.drawPointsField()
             
+            #imprimindo pontos no virtual
+            cv2.circle(self.virtualImg, self.fieldP1v,2,(0,0,255),-1)
+            cv2.circle(self.virtualImg, self.fieldP2v,2,(0,0,255),-1)
+            cv2.circle(self.virtualImg, self.fieldP3v,2,(0,0,255),-1)
+            cv2.circle(self.virtualImg, self.fieldP4v,2,(0,0,255),-1)
+            
+            cv2.circle(self.virtualImg, self.fieldCenterv,2,(0,0,255),-1)
 
+            cv2.circle(self.virtualImg, self.PA1v,2,(0,0,255),-1)
+            cv2.circle(self.virtualImg, self.PA2v,2,(0,0,255),-1)
+            cv2.circle(self.virtualImg, self.PA3v,2,(0,0,255),-1)
+            cv2.circle(self.virtualImg, self.PE1v,2,(0,0,255),-1)
+            cv2.circle(self.virtualImg, self.PE2v,2,(0,0,255),-1)
+            cv2.circle(self.virtualImg, self.PE3v,2,(0,0,255),-1)
+
+            cv2.circle(self.virtualImg, self.GA1v,2,(0,0,255),-1)
+            cv2.circle(self.virtualImg, self.GA2v,2,(0,0,255),-1)
+            cv2.circle(self.virtualImg, self.GA3v,2,(0,0,255),-1)
+            cv2.circle(self.virtualImg, self.GA4v,2,(0,0,255),-1)
+
+            cv2.circle(self.virtualImg, self.GAI1v,2,(0,0,255),-1)
+            cv2.circle(self.virtualImg, self.GAI2v,2,(0,0,255),-1)
+            cv2.circle(self.virtualImg, self.GAI3v,2,(0,0,255),-1)
+            cv2.circle(self.virtualImg, self.GAI4v,2,(0,0,255),-1)
+
+            cv2.circle(self.virtualImg, self.GE1v,2,(0,0,255),-1)
+            cv2.circle(self.virtualImg, self.GE2v,2,(0,0,255),-1)
+            cv2.circle(self.virtualImg, self.GE3v,2,(0,0,255),-1)
+            cv2.circle(self.virtualImg, self.GE4v,2,(0,0,255),-1)
+
+            cv2.circle(self.virtualImg, self.GEI1v,2,(0,0,255),-1)
+            cv2.circle(self.virtualImg, self.GEI2v,2,(0,0,255),-1)
+            cv2.circle(self.virtualImg, self.GEI3v,2,(0,0,255),-1)
+            cv2.circle(self.virtualImg, self.GEI4v,2,(0,0,255),-1)
+
+            cv2.circle(self.virtualImg, self.fieldP12v,2,(0,0,255),-1)
+            cv2.circle(self.virtualImg, self.fieldP34v,2,(0,0,255),-1)
+
+            #ponto de referência O´
+            cv2.circle(self.virtualImg, (self.xnv, self.ynv),3,(0,255,255),-1)
             #desenhando todos os pontos na imagem virtual
         return self.frameResult
 
@@ -995,30 +1034,30 @@ class VisionSystem:
             a posição com cm (m/100)
         '''
         #   transforma o ponto no novo sistema de coordenadas
-        x = ptSrc[0]*3
-        y = ptSrc[1]*3
+        x = ptSrc[0]
+        y = ptSrc[1]
 
         #   coordenada final
-        x_f = x - self.xnv
-        y_f = self.ynv- y
+        x_f = int((x - self.xnv)/3)
+        y_f = int((self.ynv - y)/3)
 
 
         return x_f,y_f
 
     #com a posição em O' (em cm), transforma num índice na imagem:
-    def getImageInice(self,ptSrc):
+    def getImageIndice(self,ptSrc):
         '''
             Pega o valor do ponto em cm, e transforma em índices para a imagem virtual
             para poder, então desenhar-lo.
         '''
 
         #processo inverso
-        x_i = ptSrc[0]+self.xnv 
-        y_i = -ptSrc[1]+self.ynv
+        x_i = ptSrc[0]*3
+        y_i = ptSrc[1]*3
 
         #transforma para índice
-        x_f = int(x_i / 3.0)
-        y_f = int(y_i / 3.0)
+        x_f = x_i+self.xnv
+        y_f = self.ynv-y_i
 
         return x_f, y_f 
     #===============| Definindo funções básicas|==============================
@@ -1302,6 +1341,8 @@ class VisionSystem:
         yi = int(robot.position[1])
         ri = int(robot.radius)
 
+        #converter para dimensões da imagem
+        xi, yi = self.getImageIndice(np.array([xi,yi]))
 
         #Configurando prints
         if robot.team == ID_Team.TEAM_ALLY:
@@ -1330,7 +1371,7 @@ class VisionSystem:
 
         cv2.circle(self.virtualImg, (xi, yi), 4, color, -1)
         text = f"{team}{id}"
-        cv2.putText(self.virtualImg, text , (int(xi-3),int(yi-ri)), cv2.FONT_HERSHEY_SIMPLEX, 0.4, color, 1)
+        cv2.putText(self.virtualImg, text , (int(xi-6),int(yi-ri)), cv2.FONT_HERSHEY_SIMPLEX, 0.4, color, 1)
 
 
     #função para tratar imagem e retornar os objetos mais próximos de quadrados
@@ -1948,7 +1989,7 @@ class VisionSystem:
             #desenhando na imagem virtual
             cv2.circle(self.virtualImg, (xv, yv), 4, (0, 255,255), -1)
             text = f"B"
-            cv2.putText(self.virtualImg, text, (int(xv),int(yv+rb+15)), cv2.FONT_HERSHEY_SIMPLEX,0.4,(0,255,255), 1)
+            cv2.putText(self.virtualImg, text, (int(xv-5),int(yv-rb-10)), cv2.FONT_HERSHEY_SIMPLEX,0.4,(0,255,255), 1)
             cv2.arrowedLine(self.virtualImg, (xv, yv), ((xv + int(self.ball.direction[0])), (yv + int(self.ball.direction[1]))), (0, 255, 255), 2)
         
         else:
@@ -2054,6 +2095,9 @@ class VisionSystem:
                             #encontrando valores virutais
                             xcm, ycm = self.transformPoint(np.array([xi,yi]))
 
+                            #transferindo essa informação para o novo espaço com coordenada O'
+                            xcm, ycm = self.getPointVirtual(np.array([xcm, ycm]))
+
                             #será o primeiro robô
                             self.enemyTeam[self.enemiesCount].setPosition(x=xcm, y=ycm, r=rcm,image = windowActual)
                             self.enemyTeam[self.enemiesCount].updtPositionImg(xi=xi,yi=yi,ri=ri)
@@ -2080,6 +2124,9 @@ class VisionSystem:
                     #calcular posições virtuais
                     xcm, ycm = self.transformPoint(np.array([xi,yi]))
                     rcm = ri
+
+                    #transferindo essa informação para o novo espaço com coordenada O'
+                    xcm, ycm = self.getPointVirtual(np.array([xcm, ycm]))
 
                     #verifica tamanho do objeto
                     if(rc >= 0.5*self.mainColorRadius and self.alliesCount <3):
