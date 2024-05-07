@@ -2,6 +2,7 @@ from tkinter import *
 from tkinter import ttk
 from tkinter.ttk import Treeview, Scrollbar, Entry, Style
 from tkinter import simpledialog, messagebox, filedialog
+from ttkthemes import ThemedStyle
 import cv2
 from PIL import Image, ImageTk, ImageGrab
 import json

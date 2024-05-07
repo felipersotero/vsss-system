@@ -77,7 +77,7 @@ class Card:
             color = 'red'
 
         self.idLabel.config(text=f"{id} - {status}", bg=color)
-        self.positionLabel.config(text=f"x = {x}, y = {y}\n r = {r}")
+        self.positionLabel.config(text=f"x: {x} cm | y: {y} cm\n r = {r} cm")
 
         if image is not None:
             self.show_image(image)

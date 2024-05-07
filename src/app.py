@@ -13,10 +13,17 @@ execution = False
 class App:
     def __init__(self):
         root = Tk()
-        self.root = root
+        self.root = root    
         self.menu = None
         self.menuTop= None
         
+        #estilo do tema do tkinter
+        '''        
+        theme_choice = "breeze"
+
+        style =ThemedStyle(root)
+        style.theme_use(theme_choice)'''
+
         #verifica qual o sistema operacional
         self.system = platform.system()
         self.release = platform.release()

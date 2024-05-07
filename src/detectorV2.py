@@ -97,8 +97,8 @@ class Robot:
         '''
 
         #calcula valores
-        self.position = np.array([round(x, 2), round(y, 2)])
-        self.radius = round(r, 2)
+        self.position = np.array([round(x, 1), round(y, 1)])
+        self.radius = round(r, 1)
         self.image = image
 
         dim= image.shape[1]
@@ -132,7 +132,7 @@ class Robot:
         #Atualiza ultima posição
         self.lastPosition = self.position
 
-        self.position = np.array([round(x, 2), round(y, 2)])
+        self.position = np.array([round(x, 1), round(y, 1)])
         self.radius = round(r, 2)
         self.image = image
 
@@ -242,8 +242,8 @@ class Ball:
     '''
     def __init__(self, x=0, y=0, r=0):
         #posição, raio e direção da boal
-        self.position = np.array([int(x), int(y)])
-        self.radius = int(r)
+        self.position = np.array([x, x])
+        self.radius = r
         self.direction = np.array([0, 0])
 
         #gerando bbox para sistema de colisão
@@ -274,10 +274,10 @@ class Ball:
         nesse caso o deslocamento se torna nulo
         '''
         #Atualizando raio
-        self.radius = int(r)
+        self.radius = r
 
         #Atualizando posições do sistema
-        self.newPosition = np.array([int(x), int(y)])
+        self.newPosition = np.array([x, y])
         self.position = self.newPosition 
 
         self.lastPosition = self.position
@@ -294,11 +294,11 @@ class Ball:
         Função responsável por atualizar a posição do objeto.
         '''
         #Atualizando raio
-        self.radius = int(r)
+        self.radius = r
 
         #Atualizando posições do sistema
         self.lastPosition = self.position
-        self.newPosition = np.array([int(x), int(y)])
+        self.newPosition = np.array([x, y])
         self.position = self.newPosition 
         
         #atualizando direção
@@ -1038,8 +1038,8 @@ class VisionSystem:
         y = ptSrc[1]
 
         #   coordenada final
-        x_f = int((x - self.xnv)/3)
-        y_f = int((self.ynv - y)/3)
+        x_f = (x - self.xnv)/3
+        y_f = (self.ynv - y)/3
 
 
         return x_f,y_f
@@ -1056,8 +1056,8 @@ class VisionSystem:
         y_i = ptSrc[1]*3
 
         #transforma para índice
-        x_f = x_i+self.xnv
-        y_f = self.ynv-y_i
+        x_f = int(x_i+self.xnv)
+        y_f = int(self.ynv-y_i)
 
         return x_f, y_f 
     #===============| Definindo funções básicas|==============================
@@ -1371,7 +1371,7 @@ class VisionSystem:
 
         cv2.circle(self.virtualImg, (xi, yi), 4, color, -1)
         text = f"{team}{id}"
-        cv2.putText(self.virtualImg, text , (int(xi-6),int(yi-ri)), cv2.FONT_HERSHEY_SIMPLEX, 0.4, color, 1)
+        cv2.putText(self.virtualImg, text , (int(xi-6),int(yi-12)), cv2.FONT_HERSHEY_SIMPLEX, 0.4, color, 1)
 
 
     #função para tratar imagem e retornar os objetos mais próximos de quadrados
@@ -1971,11 +1971,11 @@ class VisionSystem:
 
 
 
-            rb = int(rb)
+            rb = int(rb/self.prop_px_cm)
             xb = int(xb)
             yb = int(yb)
 
-                # Circulando bola
+            # Circulando bola
             cv2.circle(self.frameResult, (xb, yb), (rb + 2), (0, 0, 255), 2)
             cv2.putText(self.frameResult, "B", (int(xb),int(yb-rb-10)), cv2.FONT_HERSHEY_SIMPLEX,0.4,(0,0,255), 1)
             '''pos=f"({str(xb)},{str(yb)})"
@@ -2090,7 +2090,7 @@ class VisionSystem:
                             #ycm = yi/self.prop_px_cm
                             #rcm = ri/self.prop_px_cm
 
-                            rcm = ri
+                            rcm = 5.30
 
                             #encontrando valores virutais
                             xcm, ycm = self.transformPoint(np.array([xi,yi]))
@@ -2123,7 +2123,7 @@ class VisionSystem:
 
                     #calcular posições virtuais
                     xcm, ycm = self.transformPoint(np.array([xi,yi]))
-                    rcm = ri
+                    rcm = 5.30
 
                     #transferindo essa informação para o novo espaço com coordenada O'
                     xcm, ycm = self.getPointVirtual(np.array([xcm, ycm]))
