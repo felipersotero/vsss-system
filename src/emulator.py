@@ -361,7 +361,8 @@ class Emulator:
             atk1AllyColor2  =   np.array(string_to_int_array(self.player2Color2)),
             atk2AllyColor1  =   np.array(string_to_int_array(self.player3Color1)),
             atk2AllyColor2  =   np.array(string_to_int_array(self.player3Color2)),
-            emulatorMode    =   self.Mode 
+            emulatorMode    =   self.Mode, 
+            timer           =   self.Timer
         )
 
         self.vs.setConfigEmulator(self.EConfig)

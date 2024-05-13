@@ -1,38 +1,108 @@
-import tkinter as tk
+import numpy as np
+#Definição de um ponto 2D no sistema
+class Point2D:
+    ''' Classe para representar um ponto de 2 dimensões'''
+    def __init__(self, px,py):
+        self.px = px        #Coordenada x 
+        self.py = py        #Coordenada y
 
-class ColorSquare(tk.Frame):
-    def __init__(self, master=None):
-        super().__init__(master, bg="white")
-        self.square_size = 10
-        self.status = "parado"
-        self.square = tk.Canvas(self, width=self.square_size, height=self.square_size, bd=1, relief="solid", bg="white")
-        self.square.pack(side=tk.LEFT, padx=5)
-        self.text_var = tk.StringVar()
-        self.text_var.set("Parado")
-        self.text_label = tk.Label(self, textvariable=self.text_var, bg="white")
-        self.text_label.pack(side=tk.LEFT)
-        self.button = tk.Button(self, text="Iniciar", command=self.toggle_status)
-        self.button.pack(side=tk.LEFT, padx=5)
+        #ponto no formato array do numpy
+        self.pos = np.array([px,py])
 
-    def toggle_status(self):
-        if self.status == True:
-            self.set_status("parado")
+    #retornando posição central
+    def getPos(self):
+        '''
+        Retorna posição do ponto (x,y)
+        '''
+        return self.pos 
+    
+    #Definindo operações com Point2D
+    #definindo a soma (x,y)+(a,b) = (x+a, y+b)
+    def __add__(self, other):
+        if isinstance(other, Point2D):
+            return Point2D(self.px +other.px, self.py+other.py)
+        elif isinstance(other, tuple):
+            return Point2D(self.px +other[0], self.py+other[1])
         else:
-            self.set_status("executando")
+            raise TypeError("Operação inválida")
+        
+    #definindo a subtração de dois pontos (x,y)-(a,b) = (x-a,y-b)
+    def __sub__(self, other):
+        if isinstance(other, Point2D):
+            return Point2D(self.px -other.px, self.py-other.py)
+        elif isinstance(other, tuple):
+            return Point2D(self.px -other[0], self.py-other[1])
+        else:
+            raise TypeError("Operação inválida")
+        
+    #definindo multiplicação entre esses dois pontos 2D
+    def __mul__(self, other):
+        #Multiplicação por escalar (x,y)*k = (kx,ky)
+        if isinstance(other, (int, float)):
+            # Se 'other' for um escalar, realizar multiplicação por escalar
+            return Point2D(self.px * other, self.py * other)
+        
+        #multiplicação por uma instância (x,y) * (a,b) = (x*a,y*b) => Necessário criar uma lógica
+        elif isinstance(other, Point2D): 
+            # Se 'other' for um vetor, realizar produto escalar
+            return Point2D(self.px * other.px, self.py * other.py)
+        else:
+            # Caso contrário, lançar uma exceção ou retornar None
+            raise TypeError("Operação de multiplicação não suportada para o tipo de objeto passado.")
+    
+    # Define o comportamento do operador de string
+    def __str__(self):
+        return f"Point2D({self.px}, {self.py})"
+    
+    #define a operação de equalidade
+    def __eq__(self, other):
+        #Multiplicação por escalar (x,y)*k = (kx,ky)
+        if isinstance(other, Point2D):
+            if self.px == other.px and self.py == other.py:
+                return True 
+            else:
+                return False 
+        elif isinstance(other, tuple):
+            try: 
+                if self.px == other[0] and self.py == other[0]:
+                    return True 
+                else:
+                    return False
+            except:
+                return False 
+        else:
+            # Caso contrário, lançar uma exceção ou retornar None
+            raise TypeError("Não é possível tomar a igualdade entre dois valores diferentes")
+    
+    #define o tamanho do objeto
+    def __len__(self):
+        return 2 
+    
+    #define como pegar um valor desse método
+    def __getitem__(self, index):
+        ''' Retorna o valor correspondente ao índice'''
+        if index == 0:
+            return self.px
+        elif index == 1:
+            return self.py
+        else:
+            raise IndexError("Índice fora do intervalo para Point2D")
+    
+A = Point2D(2,1)
 
-    def set_status(self, status):
-        self.status = status
-        if status == True:
-            self.square.config(bg="green")
-            self.text_var.set("Em execução")
-            self.button.config(text="Parar")
-        elif status == False:
-            self.square.config(bg="red")
-            self.text_var.set("Parado")
-            self.button.config(text="Iniciar")
+B = Point2D(2,3)
 
-# Exemplo de uso
-root = tk.Tk()
-square_frame = ColorSquare(root)
-square_frame.pack()
-root.mainloop()
+print("a",A)
+
+print("b",B)
+print("a+b =",A+B)
+
+print("a-b = ",A-B)
+
+print("a*b =",A*B)
+
+print("5A+4B =",(A*5+B*4))
+
+print("primeiro elemento de A:", A[0])
+
+print("A = B? ", A==B) 

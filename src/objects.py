@@ -209,7 +209,7 @@ class EConfig:
     def __init__(self, offSetWindow =10, offSetErode = 0 ,dimMatrix = 25, Trashhold = 235
                  ,FieldWidth = 0, FieldHeight=0, allyColor=[0,0,0], enemyColor=[0,0,0],ballColor = [0,0,0]
                  , goalAllyColor1=[0,0,0], goalAllyColor2=[0,0,0], atk1AllyColor1=[0,0,0],atk1AllyColor2=[0,0,0], atk2AllyColor1=[0,0,0]
-                 , atk2AllyColor2=[0,0,0], emulatorMode = MODE_IMAGE):
+                 , atk2AllyColor2=[0,0,0], emulatorMode = MODE_IMAGE, timer=None):
         '''
             Essas são as variáveis base que o sistema de visão utiliza para realizar seu processamento
             são elas as cores dos times, e offsets do cálculo
@@ -234,7 +234,8 @@ class EConfig:
         self.atk2AllyColor2     = atk2AllyColor2        # cor 2 do atacante 2
 
         self.emulatorMode       = emulatorMode          # modo da emulação
-
+        self.timer              = timer                 # objeto timer
+    
     #métodos para setar uma variável não precisando ser na inicialização do objeto
     def setOffSetValues(self, ofsWindow, ofsErode, ofsMatrix, ofsTrashhold):
         self.offSetWindow       = ofsWindow          # valor mínimo da borda da janela
@@ -336,12 +337,22 @@ class Point2D:
     #Definindo operações com Point2D
     #definindo a soma (x,y)+(a,b) = (x+a, y+b)
     def __add__(self, other):
-        return Point2D(self.px +other.px, self.py+other.py)
-
+        if isinstance(other, Point2D):
+            return Point2D(self.px +other.px, self.py+other.py)
+        elif isinstance(other, tuple):
+            return Point2D(self.px +other[0], self.py+other[1])
+        else:
+            raise TypeError("Operação inválida")
+        
     #definindo a subtração de dois pontos (x,y)-(a,b) = (x-a,y-b)
     def __sub__(self, other):
-        return Point2D(self.px - other.px, self.py-other.py)
-    
+        if isinstance(other, Point2D):
+            return Point2D(self.px -other.px, self.py-other.py)
+        elif isinstance(other, tuple):
+            return Point2D(self.px -other[0], self.py-other[1])
+        else:
+            raise TypeError("Operação inválida")
+        
     #definindo multiplicação entre esses dois pontos 2D
     def __mul__(self, other):
         #Multiplicação por escalar (x,y)*k = (kx,ky)
@@ -356,7 +367,44 @@ class Point2D:
         else:
             # Caso contrário, lançar uma exceção ou retornar None
             raise TypeError("Operação de multiplicação não suportada para o tipo de objeto passado.")
-
+    
+    # Define o comportamento do operador de string
+    def __str__(self):
+        return f"Point2D({self.px}, {self.py})"
+    
+    #define a operação de equalidade
+    def __eq__(self, other):
+        #Multiplicação por escalar (x,y)*k = (kx,ky)
+        if isinstance(other, Point2D):
+            if self.px == other.px and self.py == other.py:
+                return True 
+            else:
+                return False 
+        elif isinstance(other, tuple):
+            try: 
+                if self.px == other[0] and self.py == other[0]:
+                    return True 
+                else:
+                    return False
+            except:
+                return False 
+        else:
+            # Caso contrário, lançar uma exceção ou retornar None
+            raise TypeError("Não é possível tomar a igualdade entre dois valores diferentes")
+    
+    #define o tamanho do objeto
+    def __len__(self):
+        return 2 
+    
+    #define como pegar um valor desse método
+    def __getitem__(self, index):
+        ''' Retorna o valor correspondente ao índice'''
+        if index == 0:
+            return self.px
+        elif index == 1:
+            return self.py
+        else:
+            raise IndexError("Índice fora do intervalo para Point2D")
 #Definição de um Quadrilátero 
 class Quad:
     '''
@@ -459,6 +507,29 @@ class BorderBox:
         elif(self.type == GeometryType.POINT2D): #verifica se é um ponto 2D
             self.px = Infos.px
             self.py = Infos.py
+
+        else:
+            raise TypeError("Está tentanto atribuir um objeto que não é um tipo geométrico válido")
+    #atualizando informações do Borderbox
+    def attPosition(self, newObj):
+        #Informa como o objeto deve guardar suas informações
+        if(self.type == GeometryType.CIRCLE and isinstance(newObj,Circle)): #verifica se é um círculo
+            self.Center = newObj.center
+            self.radius = newObj.radius 
+
+        elif(self.type == GeometryType.QUAD and isinstance(newObj,Quad)): #verifica se é um retângulo
+            #Falta criar essa lógica
+            self.p1 = newObj.p1 
+            self.p2 = newObj.p2 
+            self.p3 = newObj.p3 
+            self.p4 = newObj.p4 
+
+        elif(self.type == GeometryType.POINT2D and isinstance(newObj,Point2D)): #verifica se é um ponto 2D
+            self.px = newObj[0]
+            self.py = newObj[1]
+
+        else:
+            raise TypeError("Esta tentando atribuir um objeto que não é um tipo geométrico válido")
 
 #Classe responsável por organizar as áreas no campo
 class AreaField:
@@ -1001,4 +1072,3 @@ class StateSquare(Frame):
             self.square.config(bg="red")
             self.text_var.set("Parado")
             self.button.config(text="Iniciar processamento")
-
