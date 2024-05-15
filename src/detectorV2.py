@@ -485,6 +485,9 @@ class Field:
         self.height: int = 0 
         self.width: int = 0 
 
+        # Inicializar o ambiente OpenCL
+        cv2.ocl.setUseOpenCL(True)
+
     #Atualizar extremos do campo na imagem original, para realizar cálculos
     def updatePos(self,quad:Quad,width:int,height:int):
         '''
@@ -606,15 +609,20 @@ class VisionSystem:
         #Configurando objetos
         self.createObjs()
 
+        #variável que me dirá quantas vezes o sistema de visão foi chamado
+        self._count: int            = 0 
+        ''' Variável responsavel por dizer quantas vezes foi executado o sistema '''
+        self._firstTimeExec: int    = 0 
+        ''' Variável que diz quanto tempo se passou desde a primeira execução do código'''
         #Carregando as configurações do sistema de visão
-        self.config         = config
+        self.config:EConfig    = config
         
         #objeto de captura internas
-        self._capture       = capture
+        self._capture:Capture  = capture
 
         #verifica se existe suporte ao CUDA
-        self._hasCuda       = UseCuda 
-        self._GPUType       = GPUType
+        self._hasCuda           = UseCuda 
+        self._GPUType           = GPUType
 
         if not self._capture:
             self._capture.GPUMode(self._hasCuda)
@@ -643,7 +651,7 @@ class VisionSystem:
         self.inv_homography_matrix  = None                  # matrix inversa de homografia, relação entre a imagem virtual e a imagem real (caso necessário)
 
         #variável de debug
-        self.debug   = debug                                  # verifica se o processamento usará ou não o debug
+        self.debug:bool   = debug                                  # verifica se o processamento usará ou não o debug
 
         # Coordenada do ponto de origem do novo sistema de coordenadas
         self.xnv     = 67                    
@@ -704,8 +712,6 @@ class VisionSystem:
         #meios dos lados virtual
         self.fieldP12v  =   np.array([322,12])
         self.fieldP34v  =   np.array([322,402])
-
-        # área inimiga
 
 
 
@@ -862,7 +868,7 @@ class VisionSystem:
 
     #função para prever posição dos jogadores e encontrar onde estão
     # Esse é um PROC MENOR
-    def predictObjects(self, img, debug, tms):
+    def predictObjects(self, img, tms):
         '''
             O objetivo desta função é prever qual a posição dos jogadores, para isso é necessário que ele
             tenha informações de tempo guardadas para que possa verificar isso.
@@ -896,14 +902,40 @@ class VisionSystem:
         #construir imagens de debug para aplicar
 
     #lógica completa de processamento do sistema de visão
-    def processImg(self, img, debug, tms):
+    def processImg(self, img, debug):
         '''
             Contém a lógica completa de processamento da imagem, considerando 
             a quantidade de execuções.
         '''
+        self.debug = debug 
 
-        
-        return img
+        #puxa o tempo
+        tms = self.timer.getElapsedTime()
+
+        #verifica se possui otimização GPU
+        if self._hasCuda:
+            self.choseModeFunctions()
+
+        #verifica contagem de tempo interna da função 
+        if self._firstTimeExec < 30:
+            if self._count <=3:
+                #processamento maior
+                self.proc(img,debug)
+            else:
+                #processamento menor 
+                self.predictObjects(img,tms = tms)
+
+        else: 
+            #zera a contagem
+            self._count = 0 
+
+            #zerando a imagem de virtualização
+            self.virtualImg = self.virtual.copy()
+
+            #processamento maior 
+            self.proc(img, debug)
+
+        return self.frameResult
 
 
     #Puxando as imagens de debug
@@ -2453,8 +2485,6 @@ class VisionSystem:
         #objeto da bola
         ball: Ball = self.ball 
 
-        color = self.ballColor
-
         if ball.getStatus():
             ball.predictPosition(timestamp=timestamp)
 
@@ -2573,9 +2603,10 @@ class VisionSystem:
             #posição do objeto robô na imagem original
             x_r = xi + x_w 
             y_r = yi + y_w
+            
             rcm = 5.3
 
-            if(ri > 0.5*self.playerRadius and ri < 1.5*self.playerRadius and self.playersCount < 6):
+            if(ri > 0.5*self.playerRadius and ri < 1.5*self.playerRadius):
 
                 if(debug): cv2.circle(self.frameResult, (int(x_r), int(y_r)), (int(ri) + 5), (0, 255, 0), 2)
 
@@ -2643,8 +2674,6 @@ class VisionSystem:
             #passando essas informações para o espaço virtual
             xcm, ycm = self.transformPoint(np.array([xb,yb]))
             xv, yv = self.getPointVirtual(np.array([xcm,ycm]))
-
-
             
             rb = self.ballRadiusP #cm
             self.ball.updatePosition(x=xv, y=yv, r=rb,timestamp=timeT)

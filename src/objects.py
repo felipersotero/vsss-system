@@ -21,6 +21,9 @@ from tkinter.ttk import Treeview, Scrollbar, Entry, Style
 from tkinter import simpledialog, messagebox, filedialog
 import cv2
 
+# Inicializar o ambiente OpenCL
+cv2.ocl.setUseOpenCL(True)
+
 # =============== CONTROLE DE IDENTIFICADORES ===============================
 #identificadores padrões dos robôs
 class ID_Robots:

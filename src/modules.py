@@ -27,3 +27,6 @@ import platform
 import pycuda.driver as pycuda
 import numba
 from objects import *
+
+# Inicializar o ambiente OpenCL
+cv2.ocl.setUseOpenCL(True)
