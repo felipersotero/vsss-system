@@ -29,4 +29,4 @@ import numba
 from objects import *
 
 # Inicializar o ambiente OpenCL
-cv2.ocl.setUseOpenCL(True)
+if cv2.ocl.haveOpenCL(): cv2.ocl.setUseOpenCL(True)
