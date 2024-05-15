@@ -1,5 +1,5 @@
 # ==========================================================================================
-# MÓDULO DE FUNÇÕES PARA ALGORÍTMO DE DETECÇÃO VSS (V2.0)
+# MÓDULO DE FUNÇÕES PARA ALGORÍTMO DE DETECÇÃO VSS (V2.1.12)
 #==========================================================================================
 '''
     @GNOMIO: O algorítmo de detecção terá agora uma nova lógica de programação, no qual ele é conti-
@@ -488,7 +488,7 @@ class Field:
         # Inicializar o ambiente OpenCL
         if cv2.ocl.haveOpenCL(): cv2.ocl.setUseOpenCL(True)
         else: print("[VS]: Não foi possível otimizar com OpenCL")
-        
+
     #Atualizar extremos do campo na imagem original, para realizar cálculos
     def updatePos(self,quad:Quad,width:int,height:int):
         '''
