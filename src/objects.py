@@ -68,8 +68,14 @@ class ID_Pivots:
     PE2: int = 5
     PE3: int = 6
 
-    
 
+#identificador dos objetos
+class ID_Objects:
+    BALL:       int = 0
+    FIELD:      int = 1
+    ALLIES:     int = 2
+    ENEMIES:    int = 3
+    
 #identificadores padrões para o campo
 class ID_Field:
     '''

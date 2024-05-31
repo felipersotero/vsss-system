@@ -18,6 +18,7 @@ import threading
 import queue
 import modules
 from objects import *
+import traceback
 
 #======================|| DEFINIÇÕES DE CLASSES ||======================================#
 
@@ -636,6 +637,11 @@ class VisionSystem:
         #verifica o timer necessário para realizar as previsões
         self.timer: HighPrecisionTimer    = None 
 
+        #tempos necessários
+        self.dT = 0 
+        ''' Aqui é o intervalo de tempo que leva para processar'''
+
+
         #gera o objeto para utilizar o cuda
         if(self._hasCuda):
             #variável para guardar o endereço da imagem principal
@@ -809,63 +815,65 @@ class VisionSystem:
         #zerando a imagem de virtualização
         self.virtualImg = self.virtual.copy()
         
-        # Detectando o campo
-        self.detect_field_noCuda(img,debug)
-        
-        #detectando bola
-        self.detect_ball_noCuda(self.fieldReduce, self.ballColor, debug)
-
-        #detectando jogadores
-        self.detect_players_noCuda(self.fieldReduce, debug)
-
-        #desenhar o campo, caso esteja na opção debug
-        if debug:
-            self.field.drawPointsField()
+        if img is not None:
+            # Detectando o campo
+            self.detect_field_noCuda(img,debug)
             
-            #imprimindo pontos no virtual
-            cv2.circle(self.virtualImg, self.fieldP1v,2,(0,0,255),-1)
-            cv2.circle(self.virtualImg, self.fieldP2v,2,(0,0,255),-1)
-            cv2.circle(self.virtualImg, self.fieldP3v,2,(0,0,255),-1)
-            cv2.circle(self.virtualImg, self.fieldP4v,2,(0,0,255),-1)
+            #detectando bola
+            self.detect_ball_noCuda(self.fieldReduce, self.ballColor, debug)
+
+            #detectando jogadores
+            self.detect_players_noCuda(self.fieldReduce, debug)
+
+            #desenhar o campo, caso esteja na opção debug
+            if debug:
+                self.field.drawPointsField()
+                
+                #imprimindo pontos no virtual
+                cv2.circle(self.virtualImg, self.fieldP1v,2,(0,0,255),-1)
+                cv2.circle(self.virtualImg, self.fieldP2v,2,(0,0,255),-1)
+                cv2.circle(self.virtualImg, self.fieldP3v,2,(0,0,255),-1)
+                cv2.circle(self.virtualImg, self.fieldP4v,2,(0,0,255),-1)
+                
+                cv2.circle(self.virtualImg, self.fieldCenterv,2,(0,0,255),-1)
+
+                cv2.circle(self.virtualImg, self.PA1v,2,(0,0,255),-1)
+                cv2.circle(self.virtualImg, self.PA2v,2,(0,0,255),-1)
+                cv2.circle(self.virtualImg, self.PA3v,2,(0,0,255),-1)
+                cv2.circle(self.virtualImg, self.PE1v,2,(0,0,255),-1)
+                cv2.circle(self.virtualImg, self.PE2v,2,(0,0,255),-1)
+                cv2.circle(self.virtualImg, self.PE3v,2,(0,0,255),-1)
+
+                cv2.circle(self.virtualImg, self.GA1v,2,(0,0,255),-1)
+                cv2.circle(self.virtualImg, self.GA2v,2,(0,0,255),-1)
+                cv2.circle(self.virtualImg, self.GA3v,2,(0,0,255),-1)
+                cv2.circle(self.virtualImg, self.GA4v,2,(0,0,255),-1)
+
+                cv2.circle(self.virtualImg, self.GAI1v,2,(0,0,255),-1)
+                cv2.circle(self.virtualImg, self.GAI2v,2,(0,0,255),-1)
+                cv2.circle(self.virtualImg, self.GAI3v,2,(0,0,255),-1)
+                cv2.circle(self.virtualImg, self.GAI4v,2,(0,0,255),-1)
+
+                cv2.circle(self.virtualImg, self.GE1v,2,(0,0,255),-1)
+                cv2.circle(self.virtualImg, self.GE2v,2,(0,0,255),-1)
+                cv2.circle(self.virtualImg, self.GE3v,2,(0,0,255),-1)
+                cv2.circle(self.virtualImg, self.GE4v,2,(0,0,255),-1)
+
+                cv2.circle(self.virtualImg, self.GEI1v,2,(0,0,255),-1)
+                cv2.circle(self.virtualImg, self.GEI2v,2,(0,0,255),-1)
+                cv2.circle(self.virtualImg, self.GEI3v,2,(0,0,255),-1)
+                cv2.circle(self.virtualImg, self.GEI4v,2,(0,0,255),-1)
+
+                cv2.circle(self.virtualImg, self.fieldP12v,2,(0,0,255),-1)
+                cv2.circle(self.virtualImg, self.fieldP34v,2,(0,0,255),-1)
+
+                #ponto de referência O´
+                cv2.circle(self.virtualImg, (self.xnv, self.ynv),3,(0,255,255),-1)
+                #desenhando todos os pontos na imagem virtual
             
-            cv2.circle(self.virtualImg, self.fieldCenterv,2,(0,0,255),-1)
-
-            cv2.circle(self.virtualImg, self.PA1v,2,(0,0,255),-1)
-            cv2.circle(self.virtualImg, self.PA2v,2,(0,0,255),-1)
-            cv2.circle(self.virtualImg, self.PA3v,2,(0,0,255),-1)
-            cv2.circle(self.virtualImg, self.PE1v,2,(0,0,255),-1)
-            cv2.circle(self.virtualImg, self.PE2v,2,(0,0,255),-1)
-            cv2.circle(self.virtualImg, self.PE3v,2,(0,0,255),-1)
-
-            cv2.circle(self.virtualImg, self.GA1v,2,(0,0,255),-1)
-            cv2.circle(self.virtualImg, self.GA2v,2,(0,0,255),-1)
-            cv2.circle(self.virtualImg, self.GA3v,2,(0,0,255),-1)
-            cv2.circle(self.virtualImg, self.GA4v,2,(0,0,255),-1)
-
-            cv2.circle(self.virtualImg, self.GAI1v,2,(0,0,255),-1)
-            cv2.circle(self.virtualImg, self.GAI2v,2,(0,0,255),-1)
-            cv2.circle(self.virtualImg, self.GAI3v,2,(0,0,255),-1)
-            cv2.circle(self.virtualImg, self.GAI4v,2,(0,0,255),-1)
-
-            cv2.circle(self.virtualImg, self.GE1v,2,(0,0,255),-1)
-            cv2.circle(self.virtualImg, self.GE2v,2,(0,0,255),-1)
-            cv2.circle(self.virtualImg, self.GE3v,2,(0,0,255),-1)
-            cv2.circle(self.virtualImg, self.GE4v,2,(0,0,255),-1)
-
-            cv2.circle(self.virtualImg, self.GEI1v,2,(0,0,255),-1)
-            cv2.circle(self.virtualImg, self.GEI2v,2,(0,0,255),-1)
-            cv2.circle(self.virtualImg, self.GEI3v,2,(0,0,255),-1)
-            cv2.circle(self.virtualImg, self.GEI4v,2,(0,0,255),-1)
-
-            cv2.circle(self.virtualImg, self.fieldP12v,2,(0,0,255),-1)
-            cv2.circle(self.virtualImg, self.fieldP34v,2,(0,0,255),-1)
-
-            #ponto de referência O´
-            cv2.circle(self.virtualImg, (self.xnv, self.ynv),3,(0,255,255),-1)
-            #desenhando todos os pontos na imagem virtual
-        
-        #testanto função de detectar jogadores
-        return self.frameResult
+            #testanto função de detectar jogadores
+            return self.frameResult
+        return img 
 
     #função para prever posição dos jogadores e encontrar onde estão
     # Esse é um PROC MENOR
@@ -920,12 +928,15 @@ class VisionSystem:
         #verifica contagem de tempo interna da função 
         if self._firstTimeExec < 30:
             if self._count <=3:
+                print("Processamento maior | ", self._count)
                 #processamento maior
                 self.proc(img,debug)
+                
             else:
+                print("Processamento menor | ", self._count)
                 #processamento menor 
                 self.predictObjects(img,tms = tms)
-
+            
         else: 
             #zera a contagem
             self._count = 0 
@@ -933,9 +944,20 @@ class VisionSystem:
             #zerando a imagem de virtualização
             self.virtualImg = self.virtual.copy()
 
+            print("Processamento maior | ", self._count)
             #processamento maior 
             self.proc(img, debug)
 
+        tmf = self.timer.getElapsedTime()
+        self.dT = tmf - tms
+        
+        #somando contador
+        self._count = self._count +1
+        cv2.imshow("Resultado", self.frameResult)
+        cv2.waitKey(0)
+        cv2.destroyAllWindows()
+
+        #retorno da função
         return self.frameResult
 
 
@@ -1250,7 +1272,13 @@ class VisionSystem:
             # Necessário que essas variáveis sejam vetores array.
         '''
         self.homography_matrix, _   =   cv2.findHomography(ptsSrc, ptsFinal)
-        self.inv_homography_matrix  =   np.linalg.inv(self.homography_matrix)
+
+        if self.homography_matrix is not None and np.linalg.cond(self.homography_matrix) < 1 / np.finfo(self.homography_matrix.dtype).eps:
+            self.inv_homography_matrix  =   np.linalg.inv(self.homography_matrix)
+        else:
+            # A matriz de homografia é singular e não pode ser invertida
+            self.inv_homography_matrix = np.eye(3)  # Matriz identidade 3x3
+            print("[ERROR]: Matriz de homografia singular e foi substituída por uma matriz identidade.")
 
     #Transformar valores 
     def transformPoint(self, ptSrc):
@@ -1341,6 +1369,23 @@ class VisionSystem:
             y_f = int(self.ynv-y_i)
 
             return x_f, y_f 
+        
+    def getObjects(self):
+        '''
+            Função responsável por retornar os objetos do sistema de visão
+
+        '''
+        #construindo dicionário com os objetos 
+        objects = {
+            ID_Objects.ALLIES:self.allyTeam,
+            ID_Objects.ENEMIES: self.enemyTeam,
+            ID_Objects.BALL:self.ball,
+            ID_Objects.FIELD:self.field,
+            'timestamp': self.dT 
+        }
+
+        return objects 
+    
     #===============| Definindo funções básicas|==============================
     # ============= métodos sem suporte ao CUDA =====================
     #puxando imagem
@@ -2115,6 +2160,7 @@ class VisionSystem:
 
         #flag para o laço while 
         flagStop = False 
+
         #looping principal
         while self.offSetErode < 20 and not flagStop:
             try:
@@ -2144,7 +2190,7 @@ class VisionSystem:
 
                 #gerando os vertices que serão guardados na classe ViewRect
                 rectVer = np.array([0,0,0,0], dtype=np.int32)
-
+                
                 #loop através dos contornos encontrados
                 for contour in contours:
                     #aproximar o contorno para um polígono com poucos vértices
@@ -2155,7 +2201,6 @@ class VisionSystem:
                     if len(approx) == 4:
                         try:
                             #extrair os vértices do retângulo que é gerada na imagem reduzida! rectVer é a coordenada do paralelepípedo na imagem reduzida
-
                             rectVer = np.array([approx[0][0], approx[1][0], approx[2][0], approx[3][0]], dtype=np.int32)
                             
                             #coorVetor tem as coordenadas x,y iniciais do retângulo que envolve o campo detectado, portanto, ele é da forma coorVetor = [x,y,w,h],                             
@@ -2185,7 +2230,6 @@ class VisionSystem:
 
                             #setando matrizes de homography para o campo conhecer
                             self.field.setHomographyMatrix(mHomography=self.homography_matrix, invHomo=self.inv_homography_matrix)
-
                             if(debug):
                                 #Desenhar os vértices do retângulo na imagem original (Desenhando os retângulos no campo)
                                 cv2.polylines(img, [rv], True, (0,0,255), 4)
@@ -2196,7 +2240,6 @@ class VisionSystem:
 
                         except Exception as e:
                             print("[VisionSystem]: Não conseguiu desenhar na imagem: \n",e)
-                            pass
                 
                 #Se chegou até aqui, para o laço
                 flagStop = True
@@ -2208,6 +2251,10 @@ class VisionSystem:
                 flagStop = False
                 self.offSetErode += 1
                 print("Foi necessário subir um pouco o offset, devido ao erro:\n",e)
+                
+                    # Captura a stack trace do erro
+                traceback.print_exc()
+
                 #retornaria as variáveis, mas ele vai atualizar as variáveis internas
                 self.fieldReduce = self.frameOrigin
                 #copio o campo reduzido para frameResult

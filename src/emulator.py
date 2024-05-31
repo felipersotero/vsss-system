@@ -52,7 +52,11 @@ class Emulator:
         self.commands_queue = queue.Queue()
         self.sent_data_queue = queue.Queue()
         self.received_data_queue = queue.Queue()
-                
+        
+        #filas para novo processamento
+
+
+
         #deque de no máximo 10 imagens
         self.maxDeque = 4
         self.capture_deque = deque(maxlen=self.maxDeque)
@@ -454,8 +458,13 @@ class Emulator:
                 self.captureThread= CameraCaptureThread(main=self, settingMenu=self.settingsTree, capture_instance=self.capture, deque=self.capture_deque)
                 self.captureThread.start()  
 
+
+                #Inicia a thread de processamento do vídeo
+                
+
                 # self.firstExecution = True
-                self.processUSB()
+                #self.processUSB()
+                self.newProcessUSB()
 
                 # Chamando thread para processamento de vídeo
                 self.showInformation()
@@ -606,10 +615,6 @@ class Emulator:
         #parando o timer e resetando sua contagem
         self.Timer.stop()
         self.Timer.reset()
-
-
-
-
     
     def call_detection_system(self, input_queue, output_queue):
         #inicio da contagem de tempo
@@ -640,7 +645,6 @@ class Emulator:
         self.realTime = self.Timer.getElapsedTime() /1000
         #atualizo informações na interface
         self.infoCards.update()
-    
 
     #Funções que executam os processos (execução por USB, por imagem ou )
     def processUSB(self):
@@ -673,7 +677,7 @@ class Emulator:
 
             # Salvando dados recebidos
             received_data = self.received_data_queue.get()
-            self.ball, self.allies, self.enemies, self.frame, self.binary_treat, self.binaryBall, self.binaryPlayers, self.binaryTeam, self.imgDebug, self.alliesWindows, self.enemiesWindows = received_data
+            self.ball, self.allies, self.enemies, self.frame, self.binary_treat, self.binaryBall, self.binaryPlayers, self.binaryTeam, self.result, self.alliesWindows, self.enemiesWindows = received_data
 
 
             # Enviando dados para o processamento
@@ -693,57 +697,131 @@ class Emulator:
             #Aqui tem um tempo de delay fixo entre as execuções da função
             self.viewer.window.after(self.delay, self.processUSB)
 
-    #processando a imagem utilizando o antigo sistema de visão
-    def processImage(self):
-        print("[EMULADOR] Processando imagem: ",self.ImgPath)
-        St1i = self.Timer.getElapsedTime()
-        self.capture.setImagePath(self.ImgPath)
-        self.frame = self.capture.getImage()
+    #nova rotina de processamento USB
+    def newProcessUSB(self):
+        print("[VS]: Novo processo de USB sendo utilizado")
+        #Id de captura
+        while len(self.capture_deque) == 0:  # Espera até que haja pelo menos um elemento no deque
+            time.sleep(0.02)  # Espera por 0.1 segundos antes de verificar novamente
+        self.frame = self.capture_deque[-1]
         
-        field_data_structure = (self.frame, self.debug_view, self.fieldDimensions, self.OffSetBord, self.OffSetErode, self.MatrixTop, self.BINThresh)
-        ball_data_structure = (self.ballColor, self.ball)
-        players_data_structure = (self.teamMainColor, self.enemiesMainColor, self.playersAllColors, self.allies, self.enemies, self.OffSetBord)
+        #envio apenas a imagem e o debug para o processo
+        data_structure = (self.frame, self.debug_view)
 
-        data_structure = field_data_structure + ball_data_structure + players_data_structure
 
-        # Chamando a função para detecção e enviando os parâmetros necessários
-        self.sent_data_queue.queue.clear()
-        self.sent_data_queue.put(data_structure)
 
-        self.video_processor_thread = threading.Thread(target=self.call_detection_system, args=(self.sent_data_queue, self.received_data_queue))
-        self.video_processor_thread.daemon = True
-        self.video_processor_thread.start()
+        #Pegando o tempo atual do processamento
+        Stp1 = self.Timer.getElapsedTime()
 
-        # Salvando dados recebidos
-        received_data = self.received_data_queue.get()
-        ball_object, allies_list, enemies_list, frame, binary_treat, binaryBall, binaryPlayers, binaryTeam, imgDebug, alliesWindows, enemiesWindows = received_data
+        if self.cameraIsRunning:
+            #enviando dados na fila
+            self.sent_data_queue.queue.clear()
+            self.sent_data_queue.put(data_structure)
 
-        self.ball = ball_object
-        self.allies = allies_list
-        self.enemies = enemies_list
-        St2i = self.Timer.getElapsedTime()
+            #possível perda de desempenho para ser analisado
+            self.procVideoThread = threading.Thread(target=self.new_call_detection_system, args=(self.sent_data_queue, self.received_data_queue))
+            self.procVideoThread.daemon = True
+            self.procVideoThread.start()
 
-        binaryPlayers = detect_squares(binaryPlayers)
-        #Exibindo dados em tela
-        self.viewer.show(frame)
-        if(self.DEBUGA == True):
-            print("tá funcionando em debug")
-            self.debugFieldViewer.show(binary_treat)
-            self.debugObjectsViewer.show(binaryBall)
-            self.debugPlayersViewer.show(binaryPlayers)
-            self.debugTeamViewer.show(binaryTeam)
-        self.resultViewer.show(imgDebug)
+            # Salvando dados recebidos
+            data = self.received_data_queue.get()
+            
+            objects             = data['objects']
+            self.result         = data['result']
+            self.virtualRImg    = data['virtual']
 
-        #Adicionando conteúdos
-        self.setContentRobots()
+            #extraindo objetos
+            self.field = objects[ID_Objects.FIELD]
+            self.ball = objects[ID_Objects.BALL]
+            self.allies = objects[ID_Objects.ALLIES]
+            self.enemies = objects[ID_Objects.ENEMIES]
+            
+            self.viewer.show(self.frame)
+            #imagens de debug
+            '''if(self.DEBUGA == True):
+                binary_treat, binaryBall, binaryPlayers, binaryTeam = self.vs.getDebugImages()
+                self.debugFieldViewer.show(binary_treat)
+                self.debugObjectsViewer.show(binaryBall)
+                self.debugPlayersViewer.show(binaryPlayers)
+                self.debugTeamViewer.show(binaryTeam)'''
+            
+            #imagens de resultado
+            self.resultViewer.show(self.result)
+            self.virtualResult.show(self.virtualRImg)
+    
 
-      # self.call_detection_system()
-        self.totalTime = (St2i - St1i)                       #tempo em mili 
-        #segundos
+            # Enviando dados para o processamento
+            ''' Necessário ajustar o Control'''
+            self.control.updateObjectsValues(self.field, self.ball, self.allies, self.enemies)
+            #self.commands = self.control.processControl()
+            
+            #enviando novos comandos
+            #self.commands_queue.queue.clear()
+            #self.commands_queue.put(self.commands)
+                    
+        #Finaliza contagem de tempo de processamento
+        Stp2 = self.Timer.getElapsedTime()
+
+        self.totalTime = (Stp2-Stp1)  
+        self.realTime = self.Timer.getElapsedTime()/1000.0        #tempo em segundos                              #tempo atual que se passou                                            #Em ms
+        self.FPStime = (1000/self.totalTime) if (self.totalTime != 0) else 0      
+
+        #mostra informações
+        self.showInformation()
+
+        if self.cameraIsRunning:
+            #Aqui tem um tempo de delay fixo entre as execuções da função
+            self.viewer.window.after(self.delay, self.newProcessUSB)
+    
+
+    #definindo nova função para processar imagens
+    def new_call_detection_system(self, input_queue, output_queue):
+        print("[VS] Novo sistema de detecção sendo chamado")
+        #verifica se tem elementos na fila
+        St1 = self.Timer.getElapsedTime()
         
+        if not input_queue.empty():
+            #valores recebidos
+            received_data = input_queue.get()
+
+            #descompactando
+            frame, debug = received_data
+
+            try:
+                # processando frame que chegou para a imagem 
+                result = self.vs.processImg(frame, debug)
+                
+                #puxa a imagem
+                virtual = self.vs.virtualImg
+
+                # adquirindo os objetos presentes no sistema de visão
+                objects = self.vs.getObjects()
+
+                #dados que serão retornados
+                data = {'result': result, 
+                        'virtual': virtual,
+                        'objects': objects}
+
+                # enviando de volta
+                output_queue.queue.clear()
+                output_queue.put(data)
+
+            except Exception as e:
+                print("[DETECTION]: Ocorreu um erro ao processar:\n",e)
+
+        else:
+            #pausa a execução por 10 ms
+            print("Não há nada na fila")
+            time.sleep(0.005)
+
+        #finaliza a contagem de tempo
+        St2 = self.Timer.getElapsedTime()
+
+        self.frameTime = (St2 - St1)
+        self.FPStime = int(1000.0 / self.frameTime if self.frameTime != 0 else 0)
         self.realTime = self.Timer.getElapsedTime() / 1000
 
-        #atualizo informações na interface
+        #atualizo informações na interface 
         self.infoCards.update()
 
     #processando uma imagem utilizando o novo sistema de visão
@@ -762,14 +840,18 @@ class Emulator:
         #Exibindo dados em tela
         self.viewer.show(self.frame)
 
+        #imagens de debug
         if(self.DEBUGA == True):
             binary_treat, binaryBall, binaryPlayers, binaryTeam = self.vs.getDebugImages()
             self.debugFieldViewer.show(binary_treat)
             self.debugObjectsViewer.show(binaryBall)
             self.debugPlayersViewer.show(binaryPlayers)
             self.debugTeamViewer.show(binaryTeam)
+        
+        #imagens de resultado
         self.resultViewer.show(result)
         self.virtualResult.show(self.vs.virtualImg)
+        
         # puxando informações do sistema de visão
         self.allies     = self.vs.allyTeam
         self.enemies    = self.vs.enemyTeam
@@ -797,12 +879,12 @@ class Emulator:
             #Atualizo informações do cards sobre funcionalidade
             self.infoCards.updateFuncs()
             self.viewer.show(self.frame)
-            if(self.DEBUGA == True):
+            '''if(self.DEBUGA == True):
                 self.debugFieldViewer.show(self.binary_treat)
                 self.debugObjectsViewer.show(self.binaryBall)
                 self.debugPlayersViewer.show(self.binaryPlayers)
-                self.debugTeamViewer.show(self.binaryTeam)
-            self.resultViewer.show(self.imgDebug)
+                self.debugTeamViewer.show(self.binaryTeam)'''
+            self.resultViewer.show(self.result)
 
             #Adicionando conteúdos
             self.setContentRobots()

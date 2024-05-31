@@ -62,6 +62,7 @@ class Control:
                 self.possibleRecognition[i] = True
 
         # Coordenadas dos inimigos
+        
         # Pivots do campo        
         
     def angleBetweenObjects(self, target_coordinates, source_coordinates, source_direction):
