@@ -40,7 +40,7 @@ def connect_to_serial(serial_port):
 
 def send_serial_data(ser, message):
     data_bytes = message.encode('utf-8')
-    print(f"data_bytes: {data_bytes}")
+    #print(f"data_bytes: {data_bytes}")
     ser.write(data_bytes)
 
 def close_serial(ser):

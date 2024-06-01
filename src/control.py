@@ -25,6 +25,7 @@
 
 from modules import *
 from communication import *
+from navigation import Navigation
 
 class Control:
     def __init__(self, Emulator):
@@ -41,6 +42,9 @@ class Control:
         self.enemies_coordinates = [None, None, None]
 
         self.possibleRecognition = [False, False, False]
+
+        # Objeto de navegação
+        self.navigation = Navigation()
 
     def updateObjectsValues(self, field, ball, allies, enemies):
         self.field = field
@@ -61,7 +65,13 @@ class Control:
                 self.allies_direction[i] = np.array([self.allies[i].direction[0], self.allies[i].direction[1]])
                 self.possibleRecognition[i] = True
 
+        for i in range(3):
+            if self.enemies[i] is not None:
+                self.enemies_coordinates[i] = np.array([self.enemies[i].position[0], self.enemies[i].position[1]])
+
         # Coordenadas dos inimigos
+                
+            
         # Pivots do campo        
         
     def angleBetweenObjects(self, target_coordinates, source_coordinates, source_direction):
@@ -125,53 +135,72 @@ class Control:
         kr = '+0.00'
         ka = '+0.00'
         kb = '+0.00'
-        constants = kr + ka + kb
-
-        # command = 'c+045.25025.13' #'c+aaa.aaddd.dd'
-        # command = 's+000.00000.00+0.00+0.00+0.00'
-
         command = 's+000+000'
 
         if self.possibleRecognition[0] and self.ball_coordinates is not None:
+            # Chamar navegação aqui enviando coordenadas do jogador atual, dos outros jogadores e da bola (ou outro alvo)
+            print(self.enemies_coordinates)
+            path_points = self.navigation.estimatePath(self.allies_coordinates[0], self.enemies_coordinates, self.ball_coordinates)
+            next_point = self.ball_coordinates
             
-            angle = self.angleBetweenObjects(self.ball_coordinates, self.allies_coordinates[0], self.allies_direction[0])
-            distance = self.distanceBetweenObjects(self.ball_coordinates, self.allies_coordinates[0])
+            # if len(path_points) > 1:
+            #     next_point = path_points[1]
+                
+            # next_point = self.ball_coordinates
+                   
+            angle = self.angleBetweenObjects(next_point, self.allies_coordinates[0], self.allies_direction[0])
+            distance = self.distanceBetweenObjects(next_point, self.allies_coordinates[0])
 
             print(f"Ângulo: {angle} rad")
             print(f"Distância: {distance} cm")
             
             wr, wl = self.controlRobot(distance, angle, angle)
 
-            wr_string = self.formatW(wr)
-            wl_string = self.formatW(wl)
+            # wr_string = self.formatW((wr+13))
+            # wl_string = self.formatW((wl-13))
+
+            # w = 160
+            # wr = w + 20
+            # wl = w - 20
+
+            wr_string = self.formatW((wr))
+            wl_string = self.formatW((wl))
 
             command_mode = 'f'
             
-            if(((abs(angle) < 0.5) and distance < 8) or not(self.allies[0].detected)):
+            if(((abs(angle) < 0.5) and distance < 6) or not(self.allies[0].detected)):
                 command_mode = 's'
             
-            command = command_mode + wr_string + wl_string
+            command = command_mode + wl_string + wr_string
 
             print(f"Comando: {command}")
-            # angle_string = self.formatAngle(angle)
-            # distance_string = self.formatDistance(distance)
 
-            # command_mode = 'c'
-
-            # if(((abs(angle) < 0.5) and distance < 8) or not(self.allies[0].detected)):
-            #     command_mode = 's'
-
-            # command = command_mode + angle_string + distance_string + constants
-        
         return command
 
     ################################################################
     # Funções que processam o controle dos robôs
 
-    def limitSpeed(self, speed):
+    def limitSpeedE(self, speed):
+        max_velocity = 235
+        min_velocity = -235
+        min_velocity_bin = 120 #110
+
+        if speed >= max_velocity:  # Verifica se a velocidade é maior ou igual à velocidade máxima permitida.
+            speed = max_velocity
+        elif speed <= min_velocity:  # Verifica se a velocidade é menor ou igual à velocidade mínima permitida.
+            speed = min_velocity
+        elif speed <= min_velocity_bin and speed > 0:  # Verifica se a velocidade está na faixa entre 0 e 150.
+            speed = min_velocity_bin
+        elif speed >= -min_velocity_bin and speed < 0:  # Verifica se a velocidade está na faixa entre -150 e 0.
+            speed = -min_velocity_bin
+        # Caso a velocidade esteja dentro das faixas permitidas, não é necessário alterar o valor.
+
+        return int(speed)
+    
+    def limitSpeedD(self, speed):
         max_velocity = 255
         min_velocity = -255
-        min_velocity_bin = 150
+        min_velocity_bin = 140 #120
 
         if speed >= max_velocity:  # Verifica se a velocidade é maior ou igual à velocidade máxima permitida.
             speed = max_velocity
@@ -187,27 +216,18 @@ class Control:
     
     def controlRobot(self, rho, alpha, beta):
         absAlpha = abs(alpha) 
-        if absAlpha > math.pi /2 :
+        if absAlpha > 0.5:
             Kr = 0
-            # Ka = 170
-            Ka = 130
+            Ka = 100 # 160
             Kb = 0
-        elif absAlpha> math.pi /4:
-            Kr = 0
-            # Ka = 130
-            Ka = 80
-            Kb = 0
-        elif absAlpha> math.pi /6:
-            # Kr = 10
-            Kr = 1
-            # Ka = 100
-            Ka = 30
-            Kb = 0
-
-        else :
-            Kr = 30
+        else:
+            Kr = 25 # 25
             Ka = 0
             Kb = 0
+
+        # Kr = 0 #15
+        # Ka = 160
+        # Kb = 0
 
         v = Kr * rho
         w = Ka * alpha + Kb * beta
@@ -215,10 +235,16 @@ class Control:
         v_minus_w_over_2 = v - w / 2
         v_plus_w_over_2 = v + w / 2
 
-        wr = self.limitSpeed(v_minus_w_over_2)
-        wl = self.limitSpeed(v_plus_w_over_2)
+        v_minus_w_over_2 = v_minus_w_over_2 + 10*np.sign(v_minus_w_over_2)
+        v_plus_w_over_2 = v_plus_w_over_2 - 10*np.sign(v_plus_w_over_2)
+        
+        wr = self.limitSpeedD(v_minus_w_over_2)
+        wl = self.limitSpeedE(v_plus_w_over_2)
 
         return wr, wl
+
+def controlOnOff(self, rho, alpha, beta):
+    return 0
 
 '''
 # # Verfificar se o jogador está e posse da bola

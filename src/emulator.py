@@ -287,17 +287,19 @@ class Emulator:
             #Inicia contagem de tempo
             St1 = self.Timer.getElapsedTime()
             item = queue.get()
+            # item = 'f+255+255'
 
             if(self.hasMqtt):
                 result = publish_mqtt_data(self.clientMQTT, "vsss-ifal-pin/robots", item)            
             elif(self.hasSerial):
                 send_serial_data(self.clientSerial, item)
+            
+            #Tempo de envio da mensagem em ms
+            St2 = self.Timer.getElapsedTime()
 
             queue.task_done()
             time.sleep(0.015)
             
-            #Tempo de envio da mensagem em ms
-            St2 = self.Timer.getElapsedTime()
             self.sendTime = (St2-St1)
             self.infoCards.update()
 
@@ -611,7 +613,9 @@ class Emulator:
             self.commands = self.control.processControl()
             self.commands_queue.queue.clear()
             self.commands_queue.put(self.commands)
-                    
+            
+            # Desenhando próximo ponto na imagem
+            
         #Finaliza contagem de tempo de processamento
         Stp2 = self.Timer.getElapsedTime()
 

@@ -186,7 +186,7 @@ class settingsMenu(Frame):
         self._hasChild = True 
 
         #definindo a janela
-        new_window = Toplevel(self.tree)
+        new_window = Toplevel(self.tree) 
         new_window.title ("Seleção tipo de comunicação")
         self.root = new_window
 
@@ -346,7 +346,7 @@ class settingsMenu(Frame):
                     
                 else: 
                     #verifico se suporta controle automático de foco
-                    if  self.cap.setModeFocus():
+                    if  not self.cap.setModeFocus():
                         self._hasControlFocus = False 
                         messagebox.showwarning("Alerta de suporte", "Câmera não suporta controle automático de foco.")
                         #seta valores como automático
