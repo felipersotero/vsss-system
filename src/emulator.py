@@ -746,7 +746,7 @@ class Emulator:
 
                 try:
                     # processando frame que chegou para a imagem 
-                    result = self.vs.proc(frame, debug)
+                    result = self.vs.processImg(frame, debug)
 
                     #puxa a imagem
                     virtual = self.vs.virtualImg
@@ -834,9 +834,6 @@ class Emulator:
                 #enviando novos comandos
                 #self.commands_queue.queue.clear()
                 #self.commands_queue.put(self.commands)
-
-            else:# fila está vazia
-                print('[RESULT. THREAD]: Fila vazia. Esperando')
 
             # Associada à tarefa interna do GUI do TKINTER
             self.viewer.window.after(self.delay, self.getResults)

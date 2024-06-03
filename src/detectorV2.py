@@ -274,6 +274,10 @@ class Robot:
         self.colorCar2 = colorS
         self.colorTeam = colorT
 
+    #definindo setar cor apenas para o robô
+    def setTeamColor(self, colorTeam=None):
+        self.colorTeam = colorTeam
+
 class Ball:
     '''
     @GNOMIO: A classe bola é responsável por pegar informações do objeto bola que será utilizado no processo de detecção
@@ -436,6 +440,10 @@ class Ball:
         self.xb = xb
         self.yb = yb 
         self.rb = rb 
+
+    #definindo função para setar a cor da bola para pesquisa
+    def setBallColor(self, colorBall):
+        self.color = colorBall 
 #Definição da classe campo
 
 #Classe do campo
@@ -946,12 +954,10 @@ class VisionSystem:
         #verifica contagem de tempo interna da função 
         if  self._firstTimeExec < 30:
             if self._count <=3:
-                print("Processamento maior | ", self._count)
                 #processamento maior
                 self.proc(img,debug)
                 
             else:
-                print("Processamento menor | ", self._count)
                 #processamento menor 
                 self.predictObjects(img,tms = tms)
             
@@ -962,7 +968,6 @@ class VisionSystem:
             #zerando a imagem de virtualização
             self.virtualImg = self.virtual.copy()
 
-            print("Processamento maior | ", self._count)
             #processamento maior 
             self.proc(img, debug)
 
@@ -1124,6 +1129,17 @@ class VisionSystem:
         self.emulatorMode   = self.config.emulatorMode
         self.timer          = self.config.timer
 
+        #atribuindo cores principais aos robôs
+        self.robotAlly1.setTeamColor(self.allyColor)
+        self.robotAlly2.setTeamColor(self.allyColor)
+        self.robotAllyG.setTeamColor(self.allyColor)
+
+        self.robotEnemy1.setTeamColor(self.enemyColor)
+        self.robotEnemy2.setTeamColor(self.enemyColor)
+        self.robotEnemyG.setTeamColor(self.enemyColor)
+
+
+        #atribuindo cores principais aos robôs
     #definir novas configurações
     def setConfigEmulator(self, config:EConfig):
         '''
@@ -2608,10 +2624,9 @@ class VisionSystem:
             #procura o jogador
             if not self.search_robot_noCuda(window=wndBot, team=team, id=robot_id,debug=self.debug):
                 #procuro na imagem toda
-                print("[VS]: procurando na imagem toda")
                 self.search_robot_noCuda(window=self.frameOrigin, team=team, id=robot_id, debug=self.debug)
         else:
-            print("[VS]: Procurando na imagem toda")
+            #procurando na imagem toda
             self.search_robot_noCuda(window=self.frameOrigin, team=team, id=robot_id, debug=self.debug)
 
 
@@ -2687,7 +2702,6 @@ class VisionSystem:
                 #Encontrou contornos de inimigos na janela
                 if teamColorContours:
                     if self.detect_ally_robot_noCuda(window, colorP=colorP, colorS=colorS):
-                        print("[VS] Detectando o player: Player detectado")
                         #converte coordenadas para o ponto virtual
                         xcm, ycm = self.transformPoint(np.array([x_r, y_r]))
 
