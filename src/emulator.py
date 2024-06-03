@@ -13,6 +13,7 @@ import time
 from collections import deque
 import ast
 
+import traceback
 class Emulator:
     def __init__(self,App):
         print("Emulador foi construído")
@@ -464,10 +465,7 @@ class Emulator:
 
                 # self.firstExecution = True
                 #self.processUSB()
-                self.newProcessUSB()
-
-                # Chamando thread para processamento de vídeo
-                self.showInformation()
+                self.startThreadsLoop()
 
                 #Trabalhando com filas e threads
                 if (self.hasConection == True):
@@ -697,133 +695,191 @@ class Emulator:
             #Aqui tem um tempo de delay fixo entre as execuções da função
             self.viewer.window.after(self.delay, self.processUSB)
 
+    #================================================================================
+    # ============// Gerando tarefas para puxar e enviar imagens
     #nova rotina de processamento USB
     def newProcessUSB(self):
-        print("[VS]: Novo processo de USB sendo utilizado")
+        #print("[VS]: Novo processo de USB sendo utilizado")
         #Id de captura
-        while len(self.capture_deque) == 0:  # Espera até que haja pelo menos um elemento no deque
-            time.sleep(0.02)  # Espera por 0.1 segundos antes de verificar novamente
-        self.frame = self.capture_deque[-1]
-        
-        #envio apenas a imagem e o debug para o processo
-        data_structure = (self.frame, self.debug_view)
+        print("[PROC. THREAD]: INICIANDO TAREFA.")
+        while self.cameraIsRunning:
+            if len(self.capture_deque) == 0:  # Espera até que haja pelo menos um elemento no deque
+                time.sleep(0.02)  # Espera por 0.1 segundos antes de verificar 
+                continue
+            
+            self.frame = self.capture_deque[-1]
 
+            #puxando o tempo inicial do processamento, ou seja esse aqui, ou seja, o tempo
+            # que a imagem foi pega e enviada
+            dt = self.Timer.getElapsedTime()
 
+            #envio apenas a imagem e o debug para o processo
+            data_structure = (self.frame, self.debug_view, dt)
 
-        #Pegando o tempo atual do processamento
-        Stp1 = self.Timer.getElapsedTime()
-
-        if self.cameraIsRunning:
             #enviando dados na fila
-            self.sent_data_queue.queue.clear()
+            with self.sent_data_queue.mutex:
+                self.sent_data_queue.queue.clear()
             self.sent_data_queue.put(data_structure)
 
-            #possível perda de desempenho para ser analisado
-            self.procVideoThread = threading.Thread(target=self.new_call_detection_system, args=(self.sent_data_queue, self.received_data_queue))
-            self.procVideoThread.daemon = True
-            self.procVideoThread.start()
-
-            # Salvando dados recebidos
-            data = self.received_data_queue.get()
-            
-            objects             = data['objects']
-            self.result         = data['result']
-            self.virtualRImg    = data['virtual']
-
-            #extraindo objetos
-            self.field = objects[ID_Objects.FIELD]
-            self.ball = objects[ID_Objects.BALL]
-            self.allies = objects[ID_Objects.ALLIES]
-            self.enemies = objects[ID_Objects.ENEMIES]
-            
-            self.viewer.show(self.frame)
-            #imagens de debug
-            '''if(self.DEBUGA == True):
-                binary_treat, binaryBall, binaryPlayers, binaryTeam = self.vs.getDebugImages()
-                self.debugFieldViewer.show(binary_treat)
-                self.debugObjectsViewer.show(binaryBall)
-                self.debugPlayersViewer.show(binaryPlayers)
-                self.debugTeamViewer.show(binaryTeam)'''
-            
-            #imagens de resultado
-            self.resultViewer.show(self.result)
-            self.virtualResult.show(self.virtualRImg)
+            time.sleep(self.delay/1000)
+        
+        print("[PROC. THREAD]: Tarefa finalizada. Câmera desligada")
     
-
-            # Enviando dados para o processamento
-            ''' Necessário ajustar o Control'''
-            self.control.updateObjectsValues(self.field, self.ball, self.allies, self.enemies)
-            #self.commands = self.control.processControl()
-            
-            #enviando novos comandos
-            #self.commands_queue.queue.clear()
-            #self.commands_queue.put(self.commands)
-                    
-        #Finaliza contagem de tempo de processamento
-        Stp2 = self.Timer.getElapsedTime()
-
-        self.totalTime = (Stp2-Stp1)  
-        self.realTime = self.Timer.getElapsedTime()/1000.0        #tempo em segundos                              #tempo atual que se passou                                            #Em ms
-        self.FPStime = (1000/self.totalTime) if (self.totalTime != 0) else 0      
-
-        #mostra informações
-        self.showInformation()
-
-        if self.cameraIsRunning:
-            #Aqui tem um tempo de delay fixo entre as execuções da função
-            self.viewer.window.after(self.delay, self.newProcessUSB)
-    
-
+    #=========== // Gerando tarefa para processar as imagens que chegam
     #definindo nova função para processar imagens
     def new_call_detection_system(self, input_queue, output_queue):
-        print("[VS] Novo sistema de detecção sendo chamado")
-        #verifica se tem elementos na fila
-        St1 = self.Timer.getElapsedTime()
+        ''' Thread para processar a imagem que chegou na fila'''
+        print("[DETECT.THREAD]: INICIANDO TAREFA.")
+        while self.cameraIsRunning:
+            # verifica se a fila está vazia
+            if not self.sent_data_queue.empty():
+                #verifica se tem elementos na fila
+                St1 = self.Timer.getElapsedTime()
+
+                #valores recebidos
+                received_data = self.sent_data_queue.get()
+
+                #descompactando
+                frame, debug = received_data
+
+                try:
+                    # processando frame que chegou para a imagem 
+                    result = self.vs.proc(frame, debug)
+
+                    #puxa a imagem
+                    virtual = self.vs.virtualImg
+
+                    # adquirindo os objetos presentes no sistema de visão
+                    objects = self.vs.getObjects()
+
+                    #dados que serão retornados
+                    data = {'result': result, 
+                            'virtual': virtual,
+                            'objects': objects}
+
+                    # enviando de volta
+                    output_queue.queue.clear()
+                    output_queue.put(data)
+
+                except Exception as e:
+                    print("[DETECT.THREAD]:[DETEC. THREAD]: Ocorreu um erro ao processar:\n",e)
+                    traceback.print_exc()
+                    
+                    #Exibir uma janela de problema
+
+                #finaliza a contagem de tempo
+                St2 = self.Timer.getElapsedTime()
+
+                self.frameTime = (St2 - St1)
+                self.FPStime = int(1000.0 / self.frameTime if self.frameTime != 0 else 0)
+                self.realTime = self.Timer.getElapsedTime() / 1000
+
+            else:
+                #pausa a execução por 10 ms
+                print("[DETECT.THREAD]:: A fila de envio está vazia")
+                time.sleep(0.100)
+                continue
+
+            #atualizo informações na interface 
+            self.infoCards.update()
+            
+            #Delay desta thread
+            time.sleep(self.delay/1000)
+
+
+    #========== // Gerando tarefa para exibir os resultados, quando há
+    def getResults(self):
+        ''' Essa função é a responsável por pegar os valores processados e exibir na interface GUI
         
-        if not input_queue.empty():
-            #valores recebidos
-            received_data = input_queue.get()
+        Esse código precisa utilizar o after do root da janela principal do tkinter'''
+        print("[DEBUG]: Os resultados estão sendo chamados")
+        if self.cameraIsRunning:
+            if not self.received_data_queue.empty(): 
+                data = self.received_data_queue.get()
 
-            #descompactando
-            frame, debug = received_data
+                objects             = data['objects']
+                self.result         = data['result']
+                self.virtualRImg    = data['virtual']
 
-            try:
-                # processando frame que chegou para a imagem 
-                result = self.vs.processImg(frame, debug)
+                #extraindo objetos
+                self.field      = objects[ID_Objects.FIELD]
+                self.ball       = objects[ID_Objects.BALL]
+                self.allies     = objects[ID_Objects.ALLIES]
+                self.enemies    = objects[ID_Objects.ENEMIES]
+
+                #Atualizo informações do cards sobre funcionalidade
+                self.infoCards.updateFuncs()
+                self.viewer.show(self.frame)
+
+                if(self.DEBUGA == True):
+                    binary_treat, binaryBall, binaryPlayers, binaryTeam = self.vs.getDebugImages()
+                    self.debugFieldViewer.show(binary_treat)
+                    self.debugObjectsViewer.show(binaryBall)
+                    self.debugPlayersViewer.show(binaryPlayers)
+                    self.debugTeamViewer.show(binaryTeam)
                 
-                #puxa a imagem
-                virtual = self.vs.virtualImg
+                self.resultViewer.show(self.result)
+                self.virtualResult.show(self.vs.virtualImg)
 
-                # adquirindo os objetos presentes no sistema de visão
-                objects = self.vs.getObjects()
+                #Adicionando conteúdos
+                self.setContentRobots()
 
-                #dados que serão retornados
-                data = {'result': result, 
-                        'virtual': virtual,
-                        'objects': objects}
+                #========== PARTE DO PROCESSAMENTO
+                ''' Necessário ajustar o Control'''
+                self.control.updateObjectsValues(self.field, self.ball, self.allies, self.enemies)
+                #self.commands = self.control.processControl()
+                
+                #enviando novos comandos
+                #self.commands_queue.queue.clear()
+                #self.commands_queue.put(self.commands)
 
-                # enviando de volta
-                output_queue.queue.clear()
-                output_queue.put(data)
+            else:# fila está vazia
+                print('[RESULT. THREAD]: Fila vazia. Esperando')
 
-            except Exception as e:
-                print("[DETECTION]: Ocorreu um erro ao processar:\n",e)
-
+            # Associada à tarefa interna do GUI do TKINTER
+            self.viewer.window.after(self.delay, self.getResults)
         else:
-            #pausa a execução por 10 ms
-            print("Não há nada na fila")
-            time.sleep(0.005)
+            print('[RESULT. THREAD]: Thread finalizada. Câmera desligada')
 
-        #finaliza a contagem de tempo
-        St2 = self.Timer.getElapsedTime()
+    # ========= // Definindo método que dá start nessas duas threads
+    def startThreadsLoop(self):
+        '''
+            Método responsável por iniciar as threads de processamento
+        '''
+        #dando start na thread de processamento
+        # Thread responsável
+        self.processUSBThread = threading.Thread(target=self.newProcessUSB)
+        self.processUSBThread.daemon = True
+        self.processUSBThread.start()
 
-        self.frameTime = (St2 - St1)
-        self.FPStime = int(1000.0 / self.frameTime if self.frameTime != 0 else 0)
-        self.realTime = self.Timer.getElapsedTime() / 1000
+        #tempo para ajeitar tudo
+        time.sleep(0.010)
+        #dando start na thread de detecção
+        #possível perda de desempenho para ser analisado
+        self.procVideoThread = threading.Thread(target=self.new_call_detection_system, args=(self.sent_data_queue, self.received_data_queue))
+        self.procVideoThread.daemon = True
+        self.procVideoThread.start()
 
-        #atualizo informações na interface 
-        self.infoCards.update()
+        #tempo para ajeitar tudo
+        time.sleep(0.010)
+        
+        #dando start na thread de resultados
+        print('[RESULT. THREAD]: Iniciando tarefa')
+        self.getResultsThread = threading.Thread(target=self.getResults)
+        self.getResultsThread.daemon = True
+        self.getResultsThread.start()
+        
+        #tempo para ajeitar tudo
+        time.sleep(0.010)
+    
+    # ========= // Método para parar as threads
+    def stopThreadsLoop(self):
+        ''' Método responsável por travar as threads'''
 
+        pass 
+
+
+    #================================================================================
     #processando uma imagem utilizando o novo sistema de visão
     def processImageNew(self):
         print("[EMULADOR] Processando imagem: ",self.ImgPath)
@@ -873,25 +929,7 @@ class Emulator:
         self.infoCards.update()
     
     
-    #Método para exibir informações
-    def showInformation(self):
-        if self.cameraIsRunning:
-            #Atualizo informações do cards sobre funcionalidade
-            self.infoCards.updateFuncs()
-            self.viewer.show(self.frame)
-            '''if(self.DEBUGA == True):
-                self.debugFieldViewer.show(self.binary_treat)
-                self.debugObjectsViewer.show(self.binaryBall)
-                self.debugPlayersViewer.show(self.binaryPlayers)
-                self.debugTeamViewer.show(self.binaryTeam)'''
-            self.resultViewer.show(self.result)
 
-            #Adicionando conteúdos
-            self.setContentRobots()
-
-            self.viewer.window.after(20, self.showInformation)
-        else:
-            print('Não está no modo câmera')
     #Método para processar o vídeo
     def processVideo(self):
         print(self.VideoPath)

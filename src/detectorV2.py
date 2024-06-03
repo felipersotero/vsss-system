@@ -265,6 +265,15 @@ class Robot:
         return self.colorTeam, self.colorCar1, self.colorCar2
 
 
+    #setando as cores do time
+    def setColor(self, colorT=None, colorP=None, colorS=None ):
+        ''' definindo as corres do carro'''
+        time = "ALLY" if self.team == ID_Team.TEAM_ALLY else "ENEMY"
+        print("Setando a cor do carro", id, "do time", time)
+        self.colorCar1 = colorP 
+        self.colorCar2 = colorS
+        self.colorTeam = colorT
+
 class Ball:
     '''
     @GNOMIO: A classe bola é responsável por pegar informações do objeto bola que será utilizado no processo de detecção
@@ -815,6 +824,8 @@ class VisionSystem:
         #zerando a imagem de virtualização
         self.virtualImg = self.virtual.copy()
         
+        #cv2.imshow("Imagem original",img)
+
         if img is not None:
             # Detectando o campo
             self.detect_field_noCuda(img,debug)
@@ -871,9 +882,16 @@ class VisionSystem:
                 cv2.circle(self.virtualImg, (self.xnv, self.ynv),3,(0,255,255),-1)
                 #desenhando todos os pontos na imagem virtual
             
+            #cv2.imshow("Imagem reduzida", self.fieldReduce)
+            #cv2.imshow("Resultado da imagem",self.frameResult)
+            #cv2.waitKey(0)
+            #cv2.destroyAllWindows()
             #testanto função de detectar jogadores
             return self.frameResult
-        return img 
+        
+        else:
+            return img
+
 
     #função para prever posição dos jogadores e encontrar onde estão
     # Esse é um PROC MENOR
@@ -926,7 +944,7 @@ class VisionSystem:
             self.choseModeFunctions()
 
         #verifica contagem de tempo interna da função 
-        if self._firstTimeExec < 30:
+        if  self._firstTimeExec < 30:
             if self._count <=3:
                 print("Processamento maior | ", self._count)
                 #processamento maior
@@ -953,10 +971,10 @@ class VisionSystem:
         
         #somando contador
         self._count = self._count +1
-        cv2.imshow("Resultado", self.frameResult)
-        cv2.waitKey(0)
-        cv2.destroyAllWindows()
-
+        '''        cv2.imshow("Resultado", self.frameResult)
+                cv2.waitKey(0)
+                cv2.destroyAllWindows()
+        '''
         #retorno da função
         return self.frameResult
 
@@ -1497,19 +1515,19 @@ class VisionSystem:
         '''
         #Diminuindo a dimensão da imagem para caber apenas o campo
         cont, __ = cv2.findContours(BinImg, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
-        
-        #objT = cont[0] #Encontra o objeto maior, nesse caso o campo, e então filtrarei a imagem para esse ponto
-        objT = max(cont, key=cv2.contourArea)
-        
-        threshold = 50
-        
+                
         # print(f"Área do contorno encontrado: {contour_area}")
         if not cont:
             print("[SystemVision]/[REDUCE_FIELD]: Nenhum contorno encontrado.")
-            return BinImg, Img, [0, 0, 0, 0], 1
+            return BinImg, Img, [0, 0, 0, 0]
         
 
         try:
+            #objT = cont[0] #Encontra o objeto maior, nesse caso o campo, e então filtrarei a imagem para esse ponto
+            objT = max(cont, key=cv2.contourArea)
+            
+            threshold = 50
+
             #Obtendo os vértices do retângulo'
             x,y,w,h = cv2.boundingRect(objT) #Coordenadas da nova imagem
 
@@ -2285,6 +2303,7 @@ class VisionSystem:
         ball_upper_bound = np.array([h + hue_tolerance, min(255, s + saturation_tolerance), min(255, v + value_tolerance)])
 
         imgHSV = cv2.cvtColor(self.ballImg, cv2.COLOR_BGR2HSV)
+
         self.binaryBall = cv2.inRange(imgHSV, ball_lower_bound, ball_upper_bound)
 
         #Operações de erosão e fechamento
@@ -2428,6 +2447,7 @@ class VisionSystem:
                             self.enemyTeam[self.enemiesCount].updtPositionImg(xi=xi,yi=yi,ri=ri)
                             self.enemyTeam[self.enemiesCount].setStatus(True)
 
+                            self.enemyTeam[self.enemiesCount].setColor(colorT=self.enemyColor)
 
                             self.draw_player_circle_noCuda(self.frameResult, self.enemyTeam[self.enemiesCount])
                             self.draw_player_virtual_noCuda(self.enemyTeam[self.enemiesCount])
@@ -2463,7 +2483,9 @@ class VisionSystem:
                                 bot.setPosition(xcm,ycm,rcm,windowActual,time=tim)
                                 bot.updtPositionImg(xi,yi,ri)
                                 bot.setStatus(True)
-
+                                #setando as cores do robô
+                                bot.setColor(colorT=self.allyColor, colorP=self.goalAllyColor1 ,colorS=self.goalAllyColor2)
+                                #desenhando o jogador
                                 self.draw_player_circle_noCuda(self.frameResult, bot)
                                 self.draw_player_virtual_noCuda(bot)
                                     
@@ -2474,7 +2496,9 @@ class VisionSystem:
                                 bot.setPosition(xcm,ycm,rcm,windowActual,time=tim)
                                 bot.updtPositionImg(xi,yi,ri)
                                 bot.setStatus(True)
-
+                                #setando as cores do robô
+                                bot.setColor(colorT=self.allyColor, colorP=self.atk1AllyColor1 ,colorS=self.atk1AllyColor2)
+                                #desenhando o jogador
                                 self.draw_player_circle_noCuda(self.frameResult, bot)
                                 self.draw_player_virtual_noCuda(bot)
                                     
@@ -2485,7 +2509,9 @@ class VisionSystem:
                                 bot.setPosition(xcm,ycm,rcm,windowActual,time=tim)
                                 bot.updtPositionImg(xi,yi,ri)
                                 bot.setStatus(True)
-
+                                #setando as cores do robô
+                                bot.setColor(colorT=self.allyColor, colorP=self.atk2AllyColor1 ,colorS=self.atk2AllyColor2)
+                                #desenhando o jogador
                                 self.draw_player_circle_noCuda(self.frameResult, bot)
                                 self.draw_player_virtual_noCuda(bot)
                         

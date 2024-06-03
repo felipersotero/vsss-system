@@ -1034,6 +1034,7 @@ class CameraCaptureThread(threading.Thread):
                     self.deque.append(new_image)  # Enviando a nova imagem para a fila
                 #print(self.deque[-1])
                 time.sleep(self.interval)
+    
     def stop(self):
         #liberar recursos
         if self.capture_instance.mode == CaptureMode.CAM:
