@@ -740,7 +740,9 @@ class Emulator:
                 received_data = self.sent_data_queue.get()
 
                 #descompactando
-                frame, debug = received_data
+                frame, debug, dT1 = received_data
+
+                dT2 = self.Timer.getElapsedTime()
 
                 try:
                     # processando frame que chegou para a imagem 
@@ -764,12 +766,13 @@ class Emulator:
                 except Exception as e:
                     print("[DETECT.THREAD]:[DETEC. THREAD]: Ocorreu um erro ao processar:\n",e)
                     traceback.print_exc()
-                    
+
                     #Exibir uma janela de problema
 
                 #finaliza a contagem de tempo
                 St2 = self.Timer.getElapsedTime()
 
+                self.totalTime = (dT2 - dT1)
                 self.frameTime = (St2 - St1)
                 self.FPStime = int(1000.0 / self.frameTime if self.frameTime != 0 else 0)
                 self.realTime = self.Timer.getElapsedTime() / 1000
@@ -792,7 +795,6 @@ class Emulator:
         ''' Essa função é a responsável por pegar os valores processados e exibir na interface GUI
         
         Esse código precisa utilizar o after do root da janela principal do tkinter'''
-        print("[DEBUG]: Os resultados estão sendo chamados")
         if self.cameraIsRunning:
             if not self.received_data_queue.empty(): 
                 data = self.received_data_queue.get()
