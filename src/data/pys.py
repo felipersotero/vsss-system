@@ -30,8 +30,9 @@ with concurrent.futures.ThreadPoolExecutor() as executor:
     results = executor.map(process_data_parallel, [data]*10)
 
 # Convertendo os resultados em uma lista
-result_parallel = list(results)
 end_time = time.time()
+result_parallel = list(results)
+
 parallel_time = end_time - start_time
 
 print("Tempo de execução do processamento linear:", linear_time)

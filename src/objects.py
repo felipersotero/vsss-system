@@ -42,10 +42,9 @@ class ID_Robots:
     ROBOT_ALLY_1:int = 1
     ROBOT_ALLY_2:int = 2
 
-
-    ROBOT_ENEMY_GOAL:int = 4
-    ROBOT_ENEMY_1:int = 5
-    ROBOT_ENEMY_2:int = 6
+    ROBOT_ENEMY_GOAL:int = 0
+    ROBOT_ENEMY_1:int = 1
+    ROBOT_ENEMY_2:int = 2
 
 
 #Identificadores padrões para os pivots

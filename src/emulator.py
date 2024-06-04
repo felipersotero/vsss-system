@@ -764,11 +764,11 @@ class Emulator:
                     output_queue.put(data)
 
                 except Exception as e:
-                    print("[DETECT.THREAD]:[DETEC. THREAD]: Ocorreu um erro ao processar:\n",e)
-                    traceback.print_exc()
+                    print("[DETECT.THREAD] Ocorreu um erro ao processar:\n",e)
 
                     #Exibir uma janela de problema
-
+                    traceback.print_exc()
+                
                 #finaliza a contagem de tempo
                 St2 = self.Timer.getElapsedTime()
 

@@ -683,6 +683,10 @@ class VisionSystem:
 
         self.coordOrigin = np.array([67,402])
 
+        #variáveis de controle de tempo de execução
+        self.lastMajorTime = 0 
+        self.currentTime   = 0                  # tempo atual de execução
+
 
         #Tamanho padrão da bola
         self.ballRadiusP = 2.135 #cm
@@ -826,14 +830,17 @@ class VisionSystem:
     # Implementação da lógica de processamento para várias coisas
     # Esse é o PROC MAIOR
     def proc(self, img, debug):
+        self.lastMajorTime = self.timer.getElapsedTime()
+
+        #temporizador
+        self._firstTimeExec = (self.currentTime - self.lastMajorTime)/1000.0
+
         # realizo o processamento na imagem
         self.debug = debug 
 
         #zerando a imagem de virtualização
         self.virtualImg = self.virtual.copy()
         
-        #cv2.imshow("Imagem original",img)
-
         if img is not None:
             # Detectando o campo
             self.detect_field_noCuda(img,debug)
@@ -890,10 +897,6 @@ class VisionSystem:
                 cv2.circle(self.virtualImg, (self.xnv, self.ynv),3,(0,255,255),-1)
                 #desenhando todos os pontos na imagem virtual
             
-            #cv2.imshow("Imagem reduzida", self.fieldReduce)
-            #cv2.imshow("Resultado da imagem",self.frameResult)
-            #cv2.waitKey(0)
-            #cv2.destroyAllWindows()
             #testanto função de detectar jogadores
             return self.frameResult
         
@@ -910,6 +913,7 @@ class VisionSystem:
 
             imgOrigin é a imagem que vem da câmera, ela será recortada de acordo com o ViewRect
         '''
+        print("============================================")
         #preciso puxar a imagem original
         x_w = self.viewCapture.cooVetor[0]
         y_w = self.viewCapture.cooVetor[1]
@@ -921,18 +925,20 @@ class VisionSystem:
         self.fieldResult = self.fieldReduce.copy()
 
         #puxando estremos da janela
-        # prevendo o robô aliados
-        self.predictRobot(team=ID_Team.TEAM_ALLY, robot_id=ID_Robots.ROBOT_ALLY_GOAL, timestamp=tms)
-        self.predictRobot(team=ID_Team.TEAM_ALLY, robot_id=ID_Robots.ROBOT_ALLY_GOAL, timestamp=tms)
-        self.predictRobot(team=ID_Team.TEAM_ALLY, robot_id=ID_Robots.ROBOT_ALLY_GOAL, timestamp=tms)
-
-        # prevendo robôs inimigos
-        self.predictRobot(team=ID_Team.TEAM_ALLY, robot_id=ID_Robots.ROBOT_ALLY_GOAL, timestamp=tms)
-        self.predictRobot(team=ID_Team.TEAM_ALLY, robot_id=ID_Robots.ROBOT_ALLY_GOAL, timestamp=tms)
-        self.predictRobot(team=ID_Team.TEAM_ALLY, robot_id=ID_Robots.ROBOT_ALLY_GOAL, timestamp=tms)
-
         #prevento posição da bola
         self.predictBall(timestamp=tms)
+
+        # prevendo o robô aliados
+        self.predictRobot(team=ID_Team.TEAM_ALLY, robot_id=ID_Robots.ROBOT_ALLY_GOAL, timestamp=tms)
+        self.predictRobot(team=ID_Team.TEAM_ALLY, robot_id=ID_Robots.ROBOT_ALLY_1, timestamp=tms)
+        self.predictRobot(team=ID_Team.TEAM_ALLY, robot_id=ID_Robots.ROBOT_ALLY_2, timestamp=tms)
+
+        # prevendo robôs inimigos
+        self.predictRobot(team=ID_Team.TEAM_ENEMY, robot_id=ID_Robots.ROBOT_ENEMY_GOAL, timestamp=tms)
+        self.predictRobot(team=ID_Team.TEAM_ENEMY, robot_id=ID_Robots.ROBOT_ENEMY_1, timestamp=tms)
+        self.predictRobot(team=ID_Team.TEAM_ENEMY, robot_id=ID_Robots.ROBOT_ENEMY_2, timestamp=tms)
+
+
 
         #construir imagens de debug para aplicar
 
@@ -945,21 +951,28 @@ class VisionSystem:
         self.debug = debug 
 
         #puxa o tempo
-        tms = self.timer.getElapsedTime()
-
-        #verifica se possui otimização GPU
+        self.currentTime  = self.timer.getElapsedTime()
+        
+        #verifica se suporta otimização com a GPU
         if self._hasCuda:
             self.choseModeFunctions()
 
         #verifica contagem de tempo interna da função 
-        if  self._firstTimeExec < 30:
+        if  self._firstTimeExec < 30: #segundos
+            #somando contador
+
+            self._count = self._count +1
+
             if self._count <=3:
                 #processamento maior
                 self.proc(img,debug)
                 
             else:
+                #atualizo contador
+                self._firstTimeExec = (self.currentTime - self.lastMajorTime)/1000.0
+                
                 #processamento menor 
-                self.predictObjects(img,tms = tms)
+                self.predictObjects(img,tms = self.currentTime)
             
         else: 
             #zera a contagem
@@ -968,18 +981,14 @@ class VisionSystem:
             #zerando a imagem de virtualização
             self.virtualImg = self.virtual.copy()
 
+            self.majorTime = self.timer.getElapsedTime()
+            
             #processamento maior 
             self.proc(img, debug)
 
         tmf = self.timer.getElapsedTime()
-        self.dT = tmf - tms
-        
-        #somando contador
-        self._count = self._count +1
-        '''        cv2.imshow("Resultado", self.frameResult)
-                cv2.waitKey(0)
-                cv2.destroyAllWindows()
-        '''
+        self.dT = tmf - self.currentTime
+                
         #retorno da função
         return self.frameResult
 
@@ -2585,7 +2594,7 @@ class VisionSystem:
             y_b = P1.py 
 
             #wndBall
-            wndBall =self.fieldReduce[y_b:y_b+Dim, x_b:x_b+Dim]
+            wndBall = self.fieldReduce[y_b:y_b+Dim, x_b:x_b+Dim]
 
             self.search_ball_noCuda(window=wndBall,color=self.ballColor,posBall=[x_b, y_b])
         else:
@@ -2606,6 +2615,7 @@ class VisionSystem:
         else:# inimigo
             bot: Robot = self.enemyTeam[robot_id]       
 
+        print(" ROBÔ (id / time / detect)", bot.id, bot.team,bot.getStatus())
         #verifica se ele foi ou não encontrado
         if bot.getStatus():
             #usa o predict
@@ -2615,8 +2625,8 @@ class VisionSystem:
             P1, Dim = bot.getPredictPosition()
             
             #Coordenadas do extremo do robô
-            x_r = P1.px
-            y_r = P1.py
+            x_r = P1[0]
+            y_r = P1[1]
 
             #Janela para realizar o processamento no robô
             wndBot = self.fieldReduce[y_r:y_r+Dim, x_r:x_r+Dim]
@@ -2624,11 +2634,20 @@ class VisionSystem:
             #procura o jogador
             if not self.search_robot_noCuda(window=wndBot, team=team, id=robot_id,debug=self.debug):
                 #procuro na imagem toda
-                self.search_robot_noCuda(window=self.frameOrigin, team=team, id=robot_id, debug=self.debug)
+                if not self.search_robot_noCuda(window=self.frameOrigin, team=team, id=robot_id, debug=self.debug):
+                    bot.setStatus(False)
+                else:
+                    bot.setStatus(True)
+
+            print(" Novo Status",bot.getStatus())
         else:
             #procurando na imagem toda
-            self.search_robot_noCuda(window=self.frameOrigin, team=team, id=robot_id, debug=self.debug)
+            if not self.search_robot_noCuda(window=self.frameOrigin, team=team, id=robot_id, debug=self.debug):
+                bot.setStatus(False)
+            else:
+                bot.setStatus(True)
 
+            print(" Novo Status",bot.getStatus())
 
     # método para verificar se numa janela tem um robô com as cores configuradas
     def search_robot_noCuda(self, window, team:ID_Team, id:ID_Robots,debug=False) -> bool:
@@ -2654,10 +2673,12 @@ class VisionSystem:
         #puxo as cores do robô escolhido
         colorT, colorP, colorS = bot.getColors()
 
+        ''' e se o robÔ não tiver sido detectado ainda? Como ele vai procurar na imagem?'''
         #Extraindo posição do tamanho da janela
-        p = bot.viewRect.Pe1 
-        x_w = p[0]
-        y_w = p[1]
+        if bot.getStatus():
+            p = bot.viewRect.Pe1 
+            x_w = p[0]
+            y_w = p[1]
 
         # Criando limites das cores
         team_lower_bound, team_upper_bound = self.create_color_bounds_noCuda(colorT)
@@ -2689,9 +2710,14 @@ class VisionSystem:
         for currentBot in bots:
             (xi,yi), ri = cv2.minEnclosingCircle(currentBot)
             
-            #posição do objeto robô na imagem original
-            x_r = xi + x_w 
-            y_r = yi + y_w
+            if bot.getStatus():
+                #posição do objeto robô na imagem original
+                x_r = xi + x_w 
+                y_r = yi + y_w
+            else:
+                #posição do objeto robô na imagem original
+                x_r = xi
+                y_r = yi
             
             rcm = 5.3
 
