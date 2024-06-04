@@ -913,7 +913,6 @@ class VisionSystem:
 
             imgOrigin é a imagem que vem da câmera, ela será recortada de acordo com o ViewRect
         '''
-        print("============================================")
         #preciso puxar a imagem original
         x_w = self.viewCapture.cooVetor[0]
         y_w = self.viewCapture.cooVetor[1]
@@ -949,6 +948,8 @@ class VisionSystem:
             a quantidade de execuções.
         '''
         self.debug = debug 
+
+        self.frameOrigin = img 
 
         #puxa o tempo
         self.currentTime  = self.timer.getElapsedTime()
@@ -2615,7 +2616,6 @@ class VisionSystem:
         else:# inimigo
             bot: Robot = self.enemyTeam[robot_id]       
 
-        print(" ROBÔ (id / time / detect)", bot.id, bot.team,bot.getStatus())
         #verifica se ele foi ou não encontrado
         if bot.getStatus():
             #usa o predict
@@ -2639,7 +2639,6 @@ class VisionSystem:
                 else:
                     bot.setStatus(True)
 
-            print(" Novo Status",bot.getStatus())
         else:
             #procurando na imagem toda
             if not self.search_robot_noCuda(window=self.frameOrigin, team=team, id=robot_id, debug=self.debug):
@@ -2647,7 +2646,6 @@ class VisionSystem:
             else:
                 bot.setStatus(True)
 
-            print(" Novo Status",bot.getStatus())
 
     # método para verificar se numa janela tem um robô com as cores configuradas
     def search_robot_noCuda(self, window, team:ID_Team, id:ID_Robots,debug=False) -> bool:
@@ -2727,12 +2725,12 @@ class VisionSystem:
 
                 #Encontrou contornos de inimigos na janela
                 if teamColorContours:
-                    if self.detect_ally_robot_noCuda(window, colorP=colorP, colorS=colorS):
+                    if team == ID_Team.TEAM_ALLY and self.detect_ally_robot_noCuda(window, colorP=colorP, colorS=colorS):
                         #converte coordenadas para o ponto virtual
                         xcm, ycm = self.transformPoint(np.array([x_r, y_r]))
 
                         xcm, ycm = self.getPointVirtual(np.array([xcm, ycm]))
-                        bot.updatePosition(x=xcm, y=ycm, r=rcm, image=window)
+                        bot.updatePosition(x=xcm, y=ycm, r=rcm, image=window,time=self.currentTime)
                         bot.setStatus(True)
 
                         #desenhando informações
@@ -2740,6 +2738,19 @@ class VisionSystem:
                         self.draw_player_virtual_noCuda(bot)
 
                         return True
+                    
+                    elif team == ID_Team.TEAM_ENEMY:
+                        #converte coordenadas para o ponto virtual
+                        xcm, ycm = self.transformPoint(np.array([x_r, y_r]))
+
+                        xcm, ycm = self.getPointVirtual(np.array([xcm, ycm]))
+                        bot.updatePosition(x=xcm, y=ycm, r=rcm, image=window, time=self.currentTime )
+                        bot.setStatus(True)
+
+                        #desenhando informações
+                        self.draw_player_circle_noCuda(self.frameResult, bot)
+                        self.draw_player_virtual_noCuda(bot)
+                        return True 
         return False 
     
 
