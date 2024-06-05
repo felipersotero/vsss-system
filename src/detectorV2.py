@@ -2591,8 +2591,8 @@ class VisionSystem:
             P1, Dim = ball.getPredictPosition()
 
             #Extremo esquerdo superior da janela de predição de posição
-            x_b = P1.px 
-            y_b = P1.py 
+            x_b = P1[0]
+            y_b = P1[0] 
 
             #wndBall
             wndBall = self.fieldReduce[y_b:y_b+Dim, x_b:x_b+Dim]
