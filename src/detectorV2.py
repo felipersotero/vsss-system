@@ -1349,6 +1349,30 @@ class VisionSystem:
 
             return x_trans, y_trans
 
+    #aplica transformação inversa no ponto para recuperar o valor
+    def invTransformPoint(self, ptSrc):
+        '''
+            Realiza o trabalho inverso no TransformPoint, retornando para o espaço original da imagem.
+        '''
+        if isinstance(ptSrc, Point2D):
+            ptSrc = np.array([[[ptSrc.px, ptSrc.py]]], dtype=np.float32)
+
+            ponto_transformado = cv2.perspectiveTransform(ptSrc, self.inv_homography_matrix)
+        
+            x_trans = ponto_transformado[0][0][0]  # Primeiro ponto, primeira coordenada
+            y_trans = ponto_transformado[0][0][1]  # Primeiro ponto, segunda coordenada
+
+            return Point2D(x_trans, y_trans)
+        else:
+            ptSrc = np.array([[[ptSrc[0], ptSrc[1]]]], dtype=np.float32)
+
+            ponto_transformado = cv2.perspectiveTransform(ptSrc, self.inv_homography_matrix)
+        
+            x_trans = ponto_transformado[0][0][0]  # Primeiro ponto, primeira coordenada
+            y_trans = ponto_transformado[0][0][1]  # Primeiro ponto, segunda coordenada
+
+            return x_trans, y_trans
+        
     #Passa os indices da matrix final e transforma em valores em cm
     def getPointVirtual(self, ptSrc):
         '''
@@ -1413,7 +1437,37 @@ class VisionSystem:
             y_f = int(self.ynv-y_i)
 
             return x_f, y_f 
-        
+
+    #definindo uma função para retornar a coordenada na imagem reduzida
+    def getImageRealIndice(self, ptSrc):
+        '''
+            Função responsável por retornar o ponto para a dimensão da imagem reduzida, com o indice
+
+        '''
+        if isinstance(ptSrc, Point2D):
+            #pego os valores dos indices na imagem virtual
+            ptFinal = self.getImageIndice(ptSrc)
+
+            #pego os valores dos indices na imagem virtual e aplica a homografia inversa
+            #retornando a imagem reduzida
+            p_indice = self.invTransformPoint(ptFinal)
+
+            return p_indice 
+
+        else:
+            #pego os valores dos indices na imagem virtual
+            x_i, y_i = self.getImageIndice(ptSrc)
+
+            
+            #pego os valores dos indices na imagem virtual e aplica a homografia inversa
+            #retornando a imagem reduzida
+            x_f, y_f = self.invTransformPoint([x_i, y_i])
+
+            return x_f, y_f
+
+
+
+
     def getObjects(self):
         '''
             Função responsável por retornar os objetos do sistema de visão
@@ -2594,6 +2648,9 @@ class VisionSystem:
             x_b = P1[0]
             y_b = P1[0] 
 
+            #retornando as informações para a imagem real
+            x_b, y_b = self.getImageRealIndice([x_b,y_b])
+
             #wndBall
             wndBall = self.fieldReduce[y_b:y_b+Dim, x_b:x_b+Dim]
 
@@ -2627,6 +2684,9 @@ class VisionSystem:
             #Coordenadas do extremo do robô
             x_r = P1[0]
             y_r = P1[1]
+
+            #retornando as informações para a imagem real
+            x_r, y_r = self.getImageRealIndice([x_r,y_r])
 
             #Janela para realizar o processamento no robô
             wndBot = self.fieldReduce[y_r:y_r+Dim, x_r:x_r+Dim]
