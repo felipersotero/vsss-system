@@ -921,7 +921,7 @@ class VisionSystem:
 
         #Imagem para processamento é uma janela da imagem original passada
         self.fieldReduce = img[y_w:y_w+h_w,x_w:x_w+w_w]
-        self.fieldResult = self.fieldReduce.copy()
+        self.frameResult = self.fieldReduce.copy()
 
         #puxando estremos da janela
         #prevento posição da bola
@@ -2651,6 +2651,9 @@ class VisionSystem:
             #retornando as informações para a imagem real
             x_b, y_b = self.getImageRealIndice([x_b,y_b])
 
+            x_b = int(x_b)
+            y_b = int(y_b)
+
             #wndBall
             wndBall = self.fieldReduce[y_b:y_b+Dim, x_b:x_b+Dim]
 
@@ -2688,6 +2691,9 @@ class VisionSystem:
             #retornando as informações para a imagem real
             x_r, y_r = self.getImageRealIndice([x_r,y_r])
 
+            x_r = int(x_r)
+            y_r = int(y_r)
+            
             #Janela para realizar o processamento no robô
             wndBot = self.fieldReduce[y_r:y_r+Dim, x_r:x_r+Dim]
             
