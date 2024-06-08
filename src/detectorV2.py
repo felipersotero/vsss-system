@@ -19,6 +19,7 @@ import queue
 import modules
 from objects import *
 import traceback
+from concurrent.futures import ThreadPoolExecutor
 
 #======================|| DEFINIÇÕES DE CLASSES ||======================================#
 
@@ -817,6 +818,9 @@ class VisionSystem:
         self.alliesWindows      = [None, None, None]
         self.enimiesWindows     = [None, None, None]
 
+        #lista de threads a serem utilizadas pelo objeto
+        self._threads           = []
+        self._lockThread        = threading.Lock() #trava para controle de acesso por threads
 
         #Extrai os dados do objeto de configuração 
         self.toMineData()
@@ -913,33 +917,38 @@ class VisionSystem:
 
             imgOrigin é a imagem que vem da câmera, ela será recortada de acordo com o ViewRect
         '''
+
         #preciso puxar a imagem original
         x_w = self.viewCapture.cooVetor[0]
         y_w = self.viewCapture.cooVetor[1]
         w_w = self.viewCapture.cooVetor[2]
         h_w = self.viewCapture.cooVetor[3]
-
+        
         #Imagem para processamento é uma janela da imagem original passada
         self.fieldReduce = img[y_w:y_w+h_w,x_w:x_w+w_w]
-        self.frameResult = self.fieldReduce.copy()
+        self.frameResult = img[y_w:y_w+h_w,x_w:x_w+w_w]
 
+        #só criando outra variável
+        timestamp = tms 
+
+        with ThreadPoolExecutor(max_workers=8) as executor:
+            futures = []
+            futures.append(executor.submit(self.predictBall, timestamp))
+
+            # Robôs aliados
+            futures.append(executor.submit(self.predictRobot, ID_Team.TEAM_ALLY, ID_Robots.ROBOT_ALLY_GOAL, timestamp))
+            futures.append(executor.submit(self.predictRobot, ID_Team.TEAM_ALLY, ID_Robots.ROBOT_ALLY_1, timestamp))
+            futures.append(executor.submit(self.predictRobot, ID_Team.TEAM_ALLY, ID_Robots.ROBOT_ALLY_2, timestamp))
+
+            # Robôs inimigos
+            futures.append(executor.submit(self.predictRobot, ID_Team.TEAM_ENEMY, ID_Robots.ROBOT_ENEMY_GOAL, timestamp))
+            futures.append(executor.submit(self.predictRobot, ID_Team.TEAM_ENEMY, ID_Robots.ROBOT_ENEMY_1, timestamp))
+            futures.append(executor.submit(self.predictRobot, ID_Team.TEAM_ENEMY, ID_Robots.ROBOT_ENEMY_2, timestamp))
+
+            # Espera todas as threads terminarem
+            for future in futures:
+                future.result()
         #puxando estremos da janela
-        #prevento posição da bola
-        self.predictBall(timestamp=tms)
-
-        # prevendo o robô aliados
-        self.predictRobot(team=ID_Team.TEAM_ALLY, robot_id=ID_Robots.ROBOT_ALLY_GOAL, timestamp=tms)
-        self.predictRobot(team=ID_Team.TEAM_ALLY, robot_id=ID_Robots.ROBOT_ALLY_1, timestamp=tms)
-        self.predictRobot(team=ID_Team.TEAM_ALLY, robot_id=ID_Robots.ROBOT_ALLY_2, timestamp=tms)
-
-        # prevendo robôs inimigos
-        self.predictRobot(team=ID_Team.TEAM_ENEMY, robot_id=ID_Robots.ROBOT_ENEMY_GOAL, timestamp=tms)
-        self.predictRobot(team=ID_Team.TEAM_ENEMY, robot_id=ID_Robots.ROBOT_ENEMY_1, timestamp=tms)
-        self.predictRobot(team=ID_Team.TEAM_ENEMY, robot_id=ID_Robots.ROBOT_ENEMY_2, timestamp=tms)
-
-
-
-        #construir imagens de debug para aplicar
 
     #lógica completa de processamento do sistema de visão
     def processImg(self, img, debug):
@@ -1266,6 +1275,19 @@ class VisionSystem:
         self.alliesWindows  = [None, None, None]
         self.enimiesWindows = [None, None, None]
 
+        self._threads       = []
+
+    #função para gerenciar threads na CPU
+    def addThreadsPredict(self):
+        ''' Adiciono uma nova thread a fila de processamento'''
+        with ThreadPoolExecutor(max_workers=8) as executor:
+            self._threads.append(executor.submit(self.predictBall, self.timestamp))
+    
+    #iniciar as threads
+    def startThreads(self):
+        '''Inicia todas as threads e espera elas finalizar'''
+        for threads in self._threads:
+            threads.result()
 
     # escolhe as funções da classe caso tenha ou não suporte ao cuda
     def choseModeFunctions(self):
@@ -1330,48 +1352,19 @@ class VisionSystem:
             Ela utiliza a matrix de homografia para transformar um ponto da imagem original num ponto da imagem
             virtual. Realizando essa conversão é possível saber uma boa aproximação, e desconsidera as distorções.
         '''
-        if isinstance(ptSrc, Point2D):
-            ptSrc = np.array([[[ptSrc.px, ptSrc.py]]], dtype=np.float32)
 
-            ponto_transformado = cv2.perspectiveTransform(ptSrc, self.homography_matrix)
-        
-            x_trans = ponto_transformado[0][0][0]  # Primeiro ponto, primeira coordenada
-            y_trans = ponto_transformado[0][0][1]  # Primeiro ponto, segunda coordenada
-
-            return Point2D(x_trans, y_trans)
-        else:
-            ptSrc = np.array([[[ptSrc[0], ptSrc[1]]]], dtype=np.float32)
-
-            ponto_transformado = cv2.perspectiveTransform(ptSrc, self.homography_matrix)
-        
-            x_trans = ponto_transformado[0][0][0]  # Primeiro ponto, primeira coordenada
-            y_trans = ponto_transformado[0][0][1]  # Primeiro ponto, segunda coordenada
-
-            return x_trans, y_trans
+        ptSrc = np.array([[[ptSrc[0], ptSrc[1]]]], dtype=np.float32)
+        ponto_transformado = cv2.perspectiveTransform(ptSrc, self.homography_matrix)
+        return ponto_transformado[0][0]
 
     #aplica transformação inversa no ponto para recuperar o valor
     def invTransformPoint(self, ptSrc):
         '''
             Realiza o trabalho inverso no TransformPoint, retornando para o espaço original da imagem.
         '''
-        if isinstance(ptSrc, Point2D):
-            ptSrc = np.array([[[ptSrc.px, ptSrc.py]]], dtype=np.float32)
-
-            ponto_transformado = cv2.perspectiveTransform(ptSrc, self.inv_homography_matrix)
-        
-            x_trans = ponto_transformado[0][0][0]  # Primeiro ponto, primeira coordenada
-            y_trans = ponto_transformado[0][0][1]  # Primeiro ponto, segunda coordenada
-
-            return Point2D(x_trans, y_trans)
-        else:
-            ptSrc = np.array([[[ptSrc[0], ptSrc[1]]]], dtype=np.float32)
-
-            ponto_transformado = cv2.perspectiveTransform(ptSrc, self.inv_homography_matrix)
-        
-            x_trans = ponto_transformado[0][0][0]  # Primeiro ponto, primeira coordenada
-            y_trans = ponto_transformado[0][0][1]  # Primeiro ponto, segunda coordenada
-
-            return x_trans, y_trans
+        ptSrc = np.array([[[ptSrc[0], ptSrc[1]]]], dtype=np.float32)
+        ponto_transformado = cv2.perspectiveTransform(ptSrc, self.inv_homography_matrix)
+        return ponto_transformado[0][0]
         
     #Passa os indices da matrix final e transforma em valores em cm
     def getPointVirtual(self, ptSrc):
@@ -1385,30 +1378,19 @@ class VisionSystem:
 
             O resultado é um ponto em centímetros (cm)
         '''
-        if isinstance(ptSrc,Point2D):
-            #   transforma o ponto no novo sistema de coordenadas
-            x = ptSrc.px
-            y = ptSrc.py
 
-            #   coordenada final
-            x_f = (x - self.xnv)/3
-            y_f = (self.ynv - y)/3
+        #   transforma o ponto no novo sistema de coordenadas
+        
+        x = ptSrc[0]
+        y = ptSrc[1]
 
-            #caso a função seja utilizada num objeto Point2D, ela funciona assim:
+        #   coordenada final
+        x_f = (x - self.xnv)/3
+        y_f = (self.ynv - y)/3
 
-            return Point2D(x_f,y_f)
-        else:
-            #   transforma o ponto no novo sistema de coordenadas
-            x = ptSrc[0]
-            y = ptSrc[1]
+        #caso a função seja utilizada num objeto Point2D, ela funciona assim:
 
-            #   coordenada final
-            x_f = (x - self.xnv)/3
-            y_f = (self.ynv - y)/3
-
-            #caso a função seja utilizada num objeto Point2D, ela funciona assim:
-
-            return x_f,y_f
+        return x_f,y_f
 
     #com a posição em O' (em cm), transforma num índice na imagem:
     def getImageIndice(self,ptSrc):
@@ -1416,27 +1398,10 @@ class VisionSystem:
             Pega o valor do ponto em cm, e transforma em índices para a imagem virtual
             para poder, então desenhar-lo.
         '''
-        if isinstance(ptSrc, Point2D):
-            #processo inverso
-            x_i = ptSrc.px*3
-            y_i = ptSrc.py*3
+        x_f =int(ptSrc[0]*3 +self.xnv)
+        y_f = int(self.ynv-ptSrc[1]*3)
 
-            #transforma para índice
-            x_f = int(x_i+self.xnv)
-            y_f = int(self.ynv-y_i)
-
-            return Point2D(x_f, y_f)
- 
-        else:
-            #processo inverso
-            x_i = ptSrc[0]*3
-            y_i = ptSrc[1]*3
-
-            #transforma para índice
-            x_f = int(x_i+self.xnv)
-            y_f = int(self.ynv-y_i)
-
-            return x_f, y_f 
+        return x_f, y_f
 
     #definindo uma função para retornar a coordenada na imagem reduzida
     def getImageRealIndice(self, ptSrc):
@@ -1444,27 +1409,12 @@ class VisionSystem:
             Função responsável por retornar o ponto para a dimensão da imagem reduzida, com o indice
 
         '''
-        if isinstance(ptSrc, Point2D):
-            #pego os valores dos indices na imagem virtual
-            ptFinal = self.getImageIndice(ptSrc)
-
-            #pego os valores dos indices na imagem virtual e aplica a homografia inversa
-            #retornando a imagem reduzida
-            p_indice = self.invTransformPoint(ptFinal)
-
-            return p_indice 
-
-        else:
-            #pego os valores dos indices na imagem virtual
-            x_i, y_i = self.getImageIndice(ptSrc)
-
-            
-            #pego os valores dos indices na imagem virtual e aplica a homografia inversa
-            #retornando a imagem reduzida
-            x_f, y_f = self.invTransformPoint([x_i, y_i])
-
-            return x_f, y_f
-
+        #pego os valores dos indices na imagem virtual
+        x_i, y_i = self.getImageIndice(ptSrc)
+    
+        #pego os valores dos indices na imagem virtual e aplica a homografia inversa
+        #retornando a imagem reduzida
+        return self.invTransformPoint([x_i, y_i])
 
 
 
@@ -2713,7 +2663,7 @@ class VisionSystem:
                 bot.setStatus(True)
 
 
-    # método para verificar se numa janela tem um robô com as cores configuradas
+    # método para verificar se numa janela tem um robô com 2as cores configuradas
     def search_robot_noCuda(self, window, team:ID_Team, id:ID_Robots,debug=False) -> bool:
         '''
         #### Função sem suporte ao CUDA
@@ -2729,10 +2679,7 @@ class VisionSystem:
         '''
   
         #procuro qual robô  é o escolhido
-        if team == ID_Team.TEAM_ALLY:
-            bot: Robot = self.allyTeam[id]
-        else:
-            bot: Robot = self.enemyTeam[id]
+        bot: Robot = self.allyTeam[id] if team == ID_Team.TEAM_ALLY else self.enemyTeam[id]
 
         #puxo as cores do robô escolhido
         colorT, colorP, colorS = bot.getColors()
@@ -2750,22 +2697,13 @@ class VisionSystem:
         # Procurando cores na janela
         teamColorContours = self.find_binary_contours_noCuda(window, team_lower_bound, team_upper_bound)
         
-        self.playerRadius       = (7.5/2)*np.sqrt(2)*self.prop_px_cm
-        self.mainColorRadius    = (7.5/4)*np.sqrt(5)*self.prop_px_cm
-        self.secColorRadius     = (self.playerRadius/2)
-
         #Converte imagem para HSV
         windowHSV = cv2.cvtColor(window, cv2.COLOR_BGR2HSV)
 
         #procura quadrados dentro da imagem 
         objs = cv2.inRange(windowHSV, self.objectsDarkColor, self.objectsLightColor)
-
-        #melhorando imagem
-        structuringElement = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
-        objs= cv2.erode(objs, structuringElement, iterations=1)
-
-        structuringElement = cv2.getStructuringElement(cv2.MORPH_RECT, (11, 11))
-        objs = cv2.morphologyEx(objs, cv2.MORPH_CLOSE, structuringElement)
+        objs= cv2.erode(objs, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5)), iterations=1)
+        objs = cv2.morphologyEx(objs, cv2.MORPH_CLOSE,  cv2.getStructuringElement(cv2.MORPH_RECT, (11, 11)))
 
         #valores importantes
         _, bots = self.detect_squares_noCuda(objs)
@@ -2787,7 +2725,9 @@ class VisionSystem:
 
             if(ri > 0.5*self.playerRadius and ri < 1.5*self.playerRadius):
 
-                if(debug): cv2.circle(self.frameResult, (int(x_r), int(y_r)), (int(ri) + 5), (0, 255, 0), 2)
+                if(debug): 
+                    with self._lockThread:
+                        cv2.circle(self.frameResult, (int(x_r), int(y_r)), (int(ri) + 5), (0, 255, 0), 2)
 
                 #Encontrou contornos de inimigos na janela
                 if teamColorContours:
@@ -2800,8 +2740,9 @@ class VisionSystem:
                         bot.setStatus(True)
 
                         #desenhando informações
-                        self.draw_player_circle_noCuda(self.frameResult, bot)
-                        self.draw_player_virtual_noCuda(bot)
+                        with self._lockThread:
+                            self.draw_player_circle_noCuda(self.frameResult, bot)
+                            self.draw_player_virtual_noCuda(bot)
 
                         return True
                     
@@ -2814,8 +2755,9 @@ class VisionSystem:
                         bot.setStatus(True)
 
                         #desenhando informações
-                        self.draw_player_circle_noCuda(self.frameResult, bot)
-                        self.draw_player_virtual_noCuda(bot)
+                        with self._lockThread:
+                            self.draw_player_circle_noCuda(self.frameResult, bot)
+                            self.draw_player_virtual_noCuda(bot)
                         return True 
         return False 
     
@@ -2870,19 +2812,20 @@ class VisionSystem:
             self.ball.updatePosition(x=xv, y=yv, r=rb,timestamp=timeT)
 
             rb = int(rb/self.prop_px_cm)  
+            
+            with self._lockThread:
+                #circulando a bola e adicionando partes na imagem virtual e real
+                cv2.circle(self.frameResult, (xb, yb), (rb+2), (0,0,255),2)
+                cv2.putText(self.frameResult,"B", (int(xb),int(yb-rb-10)),cv2.FONT_HERSHEY_SIMPLEX,0.4,(0,0,255), 1)
+        
+                #Transformando em inteiro para plotar na imagem
+                xv = int(xv)
+                yv = int(yv)
 
-            #circulando a bola e adicionando partes na imagem virtual e real
-            cv2.circle(self.frameResult, (xb, yb), (rb+2), (0,0,255),2)
-            cv2.putText(self.frameResult,"B", (int(xb),int(yb-rb-10)),cv2.FONT_HERSHEY_SIMPLEX,0.4,(0,0,255), 1)
-    
-            #Transformando em inteiro para plotar na imagem
-            xv = int(xv)
-            yv = int(yv)
-
-            #Desenhando na imagem virtual
-            cv2.circle(self.virtualImg, (xv, yv), 4, (0, 255,255), -1)
-            cv2.putText(self.virtualImg, "B", (int(xv-5),int(yv-rb-10)), cv2.FONT_HERSHEY_SIMPLEX,0.4,(0,255,255), 1)
-            cv2.arrowedLine(self.virtualImg, (xv, yv), ((xv + int(self.ball.direction[0])), (yv + int(self.ball.direction[1]))), (0, 255, 255), 2)
+                #Desenhando na imagem virtual
+                cv2.circle(self.virtualImg, (xv, yv), 4, (0, 255,255), -1)
+                cv2.putText(self.virtualImg, "B", (int(xv-5),int(yv-rb-10)), cv2.FONT_HERSHEY_SIMPLEX,0.4,(0,255,255), 1)
+                cv2.arrowedLine(self.virtualImg, (xv, yv), ((xv + int(self.ball.direction[0])), (yv + int(self.ball.direction[1]))), (0, 255, 255), 2)
 
 
 
