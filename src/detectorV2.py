@@ -946,9 +946,7 @@ class VisionSystem:
             # Executa as tarefas em paralelo
             results = executor.map(lambda task: task[0](*task[1]), tasks)
 
-            # Espera todas as tarefas terminarem
-            for result in results:
-                pass  # ou você pode processar os resultados se necessário
+        
     #lógica completa de processamento do sistema de visão
     def processImg(self, img, debug):
         '''
@@ -2654,7 +2652,7 @@ class VisionSystem:
                 #procura o jogador
                 if not self.search_robot_noCuda(window=wndBot, team=team, id=robot_id,debug=self.debug):
                     #procuro na imagem toda
-                    if not self.search_robot_noCuda(window=self.frameOrigin, team=team, id=robot_id, debug=self.debug):
+                    if not self.search_robot_noCuda(window=self.fieldReduce, team=team, id=robot_id, debug=self.debug):
                         bot.setStatus(False)
                     else:
                         bot.setStatus(True)
@@ -2664,7 +2662,7 @@ class VisionSystem:
 
         else:
             #procurando na imagem toda
-            if not self.search_robot_noCuda(window=self.frameOrigin, team=team, id=robot_id, debug=self.debug):
+            if not self.search_robot_noCuda(window=self.fieldReduce, team=team, id=robot_id, debug=self.debug):
                 bot.setStatus(False)
             else:
                 bot.setStatus(True)
