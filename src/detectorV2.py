@@ -19,7 +19,7 @@ import queue
 import modules
 from objects import *
 import traceback
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor
 
 #======================|| DEFINIÇÕES DE CLASSES ||======================================#
 
@@ -932,24 +932,23 @@ class VisionSystem:
         timestamp = tms 
 
         with ThreadPoolExecutor(max_workers=8) as executor:
-            futures = []
-            futures.append(executor.submit(self.predictBall, timestamp))
+            # Lista de argumentos para cada chamada de função
+            tasks = [
+                (self.predictBall, (timestamp,)),
+                (self.predictRobot, (ID_Team.TEAM_ALLY, ID_Robots.ROBOT_ALLY_GOAL, timestamp)),
+                (self.predictRobot, (ID_Team.TEAM_ALLY, ID_Robots.ROBOT_ALLY_1, timestamp)),
+                (self.predictRobot, (ID_Team.TEAM_ALLY, ID_Robots.ROBOT_ALLY_2, timestamp)),
+                (self.predictRobot, (ID_Team.TEAM_ENEMY, ID_Robots.ROBOT_ENEMY_GOAL, timestamp)),
+                (self.predictRobot, (ID_Team.TEAM_ENEMY, ID_Robots.ROBOT_ENEMY_1, timestamp)),
+                (self.predictRobot, (ID_Team.TEAM_ENEMY, ID_Robots.ROBOT_ENEMY_2, timestamp))
+            ]
 
-            # Robôs aliados
-            futures.append(executor.submit(self.predictRobot, ID_Team.TEAM_ALLY, ID_Robots.ROBOT_ALLY_GOAL, timestamp))
-            futures.append(executor.submit(self.predictRobot, ID_Team.TEAM_ALLY, ID_Robots.ROBOT_ALLY_1, timestamp))
-            futures.append(executor.submit(self.predictRobot, ID_Team.TEAM_ALLY, ID_Robots.ROBOT_ALLY_2, timestamp))
+            # Executa as tarefas em paralelo
+            results = executor.map(lambda task: task[0](*task[1]), tasks)
 
-            # Robôs inimigos
-            futures.append(executor.submit(self.predictRobot, ID_Team.TEAM_ENEMY, ID_Robots.ROBOT_ENEMY_GOAL, timestamp))
-            futures.append(executor.submit(self.predictRobot, ID_Team.TEAM_ENEMY, ID_Robots.ROBOT_ENEMY_1, timestamp))
-            futures.append(executor.submit(self.predictRobot, ID_Team.TEAM_ENEMY, ID_Robots.ROBOT_ENEMY_2, timestamp))
-
-            # Espera todas as threads terminarem
-            for future in futures:
-                future.result()
-        #puxando estremos da janela
-
+            # Espera todas as tarefas terminarem
+            for result in results:
+                pass  # ou você pode processar os resultados se necessário
     #lógica completa de processamento do sistema de visão
     def processImg(self, img, debug):
         '''
@@ -1337,10 +1336,14 @@ class VisionSystem:
 
             # Necessário que essas variáveis sejam vetores array.
         '''
+        ptsSrc = np.array(ptsSrc, dtype='float32')
+        ptsFinal = np.array(ptsFinal, dtype='float32')
+
         self.homography_matrix, _   =   cv2.findHomography(ptsSrc, ptsFinal)
 
         if self.homography_matrix is not None and np.linalg.cond(self.homography_matrix) < 1 / np.finfo(self.homography_matrix.dtype).eps:
             self.inv_homography_matrix  =   np.linalg.inv(self.homography_matrix)
+            print(self.homography_matrix.shape())
         else:
             # A matriz de homografia é singular e não pode ser invertida
             self.inv_homography_matrix = np.eye(3)  # Matriz identidade 3x3
@@ -2647,13 +2650,17 @@ class VisionSystem:
             #Janela para realizar o processamento no robô
             wndBot = self.fieldReduce[y_r:y_r+Dim, x_r:x_r+Dim]
             
-            #procura o jogador
-            if not self.search_robot_noCuda(window=wndBot, team=team, id=robot_id,debug=self.debug):
-                #procuro na imagem toda
-                if not self.search_robot_noCuda(window=self.frameOrigin, team=team, id=robot_id, debug=self.debug):
-                    bot.setStatus(False)
-                else:
-                    bot.setStatus(True)
+            try:
+                #procura o jogador
+                if not self.search_robot_noCuda(window=wndBot, team=team, id=robot_id,debug=self.debug):
+                    #procuro na imagem toda
+                    if not self.search_robot_noCuda(window=self.frameOrigin, team=team, id=robot_id, debug=self.debug):
+                        bot.setStatus(False)
+                    else:
+                        bot.setStatus(True)
+            except:
+                bot.setStatus(False)
+
 
         else:
             #procurando na imagem toda
@@ -2677,7 +2684,6 @@ class VisionSystem:
         - colorS: cor secundária em HSV, na forma de array [H,S,V]
         - ColorT: Cor do time em HSV, na forma de array [H,S,V]
         '''
-  
         #procuro qual robô  é o escolhido
         bot: Robot = self.allyTeam[id] if team == ID_Team.TEAM_ALLY else self.enemyTeam[id]
 
@@ -2743,11 +2749,11 @@ class VisionSystem:
                         with self._lockThread:
                             self.draw_player_circle_noCuda(self.frameResult, bot)
                             self.draw_player_virtual_noCuda(bot)
-
                         return True
                     
                     elif team == ID_Team.TEAM_ENEMY:
                         #converte coordenadas para o ponto virtual
+                        print(x_r, y_r)
                         xcm, ycm = self.transformPoint(np.array([x_r, y_r]))
 
                         xcm, ycm = self.getPointVirtual(np.array([xcm, ycm]))
@@ -2759,6 +2765,7 @@ class VisionSystem:
                             self.draw_player_circle_noCuda(self.frameResult, bot)
                             self.draw_player_virtual_noCuda(bot)
                         return True 
+
         return False 
     
 
@@ -2812,7 +2819,7 @@ class VisionSystem:
             self.ball.updatePosition(x=xv, y=yv, r=rb,timestamp=timeT)
 
             rb = int(rb/self.prop_px_cm)  
-            
+
             with self._lockThread:
                 #circulando a bola e adicionando partes na imagem virtual e real
                 cv2.circle(self.frameResult, (xb, yb), (rb+2), (0,0,255),2)
@@ -2821,7 +2828,6 @@ class VisionSystem:
                 #Transformando em inteiro para plotar na imagem
                 xv = int(xv)
                 yv = int(yv)
-
                 #Desenhando na imagem virtual
                 cv2.circle(self.virtualImg, (xv, yv), 4, (0, 255,255), -1)
                 cv2.putText(self.virtualImg, "B", (int(xv-5),int(yv-rb-10)), cv2.FONT_HERSHEY_SIMPLEX,0.4,(0,255,255), 1)

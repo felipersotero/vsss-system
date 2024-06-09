@@ -746,7 +746,7 @@ class Emulator:
 
                 try:
                     # processando frame que chegou para a imagem 
-                    result = self.vs.processImg(frame, debug)
+                    result = self.vs.proc(frame, debug)
 
                     #puxa a imagem
                     virtual = self.vs.virtualImg
