@@ -822,6 +822,8 @@ class VisionSystem:
         self._threads           = []
         self._lockThread        = threading.Lock() #trava para controle de acesso por threads
 
+        #Variável importante para ditar quanto tempo até a próxima atualização de dados
+        self.newProcTime        = 10
         #Extrai os dados do objeto de configuração 
         self.toMineData()
 
@@ -965,7 +967,7 @@ class VisionSystem:
             self.choseModeFunctions()
 
         #verifica contagem de tempo interna da função 
-        if  self._firstTimeExec < 30: #segundos
+        if  self._firstTimeExec < self.newProcTime: #segundos
             #somando contador
 
             self._count = self._count +1
@@ -2319,7 +2321,7 @@ class VisionSystem:
             Necessário informar a imagem que irá ser processada para encontrar a bola. A cor da bola e se irá querer exibir ela na imagem, que tem que ser informada em HSV
         '''
         #copiando imagem inicial
-        self.ballImg = img.copy()
+        self.ballImg = self.fieldReduce.copy()
 
         #Cor laranja da bola 
         h = colorBall[0]
