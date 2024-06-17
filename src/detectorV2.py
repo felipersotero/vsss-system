@@ -847,16 +847,37 @@ class VisionSystem:
         #zerando a imagem de virtualização
         self.virtualImg = self.virtual.copy()
         
+        #aumentando saturação da imagem
+        img = self.upSaturation_noCuda(img)
+
         if img is not None:
             # Detectando o campo
             self.detect_field_noCuda(img,debug)
             
+            #sessão apra tentar corrigir o erro de cvtColor
+            if self.fieldReduce is None or self.fieldReduce.shape[1] < 100:
+                print("FieldReduce é none ou muito pequeno")
+                self.fieldReduce = self.frameOrigin
+            
+
             #detectando bola
-            self.detect_ball_noCuda(self.fieldReduce, self.ballColor, debug)
+            try:
+                self.detect_ball_noCuda(self.fieldReduce, self.ballColor, debug)
+            except:
+                try: 
+                    self.detect_ball_noCuda(self.frameOrigin, self.ballColor, debug)
+                except:
+                    print("[VS]: Não foi possível detectar a bola, pois:\n",e)
 
             #detectando jogadores
-            self.detect_players_noCuda(self.fieldReduce, debug)
-
+            try:
+                self.detect_players_noCuda(self.fieldReduce, debug)
+            except:
+                try:
+                    self.detect_players_noCuda(self.frameOrigin, debug)
+                except Exception as e:
+                    print("[VS]: Não foi possível detectar o campo, pois: \n",e)
+           
             #desenhar o campo, caso esteja na opção debug
             if debug:
                 self.field.drawPointsField()
@@ -933,6 +954,7 @@ class VisionSystem:
         #só criando outra variável
         timestamp = tms 
 
+
         with ThreadPoolExecutor(max_workers=8) as executor:
             # Lista de argumentos para cada chamada de função
             tasks = [
@@ -957,7 +979,7 @@ class VisionSystem:
         '''
         self.debug = debug 
 
-        self.frameOrigin = img 
+        self.frameOrigin = self.upSaturation_noCuda(img) 
 
         #puxa o tempo
         self.currentTime  = self.timer.getElapsedTime()
@@ -1343,7 +1365,6 @@ class VisionSystem:
 
         if self.homography_matrix is not None and np.linalg.cond(self.homography_matrix) < 1 / np.finfo(self.homography_matrix.dtype).eps:
             self.inv_homography_matrix  =   np.linalg.inv(self.homography_matrix)
-            print(self.homography_matrix.shape())
         else:
             # A matriz de homografia é singular e não pode ser invertida
             self.inv_homography_matrix = np.eye(3)  # Matriz identidade 3x3
@@ -1510,6 +1531,7 @@ class VisionSystem:
         '''
         structElem = cv2.getStructuringElement(cv2.MORPH_ELLIPSE,(dim,dim))
         imgProc = cv2.morphologyEx(img, cv2.MORPH_TOPHAT, structElem)
+        imgProc = cv2.morphologyEx(imgProc, cv2.MORPH_TOPHAT, structElem)
 
         #ajuste de contraste
         imgTrat = cv2.add(imgProc, imgProc)
@@ -1656,6 +1678,13 @@ class VisionSystem:
         lower = np.array(lower_bound)
         upper = np.array(upper_bound)
 
+        if image is None:
+            print("[VisionSystem]: Em find_binary_contours_noCuda() a Imagem é None")
+
+        if image.shape[1] < 40:
+            print("[VisionSystem]: Em find_binary_contours_noCuda() a  janela é muito pequena, provável que nem exista")
+            return None 
+        
         imageHSV = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
         binaryImage = cv2.inRange(imageHSV, lower, upper)
         
@@ -1777,6 +1806,28 @@ class VisionSystem:
             else:
                 return False
 
+    #função para aumentar a saturação de uma imagem
+    def upSaturation_noCuda(self, img):
+        '''
+            Essa função aumenta a saturação de uma imagem
+        '''
+        imagem_hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
+
+        # Separar os canais H, S e V
+        h, s, v = cv2.split(imagem_hsv)
+
+        # Aumentar a saturação (por exemplo, aumentar 50% da saturação original)
+        s = cv2.add(s, 50)
+        s = np.clip(s, 0, 255)  # Certifique-se de que os valores estejam no intervalo [0, 255]
+
+        # Reunir os canais H, S e V
+        imagem_hsv_aumentada = cv2.merge([h, s, v])
+
+        # Converter a imagem de volta para o espaço de cor BGR
+        imagem_resultante = cv2.cvtColor(imagem_hsv_aumentada, cv2.COLOR_HSV2BGR)
+
+        return imagem_resultante
+    
     #função que trata a imagem binarizada dos jogadores e retorna apenas eles na imagem
     def detect_squares_noCuda(self, imgBin):
         '''
@@ -2218,6 +2269,8 @@ class VisionSystem:
                 #imagem original
                 self.frameOrigin = img.copy()
 
+                if img is None:
+                    print("[VisionSystem]: A imagem é nula!!")
                 #tomando imagem em tons de cinza
                 gray = self.gray_scale_noCuda(self.frameOrigin)
 
@@ -2236,6 +2289,11 @@ class VisionSystem:
                 #reduzindo imagem e gerando ViewRect
                 self.binReduceField, self.fieldReduce, coorVetor = self.reduce_field_noCuda(self.binaryObjects, self.frameOrigin, self.fieldWidth, self.offSetWindow)
 
+                if self.fieldReduce is None:
+                    print("[VisionSystem]: Passou do reduce field, mas o campo aqui não reduziu")
+                    print("[VisionSystem]: Coorvetor", coorVetor)
+
+                    self.binReduceField, self.fieldReduce = self.binaryObjects, self.frameOrigin
                 #encontra extremos do paralelogramo
                 contours, _ = cv2.findContours(self.binReduceField, cv2.RETR_EXTERNAL,cv2.CHAIN_APPROX_SIMPLE)
 
@@ -2291,6 +2349,9 @@ class VisionSystem:
 
                         except Exception as e:
                             print("[VisionSystem]: Não conseguiu desenhar na imagem: \n",e)
+                            self.fieldReduce = img
+                            self.frameResult = self.fieldReduce.copy()
+                            traceback.print_exc()
                 
                 #Se chegou até aqui, para o laço
                 flagStop = True
@@ -2303,7 +2364,7 @@ class VisionSystem:
                 self.offSetErode += 1
                 print("Foi necessário subir um pouco o offset, devido ao erro:\n",e)
                 
-                    # Captura a stack trace do erro
+                # Captura a stack trace do erro
                 traceback.print_exc()
 
                 #retornaria as variáveis, mas ele vai atualizar as variáveis internas
@@ -2321,7 +2382,9 @@ class VisionSystem:
             Necessário informar a imagem que irá ser processada para encontrar a bola. A cor da bola e se irá querer exibir ela na imagem, que tem que ser informada em HSV
         '''
         #copiando imagem inicial
-        self.ballImg = self.fieldReduce.copy()
+        self.ballImg = self.fieldReduce
+        if self.fieldReduce is None:
+            print("FIELDREDUCE É NONE")
 
         #Cor laranja da bola 
         h = colorBall[0]
@@ -2613,7 +2676,7 @@ class VisionSystem:
             self.search_ball_noCuda(window=wndBall,color=self.ballColor,posBall=[x_b, y_b])
         else:
             #Verificar na imagem inteira 
-            self.detect_ball_noCuda(img=self.frameOrigin,colorBall= self.ballColor,debug=self.debug)
+            self.detect_ball_noCuda(img=self.fieldReduce,colorBall= self.ballColor,debug=self.debug)
 
 
 
@@ -2729,6 +2792,10 @@ class VisionSystem:
             
             rcm = 5.3
 
+            winSize = int(18*self.prop_px_cm)
+            windowActual = window[int(yi-(winSize/2)):int(yi+(winSize/2)),int(xi-(winSize/2)):int(xi+(winSize/2))]
+
+
             if(ri > 0.5*self.playerRadius and ri < 1.5*self.playerRadius):
 
                 if(debug): 
@@ -2742,7 +2809,7 @@ class VisionSystem:
                         xcm, ycm = self.transformPoint(np.array([x_r, y_r]))
 
                         xcm, ycm = self.getPointVirtual(np.array([xcm, ycm]))
-                        bot.updatePosition(x=xcm, y=ycm, r=rcm, image=window,time=self.currentTime)
+                        bot.updatePosition(x=xcm, y=ycm, r=rcm, image=windowActual,time=self.currentTime)
                         bot.setStatus(True)
 
                         #desenhando informações
@@ -2757,7 +2824,7 @@ class VisionSystem:
                         xcm, ycm = self.transformPoint(np.array([x_r, y_r]))
 
                         xcm, ycm = self.getPointVirtual(np.array([xcm, ycm]))
-                        bot.updatePosition(x=xcm, y=ycm, r=rcm, image=window, time=self.currentTime )
+                        bot.updatePosition(x=xcm, y=ycm, r=rcm, image=windowActual, time=self.currentTime )
                         bot.setStatus(True)
 
                         #desenhando informações

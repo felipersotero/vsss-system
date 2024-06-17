@@ -768,6 +768,7 @@ class Emulator:
 
                     #Exibir uma janela de problema
                     traceback.print_exc()
+                    
                 
                 #finaliza a contagem de tempo
                 St2 = self.Timer.getElapsedTime()
