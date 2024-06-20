@@ -848,7 +848,7 @@ class VisionSystem:
         self.virtualImg = self.virtual.copy()
         
         #aumentando saturação da imagem
-        img = self.upSaturation_noCuda(img)
+        #img = self.upSaturation_noCuda(img)
 
         if img is not None:
             # Detectando o campo
@@ -979,7 +979,8 @@ class VisionSystem:
         '''
         self.debug = debug 
 
-        self.frameOrigin = self.upSaturation_noCuda(img) 
+        #self.frameOrigin = self.upSaturation_noCuda(img) 
+        self.frameOrigin = img 
 
         #puxa o tempo
         self.currentTime  = self.timer.getElapsedTime()
@@ -1680,10 +1681,11 @@ class VisionSystem:
 
         if image is None:
             print("[VisionSystem]: Em find_binary_contours_noCuda() a Imagem é None")
+            return [],None
 
         if image.shape[1] < 40:
             print("[VisionSystem]: Em find_binary_contours_noCuda() a  janela é muito pequena, provável que nem exista")
-            return None 
+            return [],None
         
         imageHSV = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
         binaryImage = cv2.inRange(imageHSV, lower, upper)
