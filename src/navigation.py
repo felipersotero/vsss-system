@@ -27,12 +27,15 @@ class Navigation():
         # Cálculo da força repulsiva
         Fr = np.zeros(2)
 
+        min_obst_dist = 1000
+
         # Robôs
         for obstacle in obstacles:
             if obstacle is not None:
                 d, theta = self.dist_and_ang(source, obstacle)
 
-                # print(f"{d} cm, {theta} rad")
+                if d < min_obst_dist:
+                    min_obst_dist = d
 
                 if d < r:
                     Fr += ([-maxx, -maxx])
@@ -62,14 +65,20 @@ class Navigation():
         # rb = 2
         # sb = 120
         rb = 3
-        sb = 50 # Área de influência da bola. Padrão: 50
+        sb = 70 # Área de influência da bola. Padrão: 50
 
         if d < rb:
             Fa = np.zeros(2)
             Fr = np.zeros(2)
         elif (d >= rb) and (d <= (sb+rb)):
             Fa = ([(alpha*(d-rb)*np.cos(theta)), (alpha*(d-rb)*np.sin(theta))])
-            Fr = Fr*d/100
+
+            # verifica se o alvo está mais perto que o obstáculo
+            if d > min_obst_dist:
+                Fr = Fr*(d/(2*sb)) # Reduz a força repulsiva
+            else:
+                Fr = Fr*(d/sb)
+
         elif d > (sb+rb):
             Fa = ([alpha*sb*np.cos(theta), alpha*sb*np.sin(theta)])
 

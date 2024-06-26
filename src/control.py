@@ -66,9 +66,10 @@ class Control:
                 self.possibleRecognition[i] = True
 
         for i in range(3):
-            if self.enemies[i] is not None:
+            if (self.enemies[i] is not None) and (self.enemies[i].detected):
                 self.enemies_coordinates[i] = np.array([self.enemies[i].position[0], self.enemies[i].position[1]])
-
+            else:
+                self.enemies_coordinates[i] = None
         # Coordenadas dos inimigos
                 
             
@@ -136,18 +137,17 @@ class Control:
         ka = '+0.00'
         kb = '+0.00'
         command = 's+000+000'
+        next_point = None
 
         if self.possibleRecognition[0] and self.ball_coordinates is not None:
             # Chamar navegação aqui enviando coordenadas do jogador atual, dos outros jogadores e da bola (ou outro alvo)
-            print(self.enemies_coordinates)
+            print(f"Coordenadas inimigos: {self.enemies_coordinates}")
             path_points = self.navigation.estimatePath(self.allies_coordinates[0], self.enemies_coordinates, self.ball_coordinates)
             next_point = self.ball_coordinates
             
-            # if len(path_points) > 1:
-            #     next_point = path_points[1]
-                
-            # next_point = self.ball_coordinates
-                   
+            if len(path_points) > 1:
+                next_point = path_points[1]
+            
             angle = self.angleBetweenObjects(next_point, self.allies_coordinates[0], self.allies_direction[0])
             distance = self.distanceBetweenObjects(next_point, self.allies_coordinates[0])
 
@@ -175,7 +175,7 @@ class Control:
 
             print(f"Comando: {command}")
 
-        return command
+        return command, next_point
 
     ################################################################
     # Funções que processam o controle dos robôs

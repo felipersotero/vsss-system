@@ -47,6 +47,9 @@ class Emulator:
         self.clientSerial = None
         self.commands = None
 
+        self.next_point = None
+        self.prop_px_cm = None
+
         #filas
         self.commands_queue = queue.Queue()
         self.sent_data_queue = queue.Queue()
@@ -559,6 +562,7 @@ class Emulator:
             ballImg, ball_object, binaryBall = detect_ball(frame_reduce, ballColor, ball, prop_px_cm, debug)
             imgDebug, binaryPlayers, binaryTeam, amountOfPlayers, amountOfAlslies, amountOfEnemies, playersWindows, alliesWindows, enemiesWindows, allies_list, enemies_list, robots = detect_players(frame_reduce, ballImg, binaryBall, binary_treat, teamMainColor, enemiesMainColor, playersAllColors, prop_px_cm, ball_object, allies, enemies, OffSetBord, rect_vertices, debug)
 
+            self.prop_px_cm = prop_px_cm
 
             sending_data = (ball_object, allies_list, enemies_list, frame, binary_treat, binaryBall, binaryPlayers, binaryTeam, imgDebug, alliesWindows, enemiesWindows)
             output_queue.queue.clear()
@@ -610,7 +614,7 @@ class Emulator:
 
             # Enviando dados para o processamento
             self.control.updateObjectsValues(self.field, self.ball, self.allies, self.enemies)
-            self.commands = self.control.processControl()
+            self.commands, self.next_point = self.control.processControl()
             self.commands_queue.queue.clear()
             self.commands_queue.put(self.commands)
             
@@ -699,6 +703,15 @@ class Emulator:
                 self.debugObjectsViewer.show(self.binaryBall)
                 self.debugPlayersViewer.show(self.binaryPlayers)
                 self.debugTeamViewer.show(self.binaryTeam)
+            
+            # print(f"Next Point: x = {self.next_point[0]}, y = {self.next_point[1]}")
+            # print(f"proporção px cm: {self.prop_px_cm}")
+
+            if self.next_point is not None:
+                x_p = int(self.next_point[0]*self.prop_px_cm)
+                y_p = int(self.next_point[1]*self.prop_px_cm)
+                cv2.circle(self.imgDebug, (x_p, y_p), 2, (0, 255, 255), 2)
+
             self.resultViewer.show(self.imgDebug)
 
             #Adicionando conteúdos
