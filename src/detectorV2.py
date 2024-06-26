@@ -949,7 +949,7 @@ class VisionSystem:
         
         #Imagem para processamento é uma janela da imagem original passada
         self.fieldReduce = img[y_w:y_w+h_w,x_w:x_w+w_w]
-        self.frameResult = img[y_w:y_w+h_w,x_w:x_w+w_w]
+        self.frameResult = self.fieldReduce.copy()
 
         #só criando outra variável
         timestamp = tms 
