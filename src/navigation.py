@@ -22,7 +22,7 @@ class Navigation():
         betta = 2
         alpha = 3
         maxx = 200
-        r = 10
+        r = 15
 
         # Cálculo da força repulsiva
         Fr = np.zeros(2)
@@ -38,7 +38,7 @@ class Navigation():
                     min_obst_dist = d
 
                 if d < r:
-                    Fr += ([-maxx, -maxx])
+                    Fr += ([-maxx*np.cos(theta), maxx*np.sin(theta)])
                 elif (d >= r) and (d <= (s+r)):
                     Fr += ([(-betta*(s+r-d)*np.cos(theta)), (-betta*(s+r-d)*np.sin(theta))])
                 elif d > (s+r):
@@ -64,7 +64,7 @@ class Navigation():
         # print(f"{d} cm, {theta} rad")
         # rb = 2
         # sb = 120
-        rb = 3
+        rb = 1
         sb = 70 # Área de influência da bola. Padrão: 50
 
         if d < rb:
@@ -104,7 +104,7 @@ class Navigation():
         n_it = 100
         rep = 0
 
-        distance_limit = 5
+        distance_limit = 2
 
         for it in range(n_it):
             rep += 1

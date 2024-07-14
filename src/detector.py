@@ -492,7 +492,7 @@ def detect_ball(img, color, ball, prop_px_cm, debug):
         if ball is None:
             ball = Ball(xcm, ycm, rcm)
         else:
-            ball.set_direction(ball.position, np.array([xcm, ycm]))
+            # ball.set_direction(ball.position, np.array([xcm, ycm]))
             ball.update_position(xcm, ycm, rcm)
 
         if (debug):
@@ -508,7 +508,8 @@ def detect_ball(img, color, ball, prop_px_cm, debug):
             cv2.arrowedLine(frameOrig, (xb, yb), ((xb + int(ball.direction[0])), (yb + int(ball.direction[1]))), (0, 255, 0), 2)
             
     else:
-        ball = Ball(0, 0, 0)
+        # ball = Ball(0, 0, 0)
+        print("Sem bola")
                    
     return frameOrig, ball, binaryBall
 
@@ -543,7 +544,7 @@ def detect_players(img, ballImg, binaryBall, binaryField, alliesColor, enemiesCo
                 
     #==========================================================================================
     #Carrega os vetores de cores claras e escuras de objetos gerais 
-    objectsDarkColor = np.array([0,10,130]) #[0,10,150]
+    objectsDarkColor = np.array([0,10,130]) #[0,10,130]
     objectsLightColor = np.array([179,255,255])
 
     #==========================================================================================
@@ -605,12 +606,12 @@ def detect_players(img, ballImg, binaryBall, binaryField, alliesColor, enemiesCo
         # playerRadius = 24
         # secColorRadius = playerRadius/2
 
-        # print("Raio do jogador: ", playerRadius)
-        # print("Raio encontrado: ", ri/prop_px_cm)
+        print("Raio do jogador: ", playerRadius)
+        print("Raio encontrado: ", ri/prop_px_cm)
 
 
         #Objetos com raios maiores que certo valor serão considerados como jogadores
-        if(ri > 0.5*playerRadius and ri < 1.5*playerRadius and playersCount < 6): #4*prop_px_cm
+        if(ri > 0.25*playerRadius and ri < 1.5*playerRadius and playersCount < 6): #4*prop_px_cm
 
             if(debug):
                 cv2.circle(imgDegub, (int(xi), int(yi)), (int(ri) + 5), (0, 255, 0), 2)
@@ -638,13 +639,13 @@ def detect_players(img, ballImg, binaryBall, binaryField, alliesColor, enemiesCo
                     enemyColorContour = max(enemyColorContours, key=cv2.contourArea)
                     (xc, yc), rc = cv2.minEnclosingCircle(enemyColorContour)
 
-                    # print("Raio da cor principal inimigo: ", rc)
+                    print("Raio da cor principal inimigo: ", rc)
 
                     xc = int(xc)
                     yc = int(yc)
                     rc = int(rc)
 
-                    if(rc >= 0.5*mainColorRadius and enemiesCount < 3):
+                    if(rc >= 0.01*mainColorRadius and enemiesCount < 3):
 
                         xcm = xi/prop_px_cm
                         ycm = yi/prop_px_cm
@@ -690,7 +691,7 @@ def detect_players(img, ballImg, binaryBall, binaryField, alliesColor, enemiesCo
                 #for currentMainColor in mainColorContour:
                 (xc, yc), rc = cv2.minEnclosingCircle(mainColorContour)
 
-                # print("Raio da cor principal: ", rc)
+                print("Raio da cor principal: ", rc)
 
                 xc = int(xc)
                 yc = int(yc)
@@ -698,7 +699,7 @@ def detect_players(img, ballImg, binaryBall, binaryField, alliesColor, enemiesCo
 
                 # print(f"Raio da cor principal: {mainColorRadius} - {rc}")
 
-                if(rc >= 0.5*mainColorRadius and alliesCount < 3):
+                if(rc >= 0.01*mainColorRadius and alliesCount < 3):
                     #Aqui deve se iniciar a busca por jogadores únicos, verificando suas cores secundárias
                     ally_id = 0
                     for i in range(3):
@@ -710,16 +711,17 @@ def detect_players(img, ballImg, binaryBall, binaryField, alliesColor, enemiesCo
                         if firstColorContours:
                             firstColorContour = max(firstColorContours, key=cv2.contourArea)
                             (xc1, yc1), rc1 = cv2.minEnclosingCircle(firstColorContour)
-                            # print(f"rc1: {rc1}")
+                            print(f"rc1: {rc1}")
                             # print(f"seccolorradiu: {secColorRadius}")
-                            if rc1 >= 0.4*secColorRadius: firstColorFound = True
+                            if rc1 >= 0.00001*secColorRadius: firstColorFound = True
 
                         second_lower_bound, second_upper_bound = create_color_bounds(playersAllColors[i][1])
                         secondColorContours = find_binary_contours(playersWindows[playersCount], second_lower_bound, second_upper_bound)
                         if secondColorContours:
                             secondColorContour = max(secondColorContours, key=cv2.contourArea)
                             (xc2, yc2), rc2 = cv2.minEnclosingCircle(secondColorContour)
-                            if rc2 >= 0.4*secColorRadius: secondColorFound = True
+                            print(f"rc2: {rc2}")
+                            if rc2 >= 0.00001*secColorRadius: secondColorFound = True
 
                         if firstColorFound and secondColorFound: ally_id = (i+1)
 
@@ -806,7 +808,7 @@ def detect_players(img, ballImg, binaryBall, binaryField, alliesColor, enemiesCo
                         yc = int(yc)
                         rc = int(rc)
 
-                        if(rc >= 0.5*mainColorRadius and enemiesCount < 3):
+                        if(rc >= 0.01*mainColorRadius and enemiesCount < 3):
 
                             id = "1"+str(enemiesCount+1)
                             xcm = xi/prop_px_cm

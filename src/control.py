@@ -145,7 +145,7 @@ class Control:
             path_points = self.navigation.estimatePath(self.allies_coordinates[0], self.enemies_coordinates, self.ball_coordinates)
             next_point = self.ball_coordinates
             
-            if len(path_points) > 1:
+            if len(path_points) > 2:
                 next_point = path_points[1]
             
             angle = self.angleBetweenObjects(next_point, self.allies_coordinates[0], self.allies_direction[0])

@@ -710,8 +710,10 @@ class Emulator:
             if self.next_point is not None:
                 x_p = int(self.next_point[0]*self.prop_px_cm)
                 y_p = int(self.next_point[1]*self.prop_px_cm)
-                cv2.circle(self.imgDebug, (x_p, y_p), 2, (0, 255, 255), 2)
-
+                try:
+                    cv2.circle(self.imgDebug, (x_p, y_p), 2, (0, 255, 255), 2)
+                except:
+                    print("Erro ao processar próximo ponto")
             self.resultViewer.show(self.imgDebug)
 
             #Adicionando conteúdos
