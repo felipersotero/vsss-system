@@ -105,7 +105,11 @@ class Robot:
         self.dT =self.newTimestamp - self.lastTimestamp
 
         #calcula valores
-        self.position = np.array([round(x, 1), round(y, 1)])
+        if np.sqrt((x-self.lastPosition[0])**2 + (y-self.lastPosition[1])**2) > 0.5:
+            self.position = np.array([round(x, 1), round(y, 1)])
+        else:
+            self.position = self.lastPosition
+
         self.radius = round(r, 1)
         self.image = image
 
@@ -142,10 +146,16 @@ class Robot:
         self.newTimestamp = self.lastTimestamp
         self.dT =self.newTimestamp - self.lastTimestamp
 
+
+        #avalia se ocorreu uma variação significativa
         #Atualiza ultima posição
         self.lastPosition = self.position
 
-        self.position = np.array([round(x, 1), round(y, 1)])
+        if np.sqrt((x-self.lastPosition[0])**2 + (y-self.lastPosition[1])**2) > 0.5:
+            self.position = np.array([round(x, 1), round(y, 1)])
+        else:
+            self.position = self.lastPosition
+    
         self.radius = round(r, 2)
         self.image = image
 
@@ -834,7 +844,7 @@ class VisionSystem:
         self._lockProc          = threading.Lock()
 
         #Variável importante para ditar quanto tempo até a próxima atualização de dados
-        self.newProcTime        = 3
+        self.newProcTime        = 10
         #Extrai os dados do objeto de configuração 
         self.toMineData()
 
@@ -940,13 +950,16 @@ class VisionSystem:
                     #ponto de referência O´
                     cv2.circle(self.virtualImg, (self.xnv, self.ynv),3,(0,255,255),-1)
                     #desenhando todos os pontos na imagem virtual
-                    
+                
+                self.drawAllRobots()
+
                 #testanto função de detectar jogadores
                 return self.frameResult
             else:
-                print("Não tem campo")
+                self.drawAllRobots()
                 return img
         else:
+            self.drawAllRobots()
             return img
 
 
@@ -988,7 +1001,7 @@ class VisionSystem:
 
             # Executa as tarefas em paralelo
             results = executor.map(lambda task: task[0](*task[1]), tasks)
-
+        self.drawAllRobots()
         
     #lógica completa de processamento do sistema de visão
     def processImg(self, img, debug):
@@ -1019,6 +1032,7 @@ class VisionSystem:
                 self.proc(img,debug)
                 
             else:
+                print("Execução com processamento menor")
                 #atualizo contador
                 self._firstTimeExec = (self.currentTime - self.lastMajorTime)/1000.0
                 
@@ -2851,6 +2865,8 @@ class VisionSystem:
             else:
                 bot.setStatus(True)
 
+        self.drawAllRobots()
+
 
     # método para verificar se numa janela tem um robô com 2as cores configuradas
     def search_robot_noCuda(self, window, team:ID_Team, id:ID_Robots,debug=False) -> bool:
@@ -2920,8 +2936,7 @@ class VisionSystem:
             if(ri > 0.5*self.playerRadius and ri < 1.5*self.playerRadius):
 
                 if(debug): 
-                    with self._lockThread:
-                        cv2.circle(self.frameResult, (int(x_r), int(y_r)), (int(ri) + 5), (0, 255, 0), 2)
+                    cv2.circle(self.frameResult, (int(x_r), int(y_r)), (int(ri) + 5), (0, 255, 0), 2)
 
                 #Encontrou contornos de inimigos na janela
                 if teamColorContours:

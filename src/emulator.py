@@ -737,6 +737,7 @@ class Emulator:
             # verifica se a fila está vazia
             if not self.sent_data_queue.empty():
                 with processing_lock:
+                    self.vs.drawAllRobots()
                     #verifica se tem elementos na fila
                     St1 = self.Timer.getElapsedTime()
 
@@ -750,7 +751,11 @@ class Emulator:
 
                     try:
                         # processando frame que chegou para a imagem 
-                        result = self.vs.proc(frame, debug)
+                        result = self.vs.proc(frame, debug) 
+                        '''
+                            @Saulo: O resultado de processImg() ainda precisa ser corrigido para a previsão dos intervalos de tempo necessários.
+                            A proc() é um processamento muito pesado e gasta muito tempo, já a processImg() tenta otimizar esse procedimento.
+                        '''
                         #puxa a imagem
                         virtual = self.vs.virtualImg
                         # adquirindo os objetos presentes no sistema de visão
@@ -769,8 +774,8 @@ class Emulator:
 
                         #Exibir uma janela de problema
                         traceback.print_exc()
-                        
                     
+                    self.vs.drawAllRobots()
                     #finaliza a contagem de tempo
                     St2 = self.Timer.getElapsedTime()
 
@@ -788,6 +793,7 @@ class Emulator:
             #atualizo informações na interface 
             self.infoCards.update()
             
+            self.vs.drawAllRobots()
             #Delay desta thread
             time.sleep(self.delay/1000)
 
@@ -827,6 +833,7 @@ class Emulator:
                     self.virtualResult.show(self.vs.virtualImg)
 
                     #Adicionando conteúdos
+                    self.vs.drawAllRobots()
                     self.setContentRobots()
                     #========== PARTE DO PROCESSAMENTO
                     ''' Necessário ajustar o Control'''
@@ -837,12 +844,12 @@ class Emulator:
                     #self.commands_queue.queue.clear()
                     #self.commands_queue.put(self.commands)
                 except Exception as e:
+                    self.vs.drawAllRobots()
                     print("[RESULT. THREAD] Ocorreu um erro ao obter resultados:\n", e)
                     traceback.print_exc()
-            else:
-                #print('[RESULT. THREAD]: Fila de resultados vazia.')
-                i=1
+
             # Associada à tarefa interna do GUI do TKINTER
+            self.vs.drawAllRobots()
             self.viewer.window.after(self.delay, self.getResults)
         else:
             print('[RESULT. THREAD]: Thread finalizada. Câmera desligada')
