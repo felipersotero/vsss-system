@@ -43,23 +43,23 @@ class Emulator:
         self.DEBUGA = False
         self.thread = None
         self.capture = Capture(CaptureMode.DEFAULT,False)
-        self.delay = 14 #14 ms
+        self.delay = 8 #14 ms
 
         self.clientMQTT = None
         self.clientSerial = None
         self.commands = None
 
         #filas
-        self.commands_queue = queue.Queue()
-        self.sent_data_queue = queue.Queue()
-        self.received_data_queue = queue.Queue()
+        self.commands_queue = queue.Queue(maxsize=1)
+        self.sent_data_queue = queue.Queue(maxsize=1)
+        self.received_data_queue = queue.Queue(maxsize=1)
         
         #filas para novo processamento
 
 
 
         #deque de no máximo 10 imagens
-        self.maxDeque = 4
+        self.maxDeque = 1
         self.capture_deque = deque(maxlen=self.maxDeque)
 
         self.viewer.config()
@@ -464,7 +464,6 @@ class Emulator:
                 
 
                 # self.firstExecution = True
-                #self.processUSB()
                 self.startThreadsLoop()
 
                 #Trabalhando com filas e threads
@@ -652,7 +651,7 @@ class Emulator:
         while len(self.capture_deque) == 0:  # Espera até que haja pelo menos um elemento no deque
             time.sleep(0.1)  # Espera por 0.1 segundos antes de verificar novamente
 
-        self.frame = self.capture_deque[-1]
+        self.frame = self.capture_deque[-1].copy()
         
         field_data_structure = (self.frame, self.debug_view, self.fieldDimensions, self.OffSetBord, self.OffSetErode, self.MatrixTop, self.BINThresh)
         ball_data_structure = (self.ballColor, self.ball)
@@ -707,7 +706,7 @@ class Emulator:
                 time.sleep(0.02)  # Espera por 0.1 segundos antes de verificar 
                 continue
             
-            self.frame = self.capture_deque[-1]
+            self.frame = self.capture_deque[-1].copy()
 
             #puxando o tempo inicial do processamento, ou seja esse aqui, ou seja, o tempo
             # que a imagem foi pega e enviada
@@ -721,6 +720,7 @@ class Emulator:
                 self.sent_data_queue.queue.clear()
             self.sent_data_queue.put(data_structure)
 
+            self.vs.drawAllRobots()
             time.sleep(self.delay/1000)
         
         print("[PROC. THREAD]: Tarefa finalizada. Câmera desligada")
@@ -730,53 +730,54 @@ class Emulator:
     def new_call_detection_system(self, input_queue, output_queue):
         ''' Thread para processar a imagem que chegou na fila'''
         print("[DETECT.THREAD]: INICIANDO TAREFA.")
+        # Criação do lock
+        processing_lock = threading.Lock()
+
         while self.cameraIsRunning:
             # verifica se a fila está vazia
             if not self.sent_data_queue.empty():
-                #verifica se tem elementos na fila
-                St1 = self.Timer.getElapsedTime()
+                with processing_lock:
+                    #verifica se tem elementos na fila
+                    St1 = self.Timer.getElapsedTime()
 
-                #valores recebidos
-                received_data = self.sent_data_queue.get()
+                    #valores recebidos
+                    received_data = self.sent_data_queue.get()
 
-                #descompactando
-                frame, debug, dT1 = received_data
+                    #descompactando
+                    frame, debug, dT1 = received_data
 
-                dT2 = self.Timer.getElapsedTime()
+                    dT2 = self.Timer.getElapsedTime()
 
-                try:
-                    # processando frame que chegou para a imagem 
-                    result = self.vs.processImg(frame, debug)
+                    try:
+                        # processando frame que chegou para a imagem 
+                        result = self.vs.proc(frame, debug)
+                        #puxa a imagem
+                        virtual = self.vs.virtualImg
+                        # adquirindo os objetos presentes no sistema de visão
+                        objects = self.vs.getObjects()
+                        #dados que serão retornados
+                        data = {'result': result, 
+                                        'virtual': virtual,
+                                        'objects': objects}
 
-                    #puxa a imagem
-                    virtual = self.vs.virtualImg
+                        # enviando de volta
+                        output_queue.queue.clear()
+                        output_queue.put(data)
 
-                    # adquirindo os objetos presentes no sistema de visão
-                    objects = self.vs.getObjects()
+                    except Exception as e:
+                        print("[DETECT.THREAD] Ocorreu um erro ao processar:\n",e)
 
-                    #dados que serão retornados
-                    data = {'result': result, 
-                            'virtual': virtual,
-                            'objects': objects}
-
-                    # enviando de volta
-                    output_queue.queue.clear()
-                    output_queue.put(data)
-
-                except Exception as e:
-                    print("[DETECT.THREAD] Ocorreu um erro ao processar:\n",e)
-
-                    #Exibir uma janela de problema
-                    traceback.print_exc()
+                        #Exibir uma janela de problema
+                        traceback.print_exc()
+                        
                     
-                
-                #finaliza a contagem de tempo
-                St2 = self.Timer.getElapsedTime()
+                    #finaliza a contagem de tempo
+                    St2 = self.Timer.getElapsedTime()
 
-                self.totalTime = (dT2 - dT1)
-                self.frameTime = (St2 - St1)
-                self.FPStime = int(1000.0 / self.frameTime if self.frameTime != 0 else 0)
-                self.realTime = self.Timer.getElapsedTime() / 1000
+                    self.totalTime = (dT2 - dT1)
+                    self.frameTime = (St2 - St1)
+                    self.FPStime = int(1000.0 / self.frameTime if self.frameTime != 0 else 0)
+                    self.realTime = self.Timer.getElapsedTime() / 1000
 
             else:
                 #pausa a execução por 10 ms
@@ -797,45 +798,50 @@ class Emulator:
         
         Esse código precisa utilizar o after do root da janela principal do tkinter'''
         if self.cameraIsRunning:
-            if not self.received_data_queue.empty(): 
-                data = self.received_data_queue.get()
+            if not self.received_data_queue.empty():
+                try:
+                    data = self.received_data_queue.get()
 
-                objects             = data['objects']
-                self.result         = data['result']
-                self.virtualRImg    = data['virtual']
+                    objects             = data['objects']
+                    self.result         = data['result']
+                    self.virtualRImg    = data['virtual']
 
-                #extraindo objetos
-                self.field      = objects[ID_Objects.FIELD]
-                self.ball       = objects[ID_Objects.BALL]
-                self.allies     = objects[ID_Objects.ALLIES]
-                self.enemies    = objects[ID_Objects.ENEMIES]
+                    #extraindo objetos
+                    self.field      = objects[ID_Objects.FIELD]
+                    self.ball       = objects[ID_Objects.BALL]
+                    self.allies     = objects[ID_Objects.ALLIES]
+                    self.enemies    = objects[ID_Objects.ENEMIES]
 
-                #Atualizo informações do cards sobre funcionalidade
-                self.infoCards.updateFuncs()
-                self.viewer.show(self.frame)
+                    #Atualizo informações do cards sobre funcionalidade
+                    self.infoCards.updateFuncs()
+                    self.viewer.show(self.frame)
 
-                if(self.DEBUGA == True):
-                    binary_treat, binaryBall, binaryPlayers, binaryTeam = self.vs.getDebugImages()
-                    self.debugFieldViewer.show(binary_treat)
-                    self.debugObjectsViewer.show(binaryBall)
-                    self.debugPlayersViewer.show(binaryPlayers)
-                    self.debugTeamViewer.show(binaryTeam)
-                
-                self.resultViewer.show(self.result)
-                self.virtualResult.show(self.vs.virtualImg)
+                    if(self.DEBUGA == True):
+                        binary_treat, binaryBall, binaryPlayers, binaryTeam = self.vs.getDebugImages()
+                        if binary_treat is not None: self.debugFieldViewer.show(binary_treat)
+                        if binaryBall is not None: self.debugObjectsViewer.show(binaryBall)
+                        if binaryPlayers is not None: self.debugPlayersViewer.show(binaryPlayers)
+                        if binaryTeam is not None: self.debugTeamViewer.show(binaryTeam)
+                    
+                    self.resultViewer.show(self.result)
+                    self.virtualResult.show(self.vs.virtualImg)
 
-                #Adicionando conteúdos
-                self.setContentRobots()
-
-                #========== PARTE DO PROCESSAMENTO
-                ''' Necessário ajustar o Control'''
-                self.control.updateObjectsValues(self.field, self.ball, self.allies, self.enemies)
-                #self.commands = self.control.processControl()
-                
-                #enviando novos comandos
-                #self.commands_queue.queue.clear()
-                #self.commands_queue.put(self.commands)
-
+                    #Adicionando conteúdos
+                    self.setContentRobots()
+                    #========== PARTE DO PROCESSAMENTO
+                    ''' Necessário ajustar o Control'''
+                    self.control.updateObjectsValues(self.field, self.ball, self.allies, self.enemies)
+                    #self.commands = self.control.processControl()
+                    
+                    #enviando novos comandos
+                    #self.commands_queue.queue.clear()
+                    #self.commands_queue.put(self.commands)
+                except Exception as e:
+                    print("[RESULT. THREAD] Ocorreu um erro ao obter resultados:\n", e)
+                    traceback.print_exc()
+            else:
+                #print('[RESULT. THREAD]: Fila de resultados vazia.')
+                i=1
             # Associada à tarefa interna do GUI do TKINTER
             self.viewer.window.after(self.delay, self.getResults)
         else:
@@ -854,6 +860,7 @@ class Emulator:
 
         #tempo para ajeitar tudo
         time.sleep(0.010)
+
         #dando start na thread de detecção
         #possível perda de desempenho para ser analisado
         self.procVideoThread = threading.Thread(target=self.new_call_detection_system, args=(self.sent_data_queue, self.received_data_queue))
@@ -886,9 +893,9 @@ class Emulator:
         St1i = self.Timer.getElapsedTime()
         self.capture.setImagePath(self.ImgPath)
         self.frame = self.capture.getImage()
-
+        self.debugFrame = self.frame.copy()
         #Método de RUN para imagem
-        result = self.vs.proc(self.frame, debug=self.DEBUGA)
+        result = self.vs.processImg(self.debugFrame, debug=self.DEBUGA)
 
         #retornando valores
         St2i = self.Timer.getElapsedTime()

@@ -19,7 +19,9 @@ class App:
         
         #estilo do tema do tkinter
         '''        
-        theme_choice = "breeze"
+        theme_choi
+        
+        ce = "breeze"
 
         style =ThemedStyle(root)
         style.theme_use(theme_choice)'''
@@ -262,7 +264,7 @@ class App:
         self.menu.att_node_id('I020','Em execução.')
         self.menu.save_to_json('config')
 
-    def stop_emulate(self):
+    def stop_emulate(self): 
         self.emulator.stop()
         self.btn_stop.pack_forget()
         self.btn_run.pack(fill=BOTH, expand=1)
