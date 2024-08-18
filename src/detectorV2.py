@@ -1,5 +1,5 @@
 # ==========================================================================================
-# MÓDULO DE FUNÇÕES PARA ALGORÍTMO DE DETECÇÃO VSS (version v2.2.26)
+# MÓDULO DE FUNÇÕES PARA ALGORÍTMO DE DETECÇÃO VSS (version v2.2.40)
 #==========================================================================================
 '''
     @GNOMIO: O algorítmo de detecção terá agora uma nova lógica de programação, no qual ele é conti-
@@ -981,28 +981,38 @@ class VisionSystem:
         
         #Imagem para processamento é uma janela da imagem original passada
         self.fieldReduce = img[y_w:y_w+h_w,x_w:x_w+w_w]
-        self.frameResult = self.fieldReduce.copy()
+        self.frameResult = self.fieldReduce
 
         #só criando outra variável
         timestamp = tms 
 
+        if not hasattr(self, 'executor'):
+            self.executor = ThreadPoolExecutor(max_workers=2)
 
-        with ThreadPoolExecutor(max_workers=8) as executor:
-            # Lista de argumentos para cada chamada de função
-            tasks = [
-                (self.predictBall, (timestamp,)),
-                (self.predictRobot, (ID_Team.TEAM_ALLY, ID_Robots.ROBOT_ALLY_GOAL, timestamp)),
-                (self.predictRobot, (ID_Team.TEAM_ALLY, ID_Robots.ROBOT_ALLY_1, timestamp)),
-                (self.predictRobot, (ID_Team.TEAM_ALLY, ID_Robots.ROBOT_ALLY_2, timestamp)),
-                (self.predictRobot, (ID_Team.TEAM_ENEMY, ID_Robots.ROBOT_ENEMY_GOAL, timestamp)),
-                (self.predictRobot, (ID_Team.TEAM_ENEMY, ID_Robots.ROBOT_ENEMY_1, timestamp)),
-                (self.predictRobot, (ID_Team.TEAM_ENEMY, ID_Robots.ROBOT_ENEMY_2, timestamp))
-            ]
+        tasks =[
+            (self._processAlliesAndBall, timestamp),
+            (self._processEnemies, timestamp)
+        ]
 
-            # Executa as tarefas em paralelo
-            results = executor.map(lambda task: task[0](*task[1]), tasks)
-        self.drawAllRobots()
+        results = self.executor.map(lambda task: task[0](*task[1]), tasks)
         
+        self.drawAllRobots()
+
+    #função para processar os aliados e a bola
+    def _processAlliesAndBall(self, timestamp):
+        # Processa a bola e todos os aliados
+        self.predictBall(timestamp)
+        self.predictRobot(ID_Team.TEAM_ALLY, ID_Robots.ROBOT_ALLY_GOAL, timestamp)
+        self.predictRobot(ID_Team.TEAM_ALLY, ID_Robots.ROBOT_ALLY_1, timestamp)
+        self.predictRobot(ID_Team.TEAM_ALLY, ID_Robots.ROBOT_ALLY_2, timestamp)
+
+    #função para processar os inimigos
+    def _processEnemies(self, timestamp):
+        # Processa todos os inimigos
+        self.predictRobot(ID_Team.TEAM_ENEMY, ID_Robots.ROBOT_ENEMY_GOAL, timestamp)
+        self.predictRobot(ID_Team.TEAM_ENEMY, ID_Robots.ROBOT_ENEMY_1, timestamp)
+        self.predictRobot(ID_Team.TEAM_ENEMY, ID_Robots.ROBOT_ENEMY_2, timestamp) 
+    
     #lógica completa de processamento do sistema de visão
     def processImg(self, img, debug):
         '''
@@ -1054,6 +1064,7 @@ class VisionSystem:
         tmf = self.timer.getElapsedTime()
         self.dT = tmf - self.currentTime
                 
+        #Exibir qual o tempo atual, e exibirzd
         #retorno da função
         return self.frameResult
 
