@@ -681,7 +681,7 @@ class HighPrecisionTimer:
             self._isRunning = False
         else:
             print("O timer ainda não foi iniciado...")
-            
+
     def reset(self):
         '''
             Resetar o timer para 0.
@@ -738,7 +738,7 @@ class Capture:
         Classe responsável por ser o intermédio entre a forma de capturar informações
         e o emulador.
     '''
-    def __init__(self, mode: CaptureMode.DEFAULT, useGpu:bool):
+    def __init__(self, mode: CaptureMode.DEFAULT, useGpu: bool = False): # type: ignore
         '''
             Inicializo o objeto informando o modo de captura: DEFAULT, CAM, IMG ou Video.
             E também informo se vou ou não utilizar GPU (True ou False)

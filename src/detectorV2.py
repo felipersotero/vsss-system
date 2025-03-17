@@ -1021,6 +1021,10 @@ class VisionSystem:
         '''
         self.debug = debug 
 
+        #Reseta informações
+        if self.emulatorMode == MODE_IMAGE:
+            self._count = 0
+
         #self.frameOrigin = self.upSaturation_noCuda(img) 
         self.frameOrigin = img 
 
@@ -1066,6 +1070,7 @@ class VisionSystem:
                 
         #Exibir qual o tempo atual, e exibirzd
         #retorno da função
+
         return self.frameResult
 
 
