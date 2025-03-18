@@ -223,9 +223,13 @@ class Robot:
         self.newTimeStamp = timestamp
         self.dT = self.newTimeStamp - self.oldTimestamp
 
-        if timestamp != 0: self.velocity = self.direction / self.dT
+        if timestamp != 0: 
+            if self.dT > 0.01:  # mínimo de 10ms
+                self.velocity = self.direction / self.dT
+            else:
+                self.velocity = np.array([0, 0])
         else:
-            self.velocity = 0
+            self.velocity = np.array[0,0]
 
         return self.velocity
     
@@ -402,7 +406,11 @@ class Ball:
         self.dT = self.newTimeStamp - self.oldTimestamp
 
         #calculo a velocidade 
-        if timestamp != 0: self.velocity = self.direction / self.dT
+        if timestamp != 0: 
+            if self.dT > 0.01:  # mínimo de 10ms
+                self.velocity = self.direction / self.dT
+            else:
+                self.velocity = np.array([0, 0])
         else:
             self.velocity = np.array[0,0]
 

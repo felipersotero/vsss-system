@@ -890,7 +890,7 @@ class Capture:
         self.videoPath = pathVideo
 
     '''
-    @GNOMIO: essa função "getImage" deve ser utilizada dentro dum loop quand oem vídeo
+    @GNOMIO: essa função "getImage" deve ser utilizada dentro dum loop quando em vídeo
     '''
     # Retorna a imagem da captura
     def getImageNoCuda(self):
