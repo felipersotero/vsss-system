@@ -2,6 +2,7 @@ from tkinter import *
 from tkinter import ttk
 from tkinter.ttk import Treeview, Scrollbar, Entry, Style
 from tkinter import simpledialog, messagebox, filedialog
+from ttkthemes import ThemedStyle
 import cv2
 from PIL import Image, ImageTk, ImageGrab
 import json
@@ -18,10 +19,14 @@ import re
 
 #Bibliotecas 
 from detector import *
-
+from detectorV2 import *
 
 #suporte a GPU
 from cv2 import cuda
 import platform 
 import pycuda.driver as pycuda
 import numba
+from objects import *
+
+# Inicializar o ambiente OpenCL
+if cv2.ocl.haveOpenCL(): cv2.ocl.setUseOpenCL(True)

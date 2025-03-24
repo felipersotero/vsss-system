@@ -13,10 +13,19 @@ execution = False
 class App:
     def __init__(self):
         root = Tk()
-        self.root = root
+        self.root = root    
         self.menu = None
         self.menuTop= None
         
+        #estilo do tema do tkinter
+        '''        
+        theme_choi
+        
+        ce = "breeze"
+
+        style =ThemedStyle(root)
+        style.theme_use(theme_choice)'''
+
         #verifica qual o sistema operacional
         self.system = platform.system()
         self.release = platform.release()
@@ -46,10 +55,12 @@ class App:
         self.debugPlayers = MyViewer(self.tab4)
         self.debugTeam = MyViewer(self.tab5)
         self.result = MyViewer(self.tab6)
+        self.virtualVision = MyViewer(self.tab51)   #Mostra a virtualização da imagem
 
         self.cards = []
-        for i in range(6):
-            self.card = Card(self.players_infos, f"Jogador {i+1}", "white")
+        self.names = ['Goleiro (A)', 'Atacante 1 (A)','Atacante 2 (A)','Goleiro (E)', 'Atacante 1 (E)','Atacante 2 (E)' ]
+        for name in self.names:
+            self.card = Card(self.players_infos, "{}".format(name), "white")
             self.cards.append(self.card)
 
         for i, card in enumerate(self.cards):
@@ -71,7 +82,8 @@ class App:
 
         #inicia looping principal
         root.mainloop()
-    
+
+
     #configarando menu
 
     #configurando a janela do projeto
@@ -172,6 +184,7 @@ class App:
         self.tab3 = Frame(self.tabs)
         self.tab4 = Frame(self.tabs)
         self.tab5 = Frame(self.tabs)
+        self.tab51 = Frame(self.tabs)
         self.tab6 = Frame(self.tabs)
 
         self.tab1.configure(background="black")
@@ -179,6 +192,7 @@ class App:
         self.tab3.configure(background="black")
         self.tab4.configure(background="black")
         self.tab5.configure(background="black")
+        self.tab51.configure(background='black')
         self.tab6.configure(background="black")
 
         self.tabs.add(self.tab1, text="Imagem")
@@ -186,6 +200,7 @@ class App:
         self.tabs.add(self.tab3, text="Debug bola")
         self.tabs.add(self.tab4, text="Debug jogadores")
         self.tabs.add(self.tab5, text="Debug time")
+        self.tabs.add(self.tab51, text = "Virtual")
         self.tabs.add(self.tab6, text="Resultado")
 
         self.tabs.place(relx=0, rely=0, relwidth=1, relheight=1)
@@ -215,12 +230,12 @@ class App:
 
         CalColor=self.menu.add_node(SysVision,'ColorCalibration','Calibração das Cores', value='')
         self.menu.add_node(CalColor,'mainColor','Cor principal', value='[ 90 128 128]')
-        self.menu.add_node(CalColor,'j1Color1','J1 Cor 1', value='[ 90 128 128]')
-        self.menu.add_node(CalColor,'j1Color2','J1 Cor 2', value='[ 90 128 128]')
-        self.menu.add_node(CalColor,'j2Color1','J2 Cor 1', value='[ 90 128 128]')
-        self.menu.add_node(CalColor,'j2Color2','J2 Cor 2', value='[ 90 128 128]')
-        self.menu.add_node(CalColor,'j3Color1','J3 Cor 1', value='[ 90 128 128]')
-        self.menu.add_node(CalColor,'j3Color2','J3 Cor 2', value='[ 90 128 128]')
+        self.menu.add_node(CalColor,'j1Color1','Goal Cor 1', value='[ 90 128 128]')
+        self.menu.add_node(CalColor,'j1Color2','Goal Cor 2', value='[ 90 128 128]')
+        self.menu.add_node(CalColor,'j2Color1','Atk1 Cor 1', value='[ 90 128 128]')
+        self.menu.add_node(CalColor,'j2Color2','Atk1 Cor 2', value='[ 90 128 128]')
+        self.menu.add_node(CalColor,'j3Color1','Atk2 Cor 1', value='[ 90 128 128]')
+        self.menu.add_node(CalColor,'j3Color2','Atk2 Cor 2', value='[ 90 128 128]')
         self.menu.add_node(CalColor,'enemyColor','Cor inimigos', value='[ 90 128 128]')   
         self.menu.add_node(CalColor,'ballColor','Cor da bola', value='[9 93 220]')
         
@@ -241,7 +256,7 @@ class App:
     def init_emulate(self):
         print("[APP] Emulação Iniciada")
         self.emulator.load_vars()
-        self.emulator.show_variables()
+        #self.emulator.show_variables()
         
         self.menu.save_to_json('config')
 
@@ -249,7 +264,7 @@ class App:
         self.menu.att_node_id('I020','Em execução.')
         self.menu.save_to_json('config')
 
-    def stop_emulate(self):
+    def stop_emulate(self): 
         self.emulator.stop()
         self.btn_stop.pack_forget()
         self.btn_run.pack(fill=BOTH, expand=1)

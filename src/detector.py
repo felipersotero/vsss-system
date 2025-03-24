@@ -214,15 +214,10 @@ def reduce_field(BinImg, Img, fieldWidth, prop_px_cm, d=10):
         # print(f"offset: {d}")
         #Vetor das coordenadas
         cooVetor = [x,y,w,h]
-        pontosIniciais = np.float32([[x-d,y-d],[x+w+d,y-d],[x-d,y+h+d],[x+w+d,y+h+d]])
-        novosExtremos = np.float32([[0,0],[w,0],[0,h],[w,h]])
 
-        #Matriz de transformação para nova perspectiva
-        matrizPerspectiva = cv2.getPerspectiveTransform(pontosIniciais,novosExtremos)
-
-        #revisando nova imagem para processamento
-        img_Reduce = cv2.warpPerspective(Img, matrizPerspectiva, (w,h))
-        bin_Reduce = cv2.warpPerspective(BinImg, matrizPerspectiva, (w,h))
+        # Extrair região de interesse da imagem
+        img_Reduce = Img[int(y-d):int(y+h+d), int(x-d):int(x+w+d)]
+        bin_Reduce = BinImg[int(y-d):int(y+h+d), int(x-d):int(x+w+d)]
 
     except:
         #Se ele não conseguir, retorna a imagem inicial...
@@ -342,6 +337,57 @@ def draw_player_circle(imgDegub, robot, prop_px_cm=1):
     text = f"{team} {id}: {str(x)}, {str(y)}"
     cv2.putText(imgDegub, text , (int(xi),int(yi+ri+20)), cv2.FONT_HERSHEY_SIMPLEX, 0.4, color, 1)
 
+#função para tratar imagem e retornar os objetos mais próximos de quadrados
+def isSquare(contorno, prop_px_cm):
+    '''
+        Essa função trata da imagem e verifica se ele é um robô e não um ruído.
+        Isso é realizado verificando se é ou não próximo de um quadrado.
+    '''
+    perimetro = cv2.arcLength(contorno, True)
+    approx = cv2.approxPolyDP(contorno, 0.04 * perimetro, True)
+    if len(approx) == 4:
+        # Verificar se é um quadrado
+        x, y, w, h = cv2.boundingRect(approx)
+        aspect_ratio = float(w) / h
+        if 0.7 <= aspect_ratio <= 1.3: #Esses valores foram chutados
+            if np.sqrt(w*w+h*h) >= (7.5/4)*np.sqrt(2)*prop_px_cm:
+                # Desenhar contorno do quadrado na máscara
+                return True
+            else:
+                return False
+        else:
+            return False
+
+#função que trata a imagem binarizada dos jogadores e retorna apenas eles na imagem
+def detect_squares(imgBin):
+    '''
+        Essa função trata a imagem dos robôs e retorna a imagem apenas com os robôs
+    '''
+    try:
+        # Encontrar contornos
+        contours, _ = cv2.findContours(imgBin, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        # Criar uma máscara em branco para os quadrados
+        mascara = np.zeros_like(imgBin)
+        # Iterar sobre os contornos encontrados para encontrar os quadrados
+        for contorno in contours:
+            perimetro = cv2.arcLength(contorno, True)
+            approx = cv2.approxPolyDP(contorno, 0.04 * perimetro, True)
+            if len(approx) == 4:
+                # Verificar se é um quadrado
+                x, y, w, h = cv2.boundingRect(approx)
+                aspect_ratio = float(w) / h
+                if 0.7 <= aspect_ratio <= 1.3:
+                    # Desenhar contorno do quadrado na máscara
+                    cv2.drawContours(mascara, [contorno], 0, 255, -1)
+        # Aplicar a máscara na imagem binarizada
+        bin_res = cv2.bitwise_and(imgBin, imgBin, mask=mascara)
+        # Retorna a imagem tratada
+        return bin_res
+    except Exception as e:
+        # Se ocorrer uma exceção, retorna a imagem original
+        print("Erro ao processar imagem:", e)
+        return imgBin
+        
 #======================|| FUNÇÕES MODULARES ||=========================#
 '''
     Obs: Funções módulares são funções mais complexas construídas com
@@ -590,212 +636,48 @@ def detect_players(img, ballImg, binaryBall, binaryField, alliesColor, enemiesCo
     mainColorRadius = (7.5/4)*np.sqrt(5)*prop_px_cm
     secColorRadius = (playerRadius/2)
 
+    #print("Cor e player radius:", mainColorRadius, " ", playerRadius, " ", prop_px_cm)
+
     # print("Raio do jogador: ", playerRadius)
     # print("Raio da cor principal: ", mainColorRadius)
-
+    #procura quais objetos são realmente 
     for currentPlayer in players:
-        #Encontrando posição de cada um dos carros identificados
-        (xi,yi), ri = cv2.minEnclosingCircle(currentPlayer)
+        #verifica se o objeto é um quadrado
+        if isSquare(currentPlayer, prop_px_cm):
+            #Encontrando posição de cada um dos carros identificados
+            (xi,yi), ri = cv2.minEnclosingCircle(currentPlayer)
 
-        # xcm = xi/prop_px_cm
-        # ycm = yi/prop_px_cm
-        # rcm = ri/prop_px_cm
+            # xcm = xi/prop_px_cm
+            # ycm = yi/prop_px_cm
+            # rcm = ri/prop_px_cm
 
+            #verifico primeiro se é um quadrado
 
-        # playerRadius = 24
-        # secColorRadius = playerRadius/2
+            #Objetos com raios maiores que certo valor serão considerados como jogadores
+            if(ri > 0.5*playerRadius and ri < 1.5*playerRadius and playersCount < 6): #4*prop_px_cm
 
-        # print("Raio do jogador: ", playerRadius)
-        # print("Raio encontrado: ", ri/prop_px_cm)
+                if(debug):
+                    cv2.circle(imgDegub, (int(xi), int(yi)), (int(ri) + 5), (0, 255, 0), 2)
 
+                #Traçando janelas (winSize x winSize)
+                # winSize = int(200) #18*prop_px_cm
+                winSize = int(18*prop_px_cm) #18*prop_px_cm
+                # print("Tamanho da janela: ", winSize)
+                initPt = np.float32([[xi-(winSize/2),yi-(winSize/2)],[xi+(winSize/2),yi-(winSize/2)],[xi-(winSize/2),yi+(winSize/2)],[xi+(winSize/2),yi+(winSize/2)]])
+                endPt = np.float32([[0,0],[winSize,0],[0,winSize],[winSize,winSize]])
 
-        #Objetos com raios maiores que certo valor serão considerados como jogadores
-        if(ri > 0.5*playerRadius and ri < 1.5*playerRadius and playersCount < 6): #4*prop_px_cm
+                #Matriz de transformação para nova perspectiva
+                perspecMatrix = cv2.getPerspectiveTransform(initPt, endPt)
 
-            if(debug):
-                cv2.circle(imgDegub, (int(xi), int(yi)), (int(ri) + 5), (0, 255, 0), 2)
+                playersWindows[playersCount] = (cv2.warpPerspective(img, perspecMatrix, (winSize,winSize)))
 
-            #Traçando janelas (winSize x winSize)
-            # winSize = int(200) #18*prop_px_cm
-            winSize = int(18*prop_px_cm) #18*prop_px_cm
-            # print("Tamanho da janela: ", winSize)
-            initPt = np.float32([[xi-(winSize/2),yi-(winSize/2)],[xi+(winSize/2),yi-(winSize/2)],[xi-(winSize/2),yi+(winSize/2)],[xi+(winSize/2),yi+(winSize/2)]])
-            endPt = np.float32([[0,0],[winSize,0],[0,winSize],[winSize,winSize]])
+                mainColorContours = find_binary_contours(playersWindows[playersCount], ally_lower_bound, ally_upper_bound)
+                enemyColorContours = find_binary_contours(playersWindows[playersCount], enemy_lower_bound, enemy_upper_bound)
 
-            #Matriz de transformação para nova perspectiva
-            perspecMatrix = cv2.getPerspectiveTransform(initPt, endPt)
-
-            playersWindows[playersCount] = (cv2.warpPerspective(img, perspecMatrix, (winSize,winSize)))
-
-            mainColorContours = find_binary_contours(playersWindows[playersCount], ally_lower_bound, ally_upper_bound)
-            enemyColorContours = find_binary_contours(playersWindows[playersCount], enemy_lower_bound, enemy_upper_bound)
-
-            # print(f"Quantidade de contornos de inimigos: {len(enemyColorContours)}")
-            
-            if not mainColorContours:
+                # print(f"Quantidade de contornos de inimigos: {len(enemyColorContours)}")
                 
-                if enemyColorContours:
-                    enemyColorContour = max(enemyColorContours, key=cv2.contourArea)
-                    (xc, yc), rc = cv2.minEnclosingCircle(enemyColorContour)
-
-                    # print("Raio da cor principal inimigo: ", rc)
-
-                    xc = int(xc)
-                    yc = int(yc)
-                    rc = int(rc)
-
-                    if(rc >= 0.5*mainColorRadius and enemiesCount < 3):
-
-                        xcm = xi/prop_px_cm
-                        ycm = yi/prop_px_cm
-                        rcm = ri/prop_px_cm
-
-                        id = "1"+str(enemiesCount+1)
-                        if enemies_list[enemiesCount] is None:
-                            robot = Robot(id, "Inimigo", xcm, ycm, rcm, playersWindows[playersCount])
-                            robot.set_status(True)
-                            enemies_list[enemiesCount] = robot
-                        
-                        else:
-                            robot = enemies_list[enemiesCount]
-                            robot.update_position(xcm, ycm, rcm, playersWindows[playersCount])
-                            robot.set_status(True)
-
-                        robots[playersCount] = (robot)
-                        enimiesWindows[enemiesCount] = (playersWindows[playersCount])
-
-                        playerCenterX = winSize/2
-                        playerCenterY = winSize/2
-
-                        dx = playerCenterX - xc
-                        dy = playerCenterY - yc
-
-                        robot.update_direction(dx, dy)
-                        
-                        xi = int(xi)
-                        yi = int(yi)
-                        ri = int(ri)
-
-                        # cv2.circle(imgDegub, (xi, yi), (ri + 5), (0, 0, 255), 3)
-                        # text = "Inimigo: " + str(xi) + ", " + str(yi)
-                        # cv2.putText(imgDegub, text , (int(xi),int(yi+ri+20)), cv2.FONT_HERSHEY_SIMPLEX,0.4,(0, 0, 255), 1)
-
-                        if(debug): draw_player_circle(imgDegub, robot, prop_px_cm)
-
-                        enemiesCount += 1
-
-            else:
-                mainColorContour = max(mainColorContours, key=cv2.contourArea)
-
-                #for currentMainColor in mainColorContour:
-                (xc, yc), rc = cv2.minEnclosingCircle(mainColorContour)
-
-                # print("Raio da cor principal: ", rc)
-
-                xc = int(xc)
-                yc = int(yc)
-                rc = int(rc)
-
-                # print(f"Raio da cor principal: {mainColorRadius} - {rc}")
-
-                if(rc >= 0.5*mainColorRadius and alliesCount < 3):
-                    #Aqui deve se iniciar a busca por jogadores únicos, verificando suas cores secundárias
-                    ally_id = 0
-                    for i in range(3):
-                        firstColorFound = False
-                        secondColorFound = False
-
-                        first_lower_bound, first_upper_bound = create_color_bounds(playersAllColors[i][0])
-                        firstColorContours = find_binary_contours(playersWindows[playersCount], first_lower_bound, first_upper_bound)
-                        if firstColorContours:
-                            firstColorContour = max(firstColorContours, key=cv2.contourArea)
-                            (xc1, yc1), rc1 = cv2.minEnclosingCircle(firstColorContour)
-                            # print(f"rc1: {rc1}")
-                            # print(f"seccolorradiu: {secColorRadius}")
-                            if rc1 >= 0.4*secColorRadius: firstColorFound = True
-
-                        second_lower_bound, second_upper_bound = create_color_bounds(playersAllColors[i][1])
-                        secondColorContours = find_binary_contours(playersWindows[playersCount], second_lower_bound, second_upper_bound)
-                        if secondColorContours:
-                            secondColorContour = max(secondColorContours, key=cv2.contourArea)
-                            (xc2, yc2), rc2 = cv2.minEnclosingCircle(secondColorContour)
-                            if rc2 >= 0.4*secColorRadius: secondColorFound = True
-
-                        if firstColorFound and secondColorFound: ally_id = (i+1)
-
+                if not mainColorContours:
                     
-                    id = "0"+str(ally_id)
-                    xcm = xi/prop_px_cm
-                    ycm = yi/prop_px_cm
-                    rcm = ri/prop_px_cm
-
-                    if ally_id != 0:
-                        if allies_list[ally_id-1] is None:
-                            robot = Robot(id,  "Aliado", xcm, ycm, rcm, playersWindows[playersCount])
-                            robot.set_status(True)
-                            allies_list[ally_id-1] = robot
-                        
-                        else:
-                            robot = allies_list[ally_id-1]
-                            robot.update_position(xcm, ycm, rcm, playersWindows[playersCount])
-                            robot.set_status(True)
-
-                        robots[playersCount] = (robot)
-                        alliesWindows[alliesCount] = (playersWindows[playersCount])
-
-                        #Conversão de coordenadas, da janela para a geral
-                        xi = int(xi)
-                        yi = int(yi)
-                        ri = int(ri)
-
-                        xci = int(xi - (winSize/2) + xc)
-                        yci = int(yi - (winSize/2) + yc)
-
-                        if(debug): draw_player_circle(imgDegub, robot, prop_px_cm)
-
-                        # cv2.circle(imgDegub, (xci, yci), (rc + 5), (0, 255, 0), 2)
-                        # cv2.putText(imgDegub,"Cor", (int(xci+5),int(yci+5)), cv2.FONT_HERSHEY_SIMPLEX,0.4,(0,255,0), 1)
-
-                        # xb = ball_object.position[0]
-                        # yb = ball_object.position[1]
-                        # cv2.arrowedLine(imgDegub, (xi, yi), (xb, yb), (0, 50, 200), 2)
-
-                        #Calculando centro da janela de cada jogador
-                        playerCenterX = winSize/2
-                        playerCenterY = winSize/2
-
-                        dx = playerCenterX - xc
-                        dy = playerCenterY - yc
-
-                        robot.update_direction(dx, dy)
-
-                        h = 50
-                        if(dx > 0):
-                            angular_coef = dy/dx
-                            theta = np.arctan(angular_coef)
-                            Dx = h*np.cos(theta)
-                            Dy = h*np.sin(theta)
-                        elif(dx < 0):
-                            angular_coef = dy/dx
-                            theta = np.arctan(angular_coef)
-                            Dx = -(h*np.cos(theta))
-                            Dy = -(h*np.sin(theta))
-                        else:
-                            Dx = 0
-                            Dy = h
-
-                        xi = int(xi)
-                        yi = int(yi)
-                        ri = int(ri)
-
-                        if(debug):
-                            cv2.arrowedLine(imgDegub, (xi, yi), (xi+int(Dx), yi+int(Dy)), (0,255,0), 2)
-                            # cv2.circle(imgDegub, (xi, yi), (ri + 5), (255, 0, 0), 2)
-
-                        alliesCount += 1
-
-                else:
-
                     if enemyColorContours:
                         enemyColorContour = max(enemyColorContours, key=cv2.contourArea)
                         (xc, yc), rc = cv2.minEnclosingCircle(enemyColorContour)
@@ -808,13 +690,13 @@ def detect_players(img, ballImg, binaryBall, binaryField, alliesColor, enemiesCo
 
                         if(rc >= 0.5*mainColorRadius and enemiesCount < 3):
 
-                            id = "1"+str(enemiesCount+1)
                             xcm = xi/prop_px_cm
                             ycm = yi/prop_px_cm
                             rcm = ri/prop_px_cm
 
+                            id = "1"+str(enemiesCount+1)
                             if enemies_list[enemiesCount] is None:
-                                robot = Robot(id,  "Inimigo", xcm, ycm, rcm, playersWindows[playersCount])
+                                robot = Robot(id, "Inimigo", xcm, ycm, rcm, playersWindows[playersCount])
                                 robot.set_status(True)
                                 enemies_list[enemiesCount] = robot
                             
@@ -833,7 +715,7 @@ def detect_players(img, ballImg, binaryBall, binaryField, alliesColor, enemiesCo
                             dy = playerCenterY - yc
 
                             robot.update_direction(dx, dy)
-                        
+                            
                             xi = int(xi)
                             yi = int(yi)
                             ri = int(ri)
@@ -845,10 +727,174 @@ def detect_players(img, ballImg, binaryBall, binaryField, alliesColor, enemiesCo
                             if(debug): draw_player_circle(imgDegub, robot, prop_px_cm)
 
                             enemiesCount += 1
-            
-            # print(f"QUANTIDADE DE JOGADORES: {playersCount}")
-            playersCount += 1
 
+                else: #É um aliado
+                    mainColorContour = max(mainColorContours, key=cv2.contourArea)
+
+                    #for currentMainColor in mainColorContour:
+                    (xc, yc), rc = cv2.minEnclosingCircle(mainColorContour)
+
+                    # print("Raio da cor principal: ", rc)
+
+                    xc = int(xc)
+                    yc = int(yc)
+                    rc = int(rc)
+
+                    # print(f"Raio da cor principal: {mainColorRadius} - {rc}")
+
+                    if(rc >= 0.5*mainColorRadius and alliesCount < 3):
+                        #Aqui deve se iniciar a busca por jogadores únicos, verificando suas cores secundárias
+                        ally_id = 0
+                        for i in range(3):
+                            firstColorFound = False
+                            secondColorFound = False
+                            
+                            first_lower_bound, first_upper_bound = create_color_bounds(playersAllColors[i][0])
+
+                            firstColorContours = find_binary_contours(playersWindows[playersCount], first_lower_bound, first_upper_bound)
+                            if firstColorContours:
+                                firstColorContour = max(firstColorContours, key=cv2.contourArea)
+                                (xc1, yc1), rc1 = cv2.minEnclosingCircle(firstColorContour)
+                                # print(f"rc1: {rc1}")
+                                # print(f"seccolorradiu: {secColorRadius}")
+                                if rc1 >= 0.4*secColorRadius: firstColorFound = True
+
+                            second_lower_bound, second_upper_bound = create_color_bounds(playersAllColors[i][1])
+                            secondColorContours = find_binary_contours(playersWindows[playersCount], second_lower_bound, second_upper_bound)
+                            if secondColorContours:
+                                secondColorContour = max(secondColorContours, key=cv2.contourArea)
+                                (xc2, yc2), rc2 = cv2.minEnclosingCircle(secondColorContour)
+                                if rc2 >= 0.4*secColorRadius: secondColorFound = True
+
+                            if firstColorFound and secondColorFound: ally_id = (i+1)
+
+                        
+                        id = "0"+str(ally_id)
+                        xcm = xi/prop_px_cm
+                        ycm = yi/prop_px_cm
+                        rcm = ri/prop_px_cm
+
+                        if ally_id != 0:
+                            if allies_list[ally_id-1] is None:
+                                robot = Robot(id,  "Aliado", xcm, ycm, rcm, playersWindows[playersCount])
+                                robot.set_status(True)
+                                allies_list[ally_id-1] = robot
+                            
+                            else:
+                                robot = allies_list[ally_id-1]
+                                robot.update_position(xcm, ycm, rcm, playersWindows[playersCount])
+                                robot.set_status(True)
+
+                            robots[playersCount] = (robot)
+                            alliesWindows[alliesCount] = (playersWindows[playersCount])
+
+                            #Conversão de coordenadas, da janela para a geral
+                            xi = int(xi)
+                            yi = int(yi)
+                            ri = int(ri)
+
+                            xci = int(xi - (winSize/2) + xc)
+                            yci = int(yi - (winSize/2) + yc)
+
+                            if(debug): draw_player_circle(imgDegub, robot, prop_px_cm)
+
+                            # cv2.circle(imgDegub, (xci, yci), (rc + 5), (0, 255, 0), 2)
+                            # cv2.putText(imgDegub,"Cor", (int(xci+5),int(yci+5)), cv2.FONT_HERSHEY_SIMPLEX,0.4,(0,255,0), 1)
+
+                            # xb = ball_object.position[0]
+                            # yb = ball_object.position[1]
+                            # cv2.arrowedLine(imgDegub, (xi, yi), (xb, yb), (0, 50, 200), 2)
+
+                            #Calculando centro da janela de cada jogador
+                            playerCenterX = winSize/2
+                            playerCenterY = winSize/2
+
+                            dx = playerCenterX - xc
+                            dy = playerCenterY - yc
+
+                            robot.update_direction(dx, dy)
+
+                            h = 50
+                            if(dx > 0):
+                                angular_coef = dy/dx
+                                theta = np.arctan(angular_coef)
+                                Dx = h*np.cos(theta)
+                                Dy = h*np.sin(theta)
+                            elif(dx < 0):
+                                angular_coef = dy/dx
+                                theta = np.arctan(angular_coef)
+                                Dx = -(h*np.cos(theta))
+                                Dy = -(h*np.sin(theta))
+                            else:
+                                Dx = 0
+                                Dy = h
+
+                            xi = int(xi)
+                            yi = int(yi)
+                            ri = int(ri)
+
+                            if(debug):
+                                cv2.arrowedLine(imgDegub, (xi, yi), (xi+int(Dx), yi+int(Dy)), (0,255,0), 2)
+                                # cv2.circle(imgDegub, (xi, yi), (ri + 5), (255, 0, 0), 2)
+
+                            alliesCount += 1
+
+                    else:
+
+                        if enemyColorContours:
+                            enemyColorContour = max(enemyColorContours, key=cv2.contourArea)
+                            (xc, yc), rc = cv2.minEnclosingCircle(enemyColorContour)
+
+                            # print("Raio da cor principal inimigo: ", rc)
+
+                            xc = int(xc)
+                            yc = int(yc)
+                            rc = int(rc)
+
+                            if(rc >= 0.5*mainColorRadius and enemiesCount < 3):
+
+                                id = "1"+str(enemiesCount+1)
+                                xcm = xi/prop_px_cm
+                                ycm = yi/prop_px_cm
+                                rcm = ri/prop_px_cm
+
+                                if enemies_list[enemiesCount] is None:
+                                    robot = Robot(id,  "Inimigo", xcm, ycm, rcm, playersWindows[playersCount])
+                                    robot.set_status(True)
+                                    enemies_list[enemiesCount] = robot
+                                
+                                else:
+                                    robot = enemies_list[enemiesCount]
+                                    robot.update_position(xcm, ycm, rcm, playersWindows[playersCount])
+                                    robot.set_status(True)
+
+                                robots[playersCount] = (robot)
+                                enimiesWindows[enemiesCount] = (playersWindows[playersCount])
+
+                                playerCenterX = winSize/2
+                                playerCenterY = winSize/2
+
+                                dx = playerCenterX - xc
+                                dy = playerCenterY - yc
+
+                                robot.update_direction(dx, dy)
+                            
+                                xi = int(xi)
+                                yi = int(yi)
+                                ri = int(ri)
+
+                                # cv2.circle(imgDegub, (xi, yi), (ri + 5), (0, 0, 255), 3)
+                                # text = "Inimigo: " + str(xi) + ", " + str(yi)
+                                # cv2.putText(imgDegub, text , (int(xi),int(yi+ri+20)), cv2.FONT_HERSHEY_SIMPLEX,0.4,(0, 0, 255), 1)
+
+                                if(debug): draw_player_circle(imgDegub, robot, prop_px_cm)
+
+                                enemiesCount += 1
+                
+                # print(f"QUANTIDADE DE JOGADORES: {playersCount}")
+                playersCount += 1
+        else:
+            pass
     return imgDegub, binaryPlayers, binaryAllTeam, playersCount, alliesCount, enemiesCount, playersWindows, alliesWindows, enimiesWindows, allies_list, enemies_list, robots
 
 #Identificando se o bloco está sendo utilizado como script e não módulo

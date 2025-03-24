@@ -1,5 +1,6 @@
 import tkinter as tk
 from modules import *
+from PIL import Image, ImageTk, ImageGrab
 
 class Card:
     def __init__(self, master, title, color):
@@ -10,9 +11,9 @@ class Card:
         self.frame = Frame(master, bg="white")
         self.frame.grid(row=0, column=0)
 
-        self.contentFrame = Frame(self.frame)
+        self.contentFrame = Frame(self.frame, bg='white')
         self.contentFrame.grid(row=0, column=0)
-        self.imageFrame = Frame(self.frame)
+        self.imageFrame = Frame(self.frame, bg='white')
         self.imageFrame.grid(row=0, column=1)
 
         self.titleLabel = Label(self.contentFrame, text=title, font=("Helvetica", 11), bg="white")
@@ -76,7 +77,7 @@ class Card:
             color = 'red'
 
         self.idLabel.config(text=f"{id} - {status}", bg=color)
-        self.positionLabel.config(text=f"x = {x}, y = {y}\n r = {r}")
+        self.positionLabel.config(text=f"x: {x} cm | y: {y} cm\n r = {r} cm")
 
         if image is not None:
             self.show_image(image)

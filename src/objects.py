@@ -6,12 +6,23 @@
 '''
 import numpy as np
 import time
-from modules import *
 from viewer import MyViewer
 import threading
 import queue
 import tkinter 
 from collections import deque
+from settingsMenu import *
+
+
+
+from tkinter import *
+from tkinter import ttk
+from tkinter.ttk import Treeview, Scrollbar, Entry, Style
+from tkinter import simpledialog, messagebox, filedialog
+import cv2
+
+# Inicializar o ambiente OpenCL
+if cv2.ocl.haveOpenCL(): cv2.ocl.setUseOpenCL(True)
 
 # =============== CONTROLE DE IDENTIFICADORES ===============================
 #identificadores padrões dos robôs
@@ -31,10 +42,9 @@ class ID_Robots:
     ROBOT_ALLY_1:int = 1
     ROBOT_ALLY_2:int = 2
 
-
-    ROBOT_ENEMY_GOAL:int = 4
-    ROBOT_ENEMY_1:int = 5
-    ROBOT_ENEMY_2:int = 6
+    ROBOT_ENEMY_GOAL:int = 0
+    ROBOT_ENEMY_1:int = 1
+    ROBOT_ENEMY_2:int = 2
 
 
 #Identificadores padrões para os pivots
@@ -57,8 +67,14 @@ class ID_Pivots:
     PE2: int = 5
     PE3: int = 6
 
-    
 
+#identificador dos objetos
+class ID_Objects:
+    BALL:       int = 0
+    FIELD:      int = 1
+    ALLIES:     int = 2
+    ENEMIES:    int = 3
+    
 #identificadores padrões para o campo
 class ID_Field:
     '''
@@ -175,6 +191,8 @@ MODE_VIDEO_CAM:int = 3
 ''' Constante de emulação:  Modo de emulação por meio de um vídeo'''
 MODE_IMAGE:int = 2
 ''' Constante de emulação:  Modo de emulação por meio de uma imagem'''
+
+
 MODE_CONTROL_ROBOT: int = 4
 ''' Constante de emulação:  Emulador sendo utilizado na janela de controle'''
 
@@ -189,20 +207,117 @@ class ModeControlW:
     
 # ================== CONTROLE DE ESTRUTURA DE DADOS ========================
 #Configurações da Emulação que serão inviadas para o sistema de visão realizar os cálculos
+
 class EConfig:
     '''
         É uma estrutura com as informações passadas pelo emulador ao sistema de visão
         o sistema de visão irá pegar essas informações e se configurar da forma necessária
+        terão as variáveis necessárias
     '''
-    def __init__(self, offSetWindow =10, offSetErode = 0 ,dimMatrix = 25, Trashhold = 235 ):
-        self.offSetWindow = offSetWindow
-        self.offSetErode = offSetErode
-        self.dimMatrix = dimMatrix
-        self.Trashhold = Trashhold
+    def __init__(self, offSetWindow =10, offSetErode = 0 ,dimMatrix = 25, Trashhold = 235
+                 ,FieldWidth = 0, FieldHeight=0, allyColor=[0,0,0], enemyColor=[0,0,0],ballColor = [0,0,0]
+                 , goalAllyColor1=[0,0,0], goalAllyColor2=[0,0,0], atk1AllyColor1=[0,0,0],atk1AllyColor2=[0,0,0], atk2AllyColor1=[0,0,0]
+                 , atk2AllyColor2=[0,0,0], emulatorMode = MODE_IMAGE, timer=None):
+        '''
+            Essas são as variáveis base que o sistema de visão utiliza para realizar seu processamento
+            são elas as cores dos times, e offsets do cálculo
+        '''
+        #setando variáveis de configuração do sistema de visão
+        self.offSetWindow       = offSetWindow          # valor mínimo da borda da janela
+        self.offSetErode        = offSetErode           # quantidade mínima de erosão
+        self.dimMatrix          = dimMatrix             # dimensão da matrix de convolução
+        self.Trashhold          = Trashhold             # limiar de binarização do sistema
         
+        self.fieldWidth         = FieldWidth            # comprimento do campo
+        self.fieldHeight        = FieldHeight           # largura do campo
+        self.allyColor          = allyColor             # Cor principal do time
+        self.enemyColor         = enemyColor            # Cor principal dos inimigos
+
+        self.ballColor          = ballColor             # cor da bola
+        self.goalAllyColor1     = goalAllyColor1        # cor 1 do goleiro aliado
+        self.goalAllyColor2     = goalAllyColor2        # cor 2 do goleiro aliado
+        self.atk1AllyColor1     = atk1AllyColor1        # cor 1 do atacante 1
+        self.atk1AllyColor2     = atk1AllyColor2        # cor 2 do atacante 1
+        self.atk2AllyColor1     = atk2AllyColor1        # cor 1 do atacante 2
+        self.atk2AllyColor2     = atk2AllyColor2        # cor 2 do atacante 2
+
+        self.emulatorMode       = emulatorMode          # modo da emulação
+        self.timer              = timer                 # objeto timer
+    
+    #métodos para setar uma variável não precisando ser na inicialização do objeto
+    def setOffSetValues(self, ofsWindow, ofsErode, ofsMatrix, ofsTrashhold):
+        self.offSetWindow       = ofsWindow          # valor mínimo da borda da janela
+        self.offSetErode        = ofsErode           # quantidade mínima de erosão
+        self.dimMatrix          = ofsMatrix             # dimensão da matrix de convolução
+        self.Trashhold          = ofsTrashhold             # limiar de binarização do sistema
+
+    #setando as cores pin
+    def setMainColors(self, allyColor, EnemyColor, ballColor):
+        '''
+            Método para cores principais (aliadas e inimigas)
+        '''
+        self.allyColor = allyColor
+        self.enemyColor = EnemyColor
+        self.bollColor = ballColor
+
+    #setando as cores individuais
+    def setAllyColors(self, g1c1,g1c2, a1c1,a1c2,a2c1,a2c2):
+        '''
+            Setando as cores principais dos robôs do sistema
+        '''
+        self.goalAllyColor1     = g1c1        # cor 1 do goleiro aliado
+        self.goalAllyColor2     = g1c2        # cor 2 do goleiro aliado
+        self.atk1AllyColor1     = a1c1        # cor 1 do atacante 1
+        self.atk1AllyColor2     = a1c2        # cor 2 do atacante 1
+        self.atk2AllyColor1     = a2c1        # cor 1 do atacante 2
+        self.atk2AllyColor2     = a2c2        # cor 2 do atacante 2
+
+    
+    #setando dimensões do campo
+    def setFieldDimensions(self, width, height):
+        '''
+            Setando dimensões do campo comprimento e largura
+        '''
+        self.fieldHeight    = height
+        self.fieldWidth     = width
+
+    #setando a forma do emulador
+    def setEmulatorMode(self, eMod):
+        self.emulatorMode = eMod 
+
+
     #Deletar este objeto em tempo de execução
     def delete(self):
+        '''
+            Deletando o objeto de configuração para liberar memória
+        '''
         del self
+
+    #função para puxar as configurações
+    def setConfigs(self, offSetWindow =10, offSetErode = 0 ,dimMatrix = 25, Trashhold = 235
+                 ,FieldWidth = 0, FieldHeight=0, allyColor=[0,0,0], enemyColor=[0,0,0],ballColor = [0,0,0]
+                 , goalAllyColor1=[0,0,0], goalAllyColor2=[0,0,0], atk1AllyColor1=[0,0,0],atk1AllyColor2=[0,0,0], atk2AllyColor1=[0,0,0]
+                 , atk2AllyColor2=[0,0,0] ):
+                #setando variáveis de configuração do sistema de visão
+        self.offSetWindow       = offSetWindow          # valor mínimo da borda da janela
+        self.offSetErode        = offSetErode           # quantidade mínima de erosão
+        self.dimMatrix          = dimMatrix             # dimensão da matrix de convolução
+        self.Trashhold          = Trashhold             # limiar de binarização do sistema
+        
+        self.fieldWidth         = FieldWidth            # comprimento do campo
+        self.fieldHeight        = FieldHeight           # largura do campo
+        self.allyColor          = allyColor             # Cor principal do time
+        self.enemyColor         = enemyColor            # Cor principal dos inimigos
+
+        self.ballColor          = ballColor             # cor da bola
+        self.goalAllyColor1     = goalAllyColor1        # cor 1 do goleiro aliado
+        self.goalAllyColor2     = goalAllyColor2        # cor 2 do goleiro aliado
+        self.atk1AllyColor1     = atk1AllyColor1        # cor 1 do atacante 1
+        self.atk1AllyColor2     = atk1AllyColor2        # cor 2 do atacante 1
+        self.atk2AllyColor1     = atk2AllyColor1        # cor 1 do atacante 2
+        self.atk2AllyColor2     = atk2AllyColor2        # cor 2 do atacante 2
+
+
 
 # =============== CONTROLE DE CLASSES ===============================
 #Classe auxiliar para configurar os pontos extremos que irão reconhecer o robô, para análise de colisão.
@@ -227,6 +342,77 @@ class Point2D:
         '''
         return self.pos 
     
+    #Definindo operações com Point2D
+    #definindo a soma (x,y)+(a,b) = (x+a, y+b)
+    def __add__(self, other):
+        if isinstance(other, Point2D):
+            return Point2D(self.px +other.px, self.py+other.py)
+        elif isinstance(other, tuple):
+            return Point2D(self.px +other[0], self.py+other[1])
+        else:
+            raise TypeError("Operação inválida")
+        
+    #definindo a subtração de dois pontos (x,y)-(a,b) = (x-a,y-b)
+    def __sub__(self, other):
+        if isinstance(other, Point2D):
+            return Point2D(self.px -other.px, self.py-other.py)
+        elif isinstance(other, tuple):
+            return Point2D(self.px -other[0], self.py-other[1])
+        else:
+            raise TypeError("Operação inválida")
+        
+    #definindo multiplicação entre esses dois pontos 2D
+    def __mul__(self, other):
+        #Multiplicação por escalar (x,y)*k = (kx,ky)
+        if isinstance(other, (int, float)):
+            # Se 'other' for um escalar, realizar multiplicação por escalar
+            return Point2D(self.px * other, self.py * other)
+        
+        #multiplicação por uma instância (x,y) * (a,b) = (x*a,y*b) => Necessário criar uma lógica
+        elif isinstance(other, Point2D): 
+            # Se 'other' for um vetor, realizar produto escalar
+            return Point2D(self.px * other.px, self.py * other.py)
+        else:
+            # Caso contrário, lançar uma exceção ou retornar None
+            raise TypeError("Operação de multiplicação não suportada para o tipo de objeto passado.")
+    
+    # Define o comportamento do operador de string
+    def __str__(self):
+        return f"Point2D({self.px}, {self.py})"
+    
+    #define a operação de equalidade
+    def __eq__(self, other):
+        #Multiplicação por escalar (x,y)*k = (kx,ky)
+        if isinstance(other, Point2D):
+            if self.px == other.px and self.py == other.py:
+                return True 
+            else:
+                return False 
+        elif isinstance(other, tuple):
+            try: 
+                if self.px == other[0] and self.py == other[0]:
+                    return True 
+                else:
+                    return False
+            except:
+                return False 
+        else:
+            # Caso contrário, lançar uma exceção ou retornar None
+            raise TypeError("Não é possível tomar a igualdade entre dois valores diferentes")
+    
+    #define o tamanho do objeto
+    def __len__(self):
+        return 2 
+    
+    #define como pegar um valor desse método
+    def __getitem__(self, index):
+        ''' Retorna o valor correspondente ao índice'''
+        if index == 0:
+            return self.px
+        elif index == 1:
+            return self.py
+        else:
+            raise IndexError("Índice fora do intervalo para Point2D")
 #Definição de um Quadrilátero 
 class Quad:
     '''
@@ -234,14 +420,15 @@ class Quad:
     '''
     def __init__(self, P1:Point2D, P2:Point2D, P3:Point2D, P4:Point2D):
         ''' Necessário informar 4 pontos para ele interpretar e juntar'''
-        self.p1 = P1            #Ponto extremo 1
-        self.p2 = P2            #Ponto extremo 2
-        self.p3 = P3            #Ponto extremo 3
-        self.p4 = P4            #Ponto extremo 4
+        self.p1 = P1                #Ponto extremo 1
+        self.p2 = P2                #Ponto extremo 2
+        self.p3 = P3                #Ponto extremo 3
+        self.p4 = P4                #Ponto extremo 4
 
         #Pontos no formato array do numpy
         self.points = np.array([P1,P2,P3,P4])
 
+    #puxar os pontos
     def getPoint(self):
         '''
             Retorna os pontos associados a esse Quadrilátero num array
@@ -329,6 +516,29 @@ class BorderBox:
             self.px = Infos.px
             self.py = Infos.py
 
+        else:
+            raise TypeError("Está tentanto atribuir um objeto que não é um tipo geométrico válido")
+    #atualizando informações do Borderbox
+    def attPosition(self, newObj):
+        #Informa como o objeto deve guardar suas informações
+        if(self.type == GeometryType.CIRCLE and isinstance(newObj,Circle)): #verifica se é um círculo
+            self.Center = newObj.center
+            self.radius = newObj.radius 
+
+        elif(self.type == GeometryType.QUAD and isinstance(newObj,Quad)): #verifica se é um retângulo
+            #Falta criar essa lógica
+            self.p1 = newObj.p1 
+            self.p2 = newObj.p2 
+            self.p3 = newObj.p3 
+            self.p4 = newObj.p4 
+
+        elif(self.type == GeometryType.POINT2D and isinstance(newObj,Point2D)): #verifica se é um ponto 2D
+            self.px = newObj[0]
+            self.py = newObj[1]
+
+        else:
+            raise TypeError("Esta tentando atribuir um objeto que não é um tipo geométrico válido")
+
 #Classe responsável por organizar as áreas no campo
 class AreaField:
     '''
@@ -367,6 +577,9 @@ class ViewBot:
         Classe de view que representa uma janela da imagem onde o robô se encontra.
     '''
     def __init__(self, Position:Point2D, DimMatrix: int):
+        '''
+        Classe de view que representa uma janela da imagem onde o robô se encontra.
+        '''
         #Centro (x,y)
         self.center = Position.pos
 
@@ -424,6 +637,18 @@ class ViewBot:
         '''
         return self.rect.points
     
+    #setando nova dimensão do viewBot
+    def setDimension(self, newDimension):
+        #passo
+        self.DimMatrix = newDimension
+        self.step = self.DimMatrix/2.0
+
+        #Encontrando pontos
+        self.Pe1 = self.center + np.array([-1,-1])*self.step
+        self.Pe2 = self.center + np.array([1,-1])*self.step
+        self.Pe3 = self.center + np.array([1,1])*self.step
+        self.Pe4 = self.center + np.array([-1,1])*self.step
+
 #========================| Gerando classe Timer | ==============================
 
 #configurando objeto timer de alta precisão para pegar o passar do tempo de processamento
@@ -456,7 +681,7 @@ class HighPrecisionTimer:
             self._isRunning = False
         else:
             print("O timer ainda não foi iniciado...")
-            
+
     def reset(self):
         '''
             Resetar o timer para 0.
@@ -494,6 +719,7 @@ class CaptureMode:
     '''
     DEFAULT: int = 0
     CAM: int = 1
+    DEFAULT = CAM
     IMG: int = 2
     VIDEO: int = 3
 
@@ -512,7 +738,7 @@ class Capture:
         Classe responsável por ser o intermédio entre a forma de capturar informações
         e o emulador.
     '''
-    def __init__(self, mode: CaptureMode.DEFAULT, useGpu:BooleanVar):
+    def __init__(self, mode: CaptureMode.DEFAULT, useGpu: bool = False): # type: ignore
         '''
             Inicializo o objeto informando o modo de captura: DEFAULT, CAM, IMG ou Video.
             E também informo se vou ou não utilizar GPU (True ou False)
@@ -555,34 +781,36 @@ class Capture:
             Ela retorna _True_ se a operação for possível e retorna _False_ em caso
             que a câmera não suporta esse controle de foco.
         '''
-        if self.mode == CaptureMode.CAM and self._hasCamera and (self.CAM is not None):
+        if self.mode == CaptureMode.CAM and (self.CAM is not None):
             if mode == FocusMode.AUTO:
                 if not self.CAM.set(cv2.CAP_PROP_AUTOFOCUS, 0):
-                    print("[CAPTURA]: Câmera não suporta controle de foco")
+                    #print("[CAPTURA]: Câmera não suporta controle de foco")
                     self.modeCam = FocusMode.AUTO
                     self._camHasFocusControl = False
                     return False
                 else: #suporta controle de foco
+                    #print("[CAPTURA]: Câmera configurada para foco automático")
                     self.modeCam = mode
                     self._camHasFocusControl = True
 
                     return True
             elif mode == FocusMode.MANUAL:
                 if not self.CAM.set(cv2.CAP_PROP_FOCUS, self.focusManual):
-                    print("[CAPTURA]: Câmera não suporta controle de foco")
+                    #print("[CAPTURA]: Câmera não suporta controle de foco")
                     self._camHasFocusControl = False
                     return False
                 else: #suporta controle de foco
+                    #print("[CAPTURA]: Câmera configurada para foco automático")
                     self.modeCam = mode
                     self._camHasFocusControl = True
                     return True
             else:
-                print("[CAPTURA]: Erro grave! Variável corrompida")
+                #print("[CAPTURA]: Erro grave! Variável corrompida")
                 self._camHasFocusControl = False
                 self.modeCam = FocusMode.AUTO
                 return False 
         else:   
-            print("[CAPTURA]: primeiro coloque no modo câmera!")
+            #print("[CAPTURA]: primeiro coloque no modo câmera!")
             self._camHasFocusControl = False
             self.modeCam = FocusMode.AUTO
             return False
@@ -592,20 +820,20 @@ class Capture:
         '''
             Seto um valor para o controle por software do foco da câmera
         '''
-        if self.mode == CaptureMode.CAM and self._hasCamera and self._camHasFocusControl:
-            if self.modeCam == FocusMode.AUTO:
-                #Mudando para controle automático, caso tenha suporte
-                #self.CAM.set(cv2.CAP_PROP_AUTOFOCUS, 0)
-                print("[CAPTURE]: Modo configurado para automático")
+        if self.mode == CaptureMode.CAM and self._camHasFocusControl:
+            if self.modeCam == FocusMode.AUTO and (self.CAM is not None):
+                #print("[CAPTURA]: Câmera em modo automático")
+                pass
             elif self.modeCam == FocusMode.MANUAL and (self.CAM is not None):
                 self.focusManual = np.clip(value, 0, 255)
                 self.CAM.set(cv2.CAP_PROP_FOCUS, self.focusManual)  # Altere este valor para ajustar o foco
-                #print("[CAPTURA]: A camera foi configurada para foco manual")
         else:
-            print("[CAPTURA]: A câmera não tem suporte ao controle, ou não foi configurada para câmera")
-
+            #print("[CAPTURA]: A câmera não tem suporte ao controle, ou não foi configurada para câmera")
+            pass 
+    
+    
     #Seta a configura para o GPU
-    def GPUMode(self, useGpu:BooleanVar):
+    def GPUMode(self, useGpu:bool):
         '''
             Função responsável por setar um modo da GPU.
             UseGPU é um booleano que irá dizer se irá ou não utilizar
@@ -625,7 +853,7 @@ class Capture:
             Informa o identificador da câmera que será utilizada para o 
             processamento.
         '''
-        self.idCam = id
+        self.idCam = int(id)
         print("[CAPTURA]: Id da camera:", self.idCam)
         if(self.mode == CaptureMode.CAM):
             try:
@@ -643,6 +871,8 @@ class Capture:
             except:
                 print("[CAPTURA]: Ocorreu um erro em abrir a câmera")
                 return False
+        else:
+            return False
             
     # Informar o endereço das imagens e dos vídeos
     def setImagePath(self, pathImg):
@@ -660,7 +890,7 @@ class Capture:
         self.videoPath = pathVideo
 
     '''
-    @GNOMIO: essa função "getImage" deve ser utilizada dentro dum loop quand oem vídeo
+    @GNOMIO: essa função "getImage" deve ser utilizada dentro dum loop quando em vídeo
     '''
     # Retorna a imagem da captura
     def getImageNoCuda(self):
@@ -769,7 +999,7 @@ class CameraCaptureThread(threading.Thread):
         Essa classe é responsável por gerar a Thread que irá capturar imagens
         e salvar elas num deque, que será acessado pelo emulador.
     '''
-    def __init__(self, main, capture_instance: Capture, deque:deque, interval=0.016):
+    def __init__(self, main, settingMenu,capture_instance: Capture, deque:deque, interval=0.016):
         super().__init__()
         self.capture_instance = capture_instance
         self.interval = interval
@@ -777,18 +1007,33 @@ class CameraCaptureThread(threading.Thread):
         self._main = main
         self.deque = deque
         self.daemon = True
+        self.menu = settingMenu
 
     def run(self):
         self._is_running = True
         while self._is_running:
-            new_image = self.capture_instance.getImage()
-            if new_image is None:
-                pass
-            else:
-                self.deque.append(new_image)  # Enviando a nova imagem para a fila
-            #print(self.deque[-1])
-            time.sleep(self.interval)
+            #procura imagem
+            if self.capture_instance.mode == FocusMode.AUTO:
+                #print("FOCO AUTOMÁTICO")
+                new_image = self.capture_instance.getImage()
+                if new_image is None:
+                    pass
+                else:
+                    self.deque.append(new_image)  # Enviando a nova imagem para a fila
+                #print(self.deque[-1])
+                time.sleep(self.interval)
+            else: #modo manual
 
+                self.capture_instance.setFocusManual(self._main.FocusValue)
+                new_image = self.capture_instance.getImage()
+                #print(self.capture_instance.modeCam, ' :', self.capture_instance.focusManual)
+                if new_image is None:
+                    pass
+                else:
+                    self.deque.append(new_image)  # Enviando a nova imagem para a fila
+                #print(self.deque[-1])
+                time.sleep(self.interval)
+    
     def stop(self):
         #liberar recursos
         if self.capture_instance.mode == CaptureMode.CAM:

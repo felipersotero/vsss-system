@@ -1,69 +1,119 @@
-O arquivo principal é o main.py, este arquivo executa o arquivo app.py.
-# app.py
-Este arquivo contém a criação da tela principal da aplicação, a classe App.
-Em seu construtor ```def __init__(self)``` é feita a configuração do design da tela principal em ```self.configure_window()```, a criação dos 3 frames principais da applicação, configurações, imagens e dados, em ```self.create_main_frames()``` e a criação dos frames (subframes de configurações) em ```self.create_settings_frame()```.
+# 📚 Documentação do Sistema - VSSS (Very Small Size Soccer)
 
-Em seguida é feita a criação dos widgets (textos, botões, imagens, etc) dos frames criados em ```widgets_settings_frame()```, ```self.widgets_emulate_frame()``` e ```widgets_images_frame```, para o frame de configurações, de emulação (botão de iniciar emulação) e imagens de debug, respectivamente.
+## 📌 Visão Geral
 
-Em seguida são criados objetos MyViewer, as tabs para visualização das imagens de debug.
+Este projeto é um sistema completo para competições de **Very Small Size Soccer (VSSS)**, englobando **visão computacional**, **interface gráfica**, **processamento de imagens**, **teoria do controle** e **simulação/emulação**.
 
-E por fim, ainda no construtor, é criada a instância do emulador: Emulator.
+O **arquivo principal** de execução é `main.py`, que inicia a aplicação principal (`app.py`). O sistema processa imagens capturadas pela câmera, detecta a posição da bola e dos robôs, e fornece essas informações para tomada de decisões estratégicas.
+
+## 🚀 Como Executar o Projeto
+
+### 1️⃣ Instalar as Dependências
+
+Certifique-se de que possui o Python instalado (versão 3.8 ou superior). Para instalar as bibliotecas necessárias, utilize:
+
+```bash
+pip install -r src/data/requirements.txt
+```
+
+### 2️⃣ Rodar a Aplicação
+
+Execute o arquivo principal:
+
+```bash
+python main.py
+```
+
+## 📂 Estrutura do Projeto
+
+```plaintext
+📁 Projeto-VSSS/
+│-- main.py                # Arquivo principal para rodar a aplicação
+│-- requirements.txt       # Lista de dependências do projeto
+│-- 📂 src/                # Diretório principal do código
+|   |--📂 data             # Arquivos principais para configuração e backup
+|   |--📂 imagens          # Imagens para testar processamento
+|   |--📂 videos           # Videos para testar processamento
+|   |--📂 theme            # Arquivos de tema importantes para a interface
+│   │-- app.py             # Inicializa a interface gráfica (GUI)
+│   │-- cards.py           # Configura cards para interface gráfica (GUI)
+│   │-- communication.py   # Gerencia a comunicação do sistema
+│   │-- control.py         # Funções e lógica de controle do sistema
+│   │-- detector.py        # Módulo de detecção legado
+│   │-- detectorV2.py      # Módulo de detecção e interpretação do sistema atual
+│   │-- emulator.py        # Engine da aplicação
+│   │-- modules.py         # Organização dos módulos utilizados em todo o projeto
+│   │-- objects.py         # Definição dos objetos básicos do projeto
+│   │-- settingsMenu.py    # Configuração do menu inteligente da interface
+│   │-- strategy.py        # Arquivo com as funções de estratégia
+│   │-- viewer.py          # Configuração da tela de exibição de imagens
+│   │-- windowControl.py   # Controle da interface dos robôs
+```
+
+## 🖥️ Módulos do Sistema
+
+### 📌 `main.py`
+Arquivo principal do projeto. Ele:
+- Inicializa a interface gráfica.
+- Verifica e instala as dependências automaticamente.
+- Gerencia a execução do `app.py`.
+
+### 📌 `app.py`
+Gerencia a **tela principal** da aplicação e a classe `App`, responsável por:
+- Criar e configurar a janela principal (`configure_window()`).
+- Criar os **frames** principais da interface gráfica (`create_main_frames()`).
+- Criar **subframes** específicos de configuração (`create_settings_frame()`).
+- Gerenciar **widgets** da interface (botões, imagens, menus, etc.).
+- Inicializar o **Emulador (`Emulator`)**.
+
+### 📌 `settingsMenu.py`
+Gerencia a lista de configurações do sistema. Contém:
+- Funções para adicionar e acessar nós (`add_node`, `att_node_id`).
+- Manipulação da interface ao clicar em um campo (`on_double_click`).
+- Leitura e salvamento de dados (`save_to_json`, `load_from_json`).
+
+### 📌 `viewer.py`
+Cria telas para **visualização das imagens de depuração**. Contém a classe `MyViewer`, que possui funções como:
+- `config()` - Configuração inicial.
+- `reset_config()` - Reset das configurações.
+- `default_mode()` - Modo padrão de exibição.
+- `show()` - Exibição das imagens processadas.
+
+### 📌 `emulator.py`
+Arquivo com a lógica da Engine da aplicação, organizando-se em:
+1. **Construtor:** Define as variáveis principais.
+2. **Funções Gerais:**
+   - `load_vars()`: Carrega as variáveis do JSON.
+   - `format_var()`: Formata os dados carregados.
+   - `init()`, `stop()`: Inicializa e encerra a simulação.
+3. **Funções de Execução:**
+   - `processUSB()`, `processImage()`, `processVideo()`
+
+### 📌 `detectorV2.py`
+Módulo de **visão computacional**, responsável por detectar a **bola, os robôs e o campo** em tempo real.
+- Compatível com **GPU (OpenCV CUDA)** para acelerar processamento.
+- Detecta objetos e prevê suas posições.
+- Suporte a filtros avançados e transformações de imagem.
+
+### 📌 `control.py`
+Contém **algoritmos de controle** dos robôs, incluindo:
+- Controle PID básico.
+- Ajuste de velocidade e direção.
+- Cálculo de trajetória para movimentação eficiente.
+
+### 📌 `strategy.py`
+Gerencia a **inteligência dos robôs** e estratégia de jogo.
+- Define comportamento ofensivo/defensivo.
+- Implementação de FSM (Finite State Machine) para tomadas de decisão.
+
+## ⚙️ Melhorias Futuras
+- Implementação de **Filtro de Kalman** para melhorar a precisão na detecção.
+- Melhorias na estratégia com **aprendizado de máquina (Reinforcement Learning)**.
+- Integração com **simuladores avançados (Gazebo, Webots, etc.)**.
+
+## 📄 Licença
+Este projeto está sob a licença **MIT**. Sinta-se à vontade para modificar e contribuir! 🤖⚽
 
 ---
-Abaixo, fora do construtor, mas ainda dentro da classe App, estão as funções de configuração e criação de frames e widgets, que são chamadas lá no construtor.
 
-Em especial, a função ```build_tree_menu()``` cria uma lista de árvore com elementos do tipo ```settingsMenu```.
-
-# settingsMenu.py
-
-Este arquivo contém a definição da lista de árvore para as configurações das variáveis de execução do programa.
-
-Possui as funções de criação e acesso aos nós: ```add_node``` e ```att_node_id```
-Possui a função para quando um dos campos for clicado ```on_double_click```. Essa função lida com a alteração dos campos.
-Possui as funções para leitura de dados ```get_tree_data```, além das funções para leitura e salvamento dos arquivos json ```save_to_json```, ```load_from_json```, ```load_from_json_recursive``` e ```load_from_json_file```.
-
-# viewer.py
-
-Possui a criação das telas para visualização das imagens de debug.
-Possui duas classes.
-A classe myViewer possui obviamente o construtor e as seguintes funções:
-config, reset_config, default_mode e show
-
-# emulator.py
-
-Este arquivo é organizado nos seguintes pontos.
-
-#### Criação da classe e construtor
-O construtor cria as variáveis que serão utilizadas depois.
-
-#### Funções gerais
-A função ```load_vars``` carrega as variáveis salvas no json e as formata com ```format_var```.
-init, stop, 
-
-#### Funções de execução
-processUSB, processImage, processVideo
-
-# detector.py
-
-Este arquivo pode ser analisado a partir de trtês blocos:
-* Classes
-* Funções Auxiliares
-* Funções Modulares
-
-#### Classes
-
-Esta parte lida com a criação das classes ```Robot```, ```Ball``` e ```Field```.
-
-#### Funções Auxiliares
-
-Nesta parte são criadas funções que realizam ações simples como filtrar uma imagem, criar máscaras de cores, etc. Essas funções serão utilizadas nas funções principais: as funções modulares.
-
-#### Funções Modulares
-
-São as funções principais no reconhecimento do campo, da bola e dos jogadores.
-
-##### ```detect_field```
-
-##### ```detect_ball```
-
-##### ```detect_players```
+💡 **Sugestão:** Caso precise de mais detalhes técnicos sobre um módulo específico, consulte os arquivos individuais dentro da pasta `src/`.

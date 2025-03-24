@@ -141,7 +141,7 @@ class ControlWindow:
         #labels para o controle
         self.lChosePlayer=  Label(self.choseFrame, text="Escolher Jogados: ", fg="black", bg="white")
         self.lChosePlayer.grid(row=0,column=0, padx=10, pady =2, sticky="w")
-        self.cBoxPlayer= ttk.Combobox(self.choseFrame, values=["Player 1", "Player 2", "Player 3"], state='readonly')
+        self.cBoxPlayer= ttk.Combobox(self.choseFrame, values=["Goleiro", "Atacante 1", "Atacante 2"], state='readonly')
         self.cBoxPlayer.grid(row=0,column=1,padx=10, pady=2, sticky="w")
         
         #Label para escolher comunicação com o jogador
@@ -178,6 +178,9 @@ class ControlWindow:
         self.manualRadio = tk.Radiobutton(self.choseFrame, text="Manual", variable=self.controlMode, value="manual", bg="white")
         self.autoRadio = tk.Radiobutton(self.choseFrame, text="Automático", variable=self.controlMode, value="automatic", bg="white")
         
+        ## Desative o segundo radiobutton
+        self.autoRadio.configure(state='disabled')
+
         # Posicione os radiobuttons
         self.manualRadio.grid(row=4, column=0, columnspan=2, padx=10, pady=2, sticky="w")
         self.autoRadio.grid(row=4, column=1, columnspan=2, padx=10, pady=2, sticky="w")

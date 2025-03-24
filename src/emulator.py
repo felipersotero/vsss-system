@@ -1,3 +1,4 @@
+from detectorV2 import VisionSystem
 from modules import *
 from settingsMenu import *
 from viewer import MyViewer, WindowsViewer
@@ -12,7 +13,7 @@ import time
 from collections import deque
 import ast
 
-
+import traceback
 class Emulator:
     def __init__(self,App):
         print("Emulador foi construído")
@@ -24,6 +25,7 @@ class Emulator:
         self.debugPlayersViewer = App.debugPlayers
         self.debugTeamViewer = App.debugTeam
         self.resultViewer = App.result
+        self.virtualResult = App.virtualVision
 
         #informações para exibir
         self.cards = App.cards
@@ -41,19 +43,23 @@ class Emulator:
         self.DEBUGA = False
         self.thread = None
         self.capture = Capture(CaptureMode.DEFAULT,False)
-        self.delay = 14 #14 ms
+        self.delay = 8 #14 ms
 
         self.clientMQTT = None
         self.clientSerial = None
         self.commands = None
 
         #filas
-        self.commands_queue = queue.Queue()
-        self.sent_data_queue = queue.Queue()
-        self.received_data_queue = queue.Queue()
-                
+        self.commands_queue = queue.Queue(maxsize=1)
+        self.sent_data_queue = queue.Queue(maxsize=1)
+        self.received_data_queue = queue.Queue(maxsize=1)
+        
+        #filas para novo processamento
+
+
+
         #deque de no máximo 10 imagens
-        self.maxDeque = 4
+        self.maxDeque = 1
         self.capture_deque = deque(maxlen=self.maxDeque)
 
         self.viewer.config()
@@ -62,6 +68,7 @@ class Emulator:
         self.debugPlayersViewer.config()
         self.debugTeamViewer.config()
         self.resultViewer.config()
+        self.virtualResult.config()
 
         # Objetos
         self.field = None
@@ -97,6 +104,11 @@ class Emulator:
         self.communication = False       # verifica se está ok a comunicação
         self.CUDAselected = False        # variável para indicar que foi selecionado o cuda
 
+        #variáveis da câmera
+        self.FocusValue = 0                         # Variável com o valor do foco da câmera
+        self.FocusMode: FocusMode =FocusMode.AUTO
+
+
         #Variável relativa ao tipo de conexão escolhida pelo usuário
         self.comSelected = None         # Será uma string {nenhuma, MQTT ou Serial}
         self.hasConection = False       # verifica se foi selecionada alguma conexão
@@ -110,9 +122,13 @@ class Emulator:
 
         #imagem padrão do emulador vindo da caputar
         self.frame = None   
+        
+        #criando um objeto que será responsável por guardar as informações do emulador
+        self.EConfig = EConfig()
 
+        #verificando se funciona
+        self.vs = VisionSystem(capture=self.capture, UseCuda=False, GPUType=None)
 
-        #Thread de captura para imagem, guardando de forma paralela
     def load_vars(self):
         self.CamUSB = int(self.settingsTree.tree.item('I003','value')[0])
         self.ImgPath = self.settingsTree.tree.item('I004','value')[0]
@@ -243,6 +259,7 @@ class Emulator:
 
         #Atualizo o card
         self.infoCards.updateFuncs()
+
    
     def format_var(self, var):
         var = unidecode.unidecode(var)
@@ -253,31 +270,31 @@ class Emulator:
         msg=f"""
         [EMULADOR]
         ====Emulador===
-        CamUSB: {self.CamUSB}
-        ImgPath: {self.ImgPath}
-        VideoPath: {self.VideoPath}
-        UseMode: {self.UseMode}
+        CamUSB          : {self.CamUSB}
+        ImgPath         : {self.ImgPath}
+        VideoPath       : {self.VideoPath}
+        UseMode         : {self.UseMode}
         
-        OffSetBord: {self.OffSetBord}
-        OffSetErode: {self.OffSetErode}
-        BINThresh: {self.BINThresh}
-        MatrixTop: {self.MatrixTop}
+        OffSetBord      : {self.OffSetBord}
+        OffSetErode     : {self.OffSetErode}
+        BINThresh       : {self.BINThresh}
+        MatrixTop       : {self.MatrixTop}
         
-        fieldWidth: {self.fieldWidth}
-        fieldHeight: {self.fieldHeight}
+        fieldWidth      : {self.fieldWidth}
+        fieldHeight     : {self.fieldHeight}
 
-        mainColor: {self.mainColor}
-        player1Color1: {self.player1Color1}
-        player1Color2: {self.player1Color2}
-        player2Color1: {self.player2Color1}
-        player2Color2: {self.player2Color2}
-        player3Color1: {self.player3Color1}
-        player3Color2: {self.player3Color2}
-        enemiesMainColor: {self.enemiesMainColor}
-        ballColor: {self.ballColor}
+        ally Color      : {self.mainColor}
+        Goleiro CorP    : {self.player1Color1}
+        Goleiro CorS    : {self.player1Color2}
+        Atk1    CorP    : {self.player2Color1}
+        Atk1    CorS    : {self.player2Color2}
+        Atk2    CorP    : {self.player3Color1}
+        Atk2    CorS    : {self.player3Color2}
+        Enemies Color   : {self.enemiesMainColor}
+        ballColor       : {self.ballColor}
         
-        debug_view: {self.debug_view}
-        EXECMode: {self.EXECMode}
+        debug_view      : {self.debug_view}
+        EXECMode        : {self.EXECMode}
         """.encode('utf-8')
 
         print(msg.decode('utf-8', errors='replace'))
@@ -331,6 +348,29 @@ class Emulator:
 
         self.ballColor = string_to_int_array(self.ballColor)
 
+
+        #Gero o EConfig para realizar o processamento
+        self.EConfig = EConfig(
+            offSetWindow    =   self.OffSetBord,
+            offSetErode     =   self.OffSetErode,
+            dimMatrix       =   self.MatrixTop,
+            Trashhold       =   self.BINThresh,
+            FieldWidth      =   self.fieldWidth ,
+            FieldHeight     =   self.fieldHeight,
+            ballColor       =   self.ballColor,
+            allyColor       =   self.teamMainColor,
+            enemyColor      =   self.enemiesMainColor,
+            goalAllyColor1  =   np.array(string_to_int_array(self.player1Color1)),
+            goalAllyColor2  =   np.array(string_to_int_array(self.player1Color2)),
+            atk1AllyColor1  =   np.array(string_to_int_array(self.player2Color1)),
+            atk1AllyColor2  =   np.array(string_to_int_array(self.player2Color2)),
+            atk2AllyColor1  =   np.array(string_to_int_array(self.player3Color1)),
+            atk2AllyColor2  =   np.array(string_to_int_array(self.player3Color2)),
+            emulatorMode    =   self.Mode, 
+            timer           =   self.Timer
+        )
+
+        self.vs.setConfigEmulator(self.EConfig)
         #Inicializa o viewer
         if(self.Mode== MODE_USB_CAM): #Modo camera
             print('[EMULADOR] Emulador em modo de processamento de imagem da Camera USB')
@@ -366,71 +406,105 @@ class Emulator:
             self.capture.reset()
             self.capture.setMode(CaptureMode.CAM)
             
-            self.capture.setIdCam(self.CamUSB)
-
-            #verifica se tem suporte a controle de foco
-            if self.settingsTree._hasControlFocus:
-                if self._focusMode == FocusMode.AUTO:
-                    self.capture.setModeFocus(self._focusMode)
-                else: #foco manual
-                    self._focusMode = FocusMode.MANUAL
-                    self.capture.setModeFocus(self._focusMode)
-                    self.capture.setFocusManual(self.FocusValue)
-            else: #a árvore de variáveis não verificou se tem controle de foco
-                if self._focusMode == FocusMode.AUTO:
-                    #Verifico se tem suporte
-                    if not self.capture.setModeFocus(FocusMode.AUTO):
-                        print("[EMULADOR]: Câmera não suporta controle de foco")
-                        #atualizo a arvore 
-                        self.settingsTree.att_node_id('I00C','AUTOMATICO')
-                        self.settingsTree.att_node_id('I00D','')
-                        self.settingsTree.save_to_json('config')
-
-                        #executa sem setar o modo
-                    else:
-                        self.settingsTree.att_node_id('I00C','AUTOMATICO')
-                        self.settingsTree.att_node_id('I00D','')
-                        self.settingsTree.save_to_json('config')
-
-                        #executa sem setar o modo
-                else: #foco manual
-                    self._focusMode = FocusMode.MANUAL
-                    if not self.capture.setModeFocus(FocusMode.MANUAL):
+            if self.capture.setIdCam(self.CamUSB):
+                #verifica se tem suporte a controle de foco
+                if self.settingsTree._hasControlFocus:
+                    if self._focusMode == FocusMode.AUTO:
+                        self.capture.setModeFocus(self._focusMode)
+                    else: #foco manual
                         self._focusMode = FocusMode.MANUAL
-                        print("[EMULADOR]: Câmera não suporta controle de foco")
-                        #atualizo a arvore
-                        self.settingsTree.att_node_id('I00C','AUTOMATICO')
-                        self.settingsTree.att_node_id('I00D','')
-                        self.settingsTree.save_to_json('config')
-
-                        #executa sem setar o modo
-                    else:
+                        self.capture.setModeFocus(self._focusMode)
                         self.capture.setFocusManual(self.FocusValue)
-                        print("[EMULADOR]: Foco manual com valor setado de ", self.FocusValue)
-                        #atualizo a arvore
-                        self.settingsTree.att_node_id('I00C','MANUAL')
-                        self.settingsTree.att_node_id('I00D',self.FocusValue)
-                        self.settingsTree.save_to_json('config')
-            
-            
-            #seta a flag de que a câmera está funcionando
-            self.cameraIsRunning = True 
-            
-            print("[CAPTURA]: Iniciou-se a thread novamente!")
-            self.captureThread= CameraCaptureThread(main=self, capture_instance=self.capture, deque=self.capture_deque)
-            self.captureThread.start()  
+                else: #a árvore de variáveis não verificou se tem controle de foco
+                    if self._focusMode == FocusMode.AUTO:
+                        #Verifico se tem suporte
+                        if not self.capture.setModeFocus(FocusMode.AUTO):
+                            print("[EMULADOR]: Câmera não suporta controle de foco")
+                            #atualizo a arvore 
+                            self.settingsTree.att_node_id('I00C','AUTOMATICO')
+                            self.settingsTree.att_node_id('I00D','')
+                            self.settingsTree.save_to_json('config')
 
-            # self.firstExecution = True
-            self.processUSB()
+                            #executa sem setar o modo
+                        else:
+                            self.settingsTree.att_node_id('I00C','AUTOMATICO')
+                            self.settingsTree.att_node_id('I00D','')
+                            self.settingsTree.save_to_json('config')
 
-            # Chamando thread para processamento de vídeo
-            self.showInformation()
+                            #executa sem setar o modo
+                    else: #foco manual
+                        self._focusMode = FocusMode.MANUAL
+                        if not self.capture.setModeFocus(FocusMode.MANUAL):
+                            self._focusMode = FocusMode.MANUAL
+                            print("[EMULADOR]: Câmera não suporta controle de foco")
+                            #atualizo a arvore
+                            self.settingsTree.att_node_id('I00C','AUTOMATICO')
+                            self.settingsTree.att_node_id('I00D','')
+                            self.settingsTree.save_to_json('config')
 
-            #Trabalhando com filas e threads
-            if (self.hasConection == True):
-                self.communication_thread = threading.Thread(target=self.send_data, args=(self.commands_queue,), daemon=True)
-                self.communication_thread.start()
+                            #executa sem setar o modo
+                        else:
+                            self.capture.setFocusManual(self.FocusValue)
+                            print("[EMULADOR]: Foco manual com valor setado de ", self.FocusValue)
+                            #atualizo a arvore
+                            self.settingsTree.att_node_id('I00C','MANUAL')
+                            self.settingsTree.att_node_id('I00D',self.FocusValue)
+                            self.settingsTree.save_to_json('config')
+                
+                
+                #seta a flag de que a câmera está funcionando
+                self.cameraIsRunning = True 
+                
+                print("[CAPTURA]: Iniciou-se a thread novamente!")
+                self.captureThread= CameraCaptureThread(main=self, settingMenu=self.settingsTree, capture_instance=self.capture, deque=self.capture_deque)
+                self.captureThread.start()  
 
+
+                #Inicia a thread de processamento do vídeo
+                
+
+                # self.firstExecution = True
+                self.startThreadsLoop()
+
+                #Trabalhando com filas e threads
+                if (self.hasConection == True):
+                    self.communication_thread = threading.Thread(target=self.send_data, args=(self.commands_queue,), daemon=True)
+                    self.communication_thread.start()
+            else:
+                messagebox.showerror("Erro ao criar o objeto de captura", "O equipamento não tem permissão para funcionar, ou não existe câmera com esse index.")
+                
+                #libera recursos
+                #print(self.capture_deque)
+                if(self.capture): 
+                    self.capture.reset() #Libera a câmera
+                    #self.capture_deque = deque(maxlen=self.maxDeque)
+
+                if (self.clientMQTT != None):
+                    self.clientMQTT.loop_stop()
+                    self.clientMQTT.disconnect()
+                    self.hasConection = False
+                    self.hasMqtt = False
+                
+                if(self.clientSerial != None):
+                    print(self.clientSerial)
+                    close_serial(self.clientSerial)
+                    self.hasConection = False
+                    self.hasSerial = False
+
+                self.cameraIsRunning = False 
+                self.btn_stop.pack_forget()
+                self.btn_run.pack(fill = BOTH, expand =1 )
+
+                self.Mode = MODE_DEFAULT
+                self.viewer.default_mode()
+                self.debugFieldViewer.default_mode()
+
+                self.infoCards.update()
+
+                self.Timer.stop()
+                self.Timer.reset()
+
+                self.stop()
                 
         elif(self.Mode ==  MODE_IMAGE): #Modo Imagem
             print('[EMULADOR] Emulador em modo de processamento de Imagem')
@@ -441,13 +515,11 @@ class Emulator:
             self.capture.setMode(CaptureMode.IMG)  
 
             #inicia thread de captura
-            self.captureThread= CameraCaptureThread(main=self, capture_instance=self.capture, deque= self.capture_deque)
-            self.captureThread.start()  
 
             self.btn_stop.pack_forget() # torna o botão "run" invisível
             self.btn_run.pack(fill=BOTH, expand=1) # torna o botão "stop" visível
-            self.processImage()
-            
+            #self.processImage()
+            self.processImageNew()
         elif(self.Mode == MODE_VIDEO_CAM):
             print('[EMULADOR] Emulador em modo de processamento de Video')
             
@@ -478,8 +550,10 @@ class Emulator:
         print('[EMULADOR] Emulador teve sua execução parada.')
 
         #parando a thread de captura
-        self.captureThread.stop()
-        
+        try:
+            self.captureThread.stop()
+        except:
+            print('[EMULADOR]: thread foi forçada a terminar.')
         #print(self.capture_deque)
         if(self.capture): 
             self.capture.reset() #Libera a câmera
@@ -538,10 +612,6 @@ class Emulator:
         #parando o timer e resetando sua contagem
         self.Timer.stop()
         self.Timer.reset()
-
-
-
-
     
     def call_detection_system(self, input_queue, output_queue):
         #inicio da contagem de tempo
@@ -572,15 +642,16 @@ class Emulator:
         self.realTime = self.Timer.getElapsedTime() /1000
         #atualizo informações na interface
         self.infoCards.update()
-        
+
     #Funções que executam os processos (execução por USB, por imagem ou )
     def processUSB(self):
-        
+        #carrega informações de focus
+
         #Id de captura
         while len(self.capture_deque) == 0:  # Espera até que haja pelo menos um elemento no deque
             time.sleep(0.1)  # Espera por 0.1 segundos antes de verificar novamente
 
-        self.frame = self.capture_deque[-1]
+        self.frame = self.capture_deque[-1].copy()
         
         field_data_structure = (self.frame, self.debug_view, self.fieldDimensions, self.OffSetBord, self.OffSetErode, self.MatrixTop, self.BINThresh)
         ball_data_structure = (self.ballColor, self.ball)
@@ -603,7 +674,7 @@ class Emulator:
 
             # Salvando dados recebidos
             received_data = self.received_data_queue.get()
-            self.ball, self.allies, self.enemies, self.frame, self.binary_treat, self.binaryBall, self.binaryPlayers, self.binaryTeam, self.imgDebug, self.alliesWindows, self.enemiesWindows = received_data
+            self.ball, self.allies, self.enemies, self.frame, self.binary_treat, self.binaryBall, self.binaryPlayers, self.binaryTeam, self.result, self.alliesWindows, self.enemiesWindows = received_data
 
 
             # Enviando dados para o processamento
@@ -623,86 +694,256 @@ class Emulator:
             #Aqui tem um tempo de delay fixo entre as execuções da função
             self.viewer.window.after(self.delay, self.processUSB)
 
-    def processImage(self):
+    #================================================================================
+    # ============// Gerando tarefas para puxar e enviar imagens
+    #nova rotina de processamento USB
+    def newProcessUSB(self):
+        #print("[VS]: Novo processo de USB sendo utilizado")
+        #Id de captura
+        print("[PROC. THREAD]: INICIANDO TAREFA.")
+        while self.cameraIsRunning:
+            if len(self.capture_deque) == 0:  # Espera até que haja pelo menos um elemento no deque
+                time.sleep(0.02)  # Espera por 0.1 segundos antes de verificar 
+                continue
+            
+            self.frame = self.capture_deque[-1].copy()
+
+            #puxando o tempo inicial do processamento, ou seja esse aqui, ou seja, o tempo
+            # que a imagem foi pega e enviada
+            dt = self.Timer.getElapsedTime()
+
+            #envio apenas a imagem e o debug para o processo
+            data_structure = (self.frame, self.debug_view, dt)
+
+            #enviando dados na fila
+            with self.sent_data_queue.mutex:
+                self.sent_data_queue.queue.clear()
+            self.sent_data_queue.put(data_structure)
+
+            self.vs.drawAllRobots()
+            time.sleep(self.delay/1000)
+        
+        print("[PROC. THREAD]: Tarefa finalizada. Câmera desligada")
+    
+    #=========== // Gerando tarefa para processar as imagens que chegam
+    #definindo nova função para processar imagens
+    def new_call_detection_system(self, input_queue, output_queue):
+        ''' Thread para processar a imagem que chegou na fila'''
+        print("[DETECT.THREAD]: INICIANDO TAREFA.")
+        # Criação do lock
+        processing_lock = threading.Lock()
+
+        while self.cameraIsRunning:
+            # verifica se a fila está vazia
+            if not self.sent_data_queue.empty():
+                with processing_lock:
+                    self.vs.drawAllRobots()
+                    #verifica se tem elementos na fila
+                    St1 = self.Timer.getElapsedTime()
+
+                    #valores recebidos
+                    received_data = self.sent_data_queue.get()
+
+                    #descompactando
+                    frame, debug, dT1 = received_data
+
+                    dT2 = self.Timer.getElapsedTime()
+
+                    try:
+                        # processando frame que chegou para a imagem 
+                        result = self.vs.proc(frame, debug) 
+                        '''
+                            @Saulo: O resultado de processImg() ainda precisa ser corrigido para a previsão dos intervalos de tempo necessários.
+                            A proc() é um processamento muito pesado e gasta muito tempo, já a processImg() tenta otimizar esse procedimento.
+                        '''
+                        #puxa a imagem
+                        virtual = self.vs.virtualImg
+                        # adquirindo os objetos presentes no sistema de visão
+                        objects = self.vs.getObjects()
+                        #dados que serão retornados
+                        data = {'result': result, 
+                                        'virtual': virtual,
+                                        'objects': objects}
+
+                        # enviando de volta
+                        output_queue.queue.clear()
+                        output_queue.put(data)
+
+                    except Exception as e:
+                        print("[DETECT.THREAD] Ocorreu um erro ao processar:\n",e)
+
+                        #Exibir uma janela de problema
+                        traceback.print_exc()
+                    
+                    self.vs.drawAllRobots()
+                    #finaliza a contagem de tempo
+                    St2 = self.Timer.getElapsedTime()
+
+                    self.totalTime = (dT2 - dT1)
+                    self.frameTime = (St2 - St1)
+                    self.FPStime = int(1000.0 / self.frameTime if self.frameTime != 0 else 0)
+                    self.realTime = self.Timer.getElapsedTime() / 1000
+
+            else:
+                #pausa a execução por 10 ms
+                print("[DETECT.THREAD]:: A fila de envio está vazia")
+                time.sleep(0.100)
+                continue
+
+            #atualizo informações na interface 
+            self.infoCards.update()
+            
+            self.vs.drawAllRobots()
+            #Delay desta thread
+            time.sleep(self.delay/1000)
+
+
+    #========== // Gerando tarefa para exibir os resultados, quando há
+    def getResults(self):
+        ''' Essa função é a responsável por pegar os valores processados e exibir na interface GUI
+        
+        Esse código precisa utilizar o after do root da janela principal do tkinter'''
+        if self.cameraIsRunning:
+            if not self.received_data_queue.empty():
+                try:
+                    data = self.received_data_queue.get()
+
+                    objects             = data['objects']
+                    self.result         = data['result']
+                    self.virtualRImg    = data['virtual']
+
+                    #extraindo objetos
+                    self.field      = objects[ID_Objects.FIELD]
+                    self.ball       = objects[ID_Objects.BALL]
+                    self.allies     = objects[ID_Objects.ALLIES]
+                    self.enemies    = objects[ID_Objects.ENEMIES]
+
+                    #Atualizo informações do cards sobre funcionalidade
+                    self.infoCards.updateFuncs()
+                    self.viewer.show(self.frame)
+
+                    if(self.DEBUGA == True):
+                        binary_treat, binaryBall, binaryPlayers, binaryTeam = self.vs.getDebugImages()
+                        if binary_treat is not None: self.debugFieldViewer.show(binary_treat)
+                        if binaryBall is not None: self.debugObjectsViewer.show(binaryBall)
+                        if binaryPlayers is not None: self.debugPlayersViewer.show(binaryPlayers)
+                        if binaryTeam is not None: self.debugTeamViewer.show(binaryTeam)
+                    
+                    self.resultViewer.show(self.result)
+                    self.virtualResult.show(self.vs.virtualImg)
+
+                    #Adicionando conteúdos
+                    self.vs.drawAllRobots()
+                    self.setContentRobots()
+                    #========== PARTE DO PROCESSAMENTO
+                    ''' Necessário ajustar o Control'''
+                    self.control.updateObjectsValues(self.field, self.ball, self.allies, self.enemies)
+                    #self.commands = self.control.processControl()
+                    
+                    #enviando novos comandos
+                    #self.commands_queue.queue.clear()
+                    #self.commands_queue.put(self.commands)
+                except Exception as e:
+                    self.vs.drawAllRobots()
+                    print("[RESULT. THREAD] Ocorreu um erro ao obter resultados:\n", e)
+                    traceback.print_exc()
+
+            # Associada à tarefa interna do GUI do TKINTER
+            self.vs.drawAllRobots()
+            self.viewer.window.after(self.delay, self.getResults)
+        else:
+            print('[RESULT. THREAD]: Thread finalizada. Câmera desligada')
+
+    # ========= // Definindo método que dá start nessas duas threads
+    def startThreadsLoop(self):
+        '''
+            Método responsável por iniciar as threads de processamento
+        '''
+        #dando start na thread de processamento
+        # Thread responsável
+        self.processUSBThread = threading.Thread(target=self.newProcessUSB)
+        self.processUSBThread.daemon = True
+        self.processUSBThread.start()
+
+        #tempo para ajeitar tudo
+        time.sleep(0.010)
+
+        #dando start na thread de detecção
+        #possível perda de desempenho para ser analisado
+        self.procVideoThread = threading.Thread(target=self.new_call_detection_system, args=(self.sent_data_queue, self.received_data_queue))
+        self.procVideoThread.daemon = True
+        self.procVideoThread.start()
+
+        #tempo para ajeitar tudo
+        time.sleep(0.010)
+        
+        #dando start na thread de resultados
+        print('[RESULT. THREAD]: Iniciando tarefa')
+        self.getResultsThread = threading.Thread(target=self.getResults)
+        self.getResultsThread.daemon = True
+        self.getResultsThread.start()
+        
+        #tempo para ajeitar tudo
+        time.sleep(0.010)
+    
+    # ========= // Método para parar as threads
+    def stopThreadsLoop(self):
+        ''' Método responsável por travar as threads'''
+
+        pass 
+
+
+    #================================================================================
+    #processando uma imagem utilizando o novo sistema de visão
+    def processImageNew(self):
         print("[EMULADOR] Processando imagem: ",self.ImgPath)
         St1i = self.Timer.getElapsedTime()
         self.capture.setImagePath(self.ImgPath)
         self.frame = self.capture.getImage()
-        
-        field_data_structure = (self.frame, self.debug_view, self.fieldDimensions, self.OffSetBord, self.OffSetErode, self.MatrixTop, self.BINThresh)
-        ball_data_structure = (self.ballColor, self.ball)
-        players_data_structure = (self.teamMainColor, self.enemiesMainColor, self.playersAllColors, self.allies, self.enemies, self.OffSetBord)
+        self.debugFrame = self.frame.copy()
+        #Método de RUN para imagem
+        result = self.vs.processImg(self.debugFrame, debug=self.DEBUGA)
 
-        data_structure = field_data_structure + ball_data_structure + players_data_structure
-
-        # Chamando a função para detecção e enviando os parâmetros necessários
-        self.sent_data_queue.queue.clear()
-        self.sent_data_queue.put(data_structure)
-
-        self.video_processor_thread = threading.Thread(target=self.call_detection_system, args=(self.sent_data_queue, self.received_data_queue))
-        self.video_processor_thread.daemon = True
-        self.video_processor_thread.start()
-
-        # Salvando dados recebidos
-        received_data = self.received_data_queue.get()
-        ball_object, allies_list, enemies_list, frame, binary_treat, binaryBall, binaryPlayers, binaryTeam, imgDebug, alliesWindows, enemiesWindows = received_data
-
-        self.ball = ball_object
-        self.allies = allies_list
-        self.enemies = enemies_list
-
-        # Enviando dados para o processamento
-        # self.commands = recieve_data(self, self.ball, self.allies, self. enemies, self.clientMQTT)
-        # self.commands_queue.queue.clear()
-        # self.commands_queue.put(self.commands)
+        #retornando valores
+        St2i = self.Timer.getElapsedTime()
 
         #Exibindo dados em tela
-        self.viewer.show(frame)
+        self.viewer.show(self.frame)
+
+        #imagens de debug
         if(self.DEBUGA == True):
-            print("tá funcionando em debug")
+            binary_treat, binaryBall, binaryPlayers, binaryTeam = self.vs.getDebugImages()
             self.debugFieldViewer.show(binary_treat)
             self.debugObjectsViewer.show(binaryBall)
             self.debugPlayersViewer.show(binaryPlayers)
             self.debugTeamViewer.show(binaryTeam)
-        self.resultViewer.show(imgDebug)
+        
+        #imagens de resultado
+        self.resultViewer.show(result)
+        self.virtualResult.show(self.vs.virtualImg)
+        
+        # puxando informações do sistema de visão
+        self.allies     = self.vs.allyTeam
+        self.enemies    = self.vs.enemyTeam
 
         #Adicionando conteúdos
         self.setContentRobots()
 
-      # self.call_detection_system()
-        St2i = self.Timer.getElapsedTime()
+        #resetando configurações já que é modo imagem
+        self.vs._resetVs()
+
         self.totalTime = (St2i - St1i)                       #tempo em mili 
         #segundos
         
         self.realTime = self.Timer.getElapsedTime() / 1000
 
+        self.FPStime = int(1000/self.totalTime)
+
         #atualizo informações na interface
         self.infoCards.update()
+    
+    
 
-        #para a thread
-        self.captureThread.stop()
-        self.captureThread.join()
-
-    #Método para exibir informações
-    def showInformation(self):
-        if self.cameraIsRunning:
-            #Atualizo informações do cards sobre funcionalidade
-            self.infoCards.updateFuncs()
-
-            self.viewer.show(self.frame)
-            if(self.DEBUGA == True):
-                self.debugFieldViewer.show(self.binary_treat)
-                self.debugObjectsViewer.show(self.binaryBall)
-                self.debugPlayersViewer.show(self.binaryPlayers)
-                self.debugTeamViewer.show(self.binaryTeam)
-            self.resultViewer.show(self.imgDebug)
-
-            #Adicionando conteúdos
-            self.setContentRobots()
-
-            self.viewer.window.after(20, self.showInformation)
-        else:
-            print('Não está no modo câmera')
     #Método para processar o vídeo
     def processVideo(self):
         print(self.VideoPath)
@@ -725,13 +966,18 @@ class Emulator:
             if self.allies[i] is not None:
                 self.cards[i].set_content(self.allies[i].id, self.allies[i].detected, self.allies[i].position, self.allies[i].radius, self.allies[i].image)
             else:
-                self.cards[i].set_content("#0", False, ["0.0000", "0.0000"], "0.0000", None)
+                self.cards[i].set_content("#0", False, ["0.0", "0.0"], "0.0", None)
                 
         for i in range(3):
             if self.enemies[i] is not None:
                 self.cards[i+3].set_content(self.enemies[i].id, self.enemies[i].detected, self.enemies[i].position, self.enemies[i].radius, self.enemies[i].image)
             else:
-                self.cards[i+3].set_content("#0", False, ["0.0000", "0.0000"], "0.0000", None)
+                self.cards[i+3].set_content("#0", False, ["0.0", "0.0"], "0.0", None)
+
+    #Nova forma de adicionar conteúdo dos robôs
+    def setContentRobotsNew(self):
+        pass 
+
 
     # Verifica se tem um serviço cuda no computador
     def hasCudaDevice(self):
