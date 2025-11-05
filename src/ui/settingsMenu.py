@@ -1,6 +1,6 @@
-from viewer import MyViewer
-from objects import *
-from modules import *
+from ui.viewer import MyViewer
+from modules.VisionSys.objects import *
+from imports import *
 from tkinter import *
 from tkinter import ttk
 from tkinter.ttk import Treeview, Scrollbar, Entry, Style

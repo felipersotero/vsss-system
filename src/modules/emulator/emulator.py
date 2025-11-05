@@ -1,11 +1,11 @@
-from detectorV2 import VisionSystem
-from modules import *
-from settingsMenu import *
-from viewer import MyViewer, WindowsViewer
-from cards import *
-from objects import *
-from control import Control
-from communication import *
+from modules.VisionSys.detectorV2 import VisionSystem
+from imports import *
+from ui.settingsMenu import *
+from ui.viewer import MyViewer, WindowsViewer
+from ui.cards import *
+from modules.VisionSys.objects import *
+from modules.control.control import Control
+from modules.communication.communication import *
 
 import threading
 import queue
@@ -221,8 +221,7 @@ class Emulator:
             self.CUDAselected = self.hasCudaDevice()
         else:
             self.CUDAselected = False        # Cuda não foi selecionado
-            self.hasCudaDevice()             # Atualizo informações do cuda
-        
+
         #Trata qual foi o tipo de conexão escolhida pelo usuário
 
 
@@ -977,35 +976,3 @@ class Emulator:
     #Nova forma de adicionar conteúdo dos robôs
     def setContentRobotsNew(self):
         pass 
-
-
-    # Verifica se tem um serviço cuda no computador
-    def hasCudaDevice(self):
-        try:
-            pycuda.init()
-            device_count = pycuda.Device.count()
-            if device_count > 0:
-                self.hasCuda = True
-                context = pycuda.Device(0).make_context()
-                self.CudaDeviceVersion = context.get_api_version
-                context.detach()
-                self.CudaDevice= pycuda.Device(0).name()
-                
-                #Atualizo o card
-                self.infoCards.updateFuncs()
-                return True
-            else:
-                self.hasCuda = False
-                self.CudaDeviceVersion = None
-                self.CudaDevice= None
-
-                #Atualizo o card
-                self.infoCards.updateFuncs()
-                return False
-        except pycuda.RuntimeError:
-                self.hasCuda = False
-                self.CudaDeviceVersion = None
-                self.CudaDevice= None
-                #Atualizo o card
-                self.infoCards.updateFuncs()
-                return False

@@ -1,4 +1,4 @@
-from modules import *
+from imports import *
 
 #Classe de player para o aplicativo
 class MyViewer:

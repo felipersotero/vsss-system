@@ -1,10 +1,10 @@
-from modules import *
-from viewer import MyViewer
-from objects import *
-from control import *
-from communication import *
+from imports import *
+from ui.viewer import MyViewer
+from modules.VisionSys.objects import *
+from modules.control.control import *
+from modules.communication.communication import *
 import serial.tools.list_ports
-from cards import *
+from ui.cards import *
 import numpy as np
 #==========================/// Gerando classe de janela de controle de jogador /// ====================
 #Essa janela funciona como um aplicativo que será utilizado para controlar

@@ -6,12 +6,12 @@
 '''
 import numpy as np
 import time
-from viewer import MyViewer
+from ui.viewer import MyViewer
 import threading
 import queue
 import tkinter 
 from collections import deque
-from settingsMenu import *
+from ui.settingsMenu import *
 
 
 

@@ -1,12 +1,12 @@
-from modules import *
-from settingsMenu import settingsMenu
-from viewer import MyViewer, WindowsViewer
-from emulator import Emulator
-from cards import *
-from control import *
-from communication import *
-from objects import *
-from windowControl import *
+from imports import *
+from ui.settingsMenu import settingsMenu
+from ui.viewer import MyViewer, WindowsViewer
+from modules.emulator.emulator import Emulator
+from ui.cards import *
+from modules.control.control import *
+from modules.communication.communication import *
+from modules.VisionSys.objects import *
+from ui.windowControl import *
 
 execution = False
 

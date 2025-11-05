@@ -1,5 +1,5 @@
 import tkinter as tk
-from modules import *
+from imports import *
 from PIL import Image, ImageTk, ImageGrab
 
 class Card:

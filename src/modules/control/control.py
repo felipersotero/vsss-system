@@ -23,8 +23,8 @@
 ## Tiro de meta
 ## Bola livre"""
 
-from modules import *
-from communication import *
+from imports import *
+from modules.communication.communication import *
 
 class Control:
     def __init__(self, Emulator):
