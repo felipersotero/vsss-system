@@ -1,6 +1,6 @@
 import numpy as np
-import matplotlib.pyplot as plt
-import cv2 
+from modules.VisionSys.components.objects import *
+
 class Robot:
     def __init__(self, id, team, x=0, y=0, theta=0, r=0,
                  image=cv2.imread('src/images/dark_screen.png'),
@@ -47,7 +47,7 @@ class Robot:
         # Kalman Filter
         self.kf_initialized = False
         self.x_hat = np.array([[self._x], [self._y], [self._theta]])
-        self.P = np.eye(3) * 1e-1
+        self.P = np.eye(3) * 1e-2
         self.Q = np.eye(3) * 1e-3
         self.R = np.eye(3) * 1e-2
 
@@ -56,7 +56,7 @@ class Robot:
         self.dimMatrix = image.shape[1]
 
         # Janela para informar a posição do jogador:
-        #self.viewRect = ViewBot(Point2D(self._x, self._y), int(self.radius + 14))
+        self.viewRect = ViewBot(Point2D(self._x, self._y), int(self.radius + 14))
     
 
     # -------------------------------
@@ -227,86 +227,3 @@ class Robot:
 
     def getColor(self):
         return self.colorTeam, self.colorCar1, self.colorCar2
-
-# ------------------------
-# SIMULAÇÃO
-# ------------------------
-# Criando robô
-bot = Robot(id=1, team="ALLY", x=0.0, y=0.0, theta=0.0)
-bot.init_kalman()
-
-# Parâmetros do robô
-L = 0.1      # distância entre rodas [m]
-Rw = 0.02    # raio da roda [m]
-dt = 0.1     # intervalo de tempo [s]
-
-# Velocidades das rodas (esquerda e direita)
-wl = 5.0 + np.random.randn(100) * 3  # rad/s (com pequeno ruído)
-wr = 5.2 + np.random.randn(100) * 3
-
-# Estados reais e estimados
-true_path = []
-pred_path = []
-kf_path = []
-
-# Estado real inicial
-x_real, y_real, theta_real = 0.0, 0.0, 0.0
-
-# Simulação de 100 passos
-for k in range(100):
-    # --- SIMULAÇÃO DO MUNDO REAL ---
-    v_real = (Rw / 2) * (wr[k] + wl[k])
-    w_real = (Rw / L) * (wr[k] - wl[k])
-
-    x_real += v_real * np.cos(theta_real) * dt
-    y_real += v_real * np.sin(theta_real) * dt
-    theta_real += w_real * dt
-
-    # Adiciona ruído de medição (como se fosse visão)
-    z = np.array([
-        x_real + np.random.randn() * 0.01,
-        y_real + np.random.randn() * 0.01,
-        theta_real + np.random.randn() * 0.2
-    ])
-
-    # --- PREDIÇÃO DO ROBÔ ---
-    bot.ekf_predict(wl[k], wr[k], L, Rw, dt)
-    pred_path.append(bot.x_hat.flatten())
-
-    # --- CORREÇÃO COM KALMAN ---
-    bot.ekf_update(z)
-    kf_path.append(bot.x_hat.flatten())
-
-    # Guarda posição real
-    true_path.append([x_real, y_real, theta_real])
-
-# ------------------------
-# CONVERSÃO PARA MATRIZES
-# ------------------------
-true_path = np.array(true_path)
-pred_path = np.array(pred_path)
-kf_path = np.array(kf_path)
-
-# ------------------------
-# PLOTAGEM DOS RESULTADOS
-# ------------------------
-plt.figure(figsize=(8, 6))
-plt.plot(true_path[:, 0], true_path[:, 1], 'g-', label='Trajetória Real (sem ruído)')
-plt.plot(pred_path[:, 0], pred_path[:, 1], 'b--', label='Predição (Modelo)')
-plt.plot(kf_path[:, 0], kf_path[:, 1], 'r-', label='Kalman (Estimado)')
-plt.title("Comparação: Trajetória Real x Predição x Kalman")
-plt.xlabel("x [m]")
-plt.ylabel("y [m]")
-plt.legend()
-plt.grid(True)
-plt.axis("equal")
-plt.show()
-
-# ------------------------
-# ERRO MÉDIO
-# ------------------------
-erro_pred = np.mean(np.linalg.norm(true_path[:, :2] - pred_path[:, :2], axis=1))
-erro_kf = np.mean(np.linalg.norm(true_path[:, :2] - kf_path[:, :2], axis=1))
-
-print(f"Erro médio da predição (sem filtro): {erro_pred:.4f} m")
-print(f"Erro médio com Kalman: {erro_kf:.4f} m")

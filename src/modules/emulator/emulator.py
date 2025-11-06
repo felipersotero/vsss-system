@@ -3,7 +3,7 @@ from imports import *
 from ui.settingsMenu import *
 from ui.viewer import MyViewer, WindowsViewer
 from ui.cards import *
-from modules.VisionSys.objects import *
+from modules.VisionSys.components.objects import *
 from modules.control.control import Control
 from modules.communication.communication import *
 

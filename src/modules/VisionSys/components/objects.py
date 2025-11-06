@@ -13,8 +13,6 @@ import tkinter
 from collections import deque
 from ui.settingsMenu import *
 
-
-
 from tkinter import *
 from tkinter import ttk
 from tkinter.ttk import Treeview, Scrollbar, Entry, Style

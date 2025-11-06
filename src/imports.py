@@ -23,7 +23,7 @@ from modules.VisionSys.detectorV2 import *
 #suporte a GPU
 from cv2 import cuda
 import platform 
-from modules.VisionSys.objects import *
+from modules.VisionSys.components.objects import *
 
 # Inicializar o ambiente OpenCL
 if cv2.ocl.haveOpenCL(): cv2.ocl.setUseOpenCL(True)

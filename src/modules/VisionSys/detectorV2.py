@@ -5,7 +5,7 @@
     @GNOMIO: O algorítmo de detecção terá agora uma nova lógica de programação, no qual ele é conti-
     tuído de uma classe 'detector' responsável por realizar.
     Os cálculos serão acelerados utilizando a GPU. Para isso utiliza a bibliteca OpenCV com 
-    base na plataforma cuda, e usa também a cupy para realizar cálulos da biblioteca
+    base na plataforma cuda, e usa também a cupy para realizar cálculos da biblioteca
     numpy na GPU do computador.
 
     Necessário configurar CMAKE e etc para utilizar essa interface.
@@ -17,7 +17,7 @@ from timer import *
 import threading
 import queue
 import imports
-from modules.VisionSys.objects import *
+from modules.VisionSys.components.objects import *
 import traceback
 from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor
 
@@ -92,19 +92,6 @@ class Robot:
         self.lastTimestamp  = 0 
         self.newTimestamp   = 0
         self.dT             = 0 
-
-
-        # Parâmetros para o filtro de Kalman
-        #Matriz de observação H 
-        self.H = np.eye(3) 
-        #self.x = np.array([[self.xi], [self.yi], [self.theta]])
-
-
-        # Velocidade das rodas enviadas para o robô pelo sistema de comando 
-        self.wl = 0     # velocidade da roda esquerda
-        self.wr = 0     # velocidade angular da roda direita 
-
-
 
     #definindo uma função para setar a posição do robô
     def setPosition(self,x,y,r,image, time):
@@ -893,7 +880,7 @@ class VisionSystem:
         imgP = img.copy()
         if img is not None:
             # Detectando o campo
-            wbCmField = self.detect_field(imgP,debug)
+            wbCmField = self.detect_field_noCuda(imgP,debug)
             '''
                 OBS: A ideia é que ele apenas busque as outras coisas quando detectar um 
                 campo de tamanho considerável na imagem, caso contrário, ele não realiza os cálculos
@@ -907,22 +894,22 @@ class VisionSystem:
 
                     #detectando bola
                 try:
-                    self.detect_ball(self.fieldReduce, self.ballColor, debug)
+                    self.detect_ball_noCuda(self.fieldReduce, self.ballColor, debug)
                 except:
                     try: 
-                        self.detect_ball(self.fieldReduce, self.ballColor, debug)
+                        self.detect_ball_noCuda(self.fieldReduce, self.ballColor, debug)
                     except Exception as e:
                             print("[VS]: Não foi possível detectar a bola, pois:\n",e)
 
                 #detectando jogadores
                 try:
-                    self.detect_players(self.fieldReduce, debug,isT=isT)
+                    self.detect_players_noCuda(self.fieldReduce, debug,isT=isT)
 
                 except:
 
                     traceback.print_exc()
                     try:
-                        self.detect_players(self.fieldReduce, debug, isT=isT)
+                        self.detect_players_noCuda(self.fieldReduce, debug, isT=isT)
                     except Exception as e:
                         print("[VS]: Não foi possível detectar os players, pois: \n",e)
                         traceback.print_exc()
@@ -1384,20 +1371,33 @@ class VisionSystem:
     # escolhe as funções da classe caso tenha ou não suporte ao cuda
     def choseModeFunctions(self):
         '''
-            Atualiza as referências de função para as implementações disponíveis.
-            Removidas as versões CUDA — todas apontam para as implementações CPU (sem sufixo).
+            Atualiza as funções que serão utilizadas pela GPU e pela CPU
+            Além de deixar mais eficaz.
         '''
         print("[VisionSystem]: Configurando as funções para o método solicitado")
-        # Apontar para as versões sem sufixo (CPU)
-        self.gray_scale     = self.gray_scale
-        self.median_blur    = self.median_blur
-        self.highlight_img  = self.highlight_img
-        self.binarize_up    = self.binarize_up
-        self.treat_noise    = self.treat_noise
-        self.reduce_field   = self.reduce_field
-        self.detect_ball    = self.detect_ball
-        self.detect_field   = self.detect_field
-        self.detect_players = self.detect_players
+        #Se tiver utilizando o cuda no código para otimizar o processamento
+        if self._hasCuda:
+            #Métodos utilizando o CUDA
+            self.gray_scale = self.gray_scale_Cuda
+            self.median_blur = self.median_blur_Cuda
+            self.highlight_img = self.highlight_img_Cuda
+            self.binarize_up = self.binarize_up_Cuda
+            self.treat_noise = self.trait_noise_Cuda
+            self.reduce_field = self.reduce_field_Cuda
+            self.detect_ball = self.detect_ball_Cuda
+            self.detect_field = self.detect_field_Cuda
+            self.detect_players = self.detect_players_Cuda
+        else:
+            #PROCESSAMENTO UTILIZANDO APENAS A CPU com aprimoramento em algumas partes
+            self.gray_scale = self.gray_scale_noCuda
+            self.median_blur = self.median_blur_noCuda
+            self.highlight_img = self.highlight_img_noCuda
+            self.binarize_up = self.binarize_up_noCuda
+            self.treat_noise = self.trait_noise_noCuda
+            self.reduce_field = self.reduce_field_noCuda
+            self.detect_ball = self.detect_ball_noCuda
+            self.detect_field = self.detect_ball_noCuda
+            self.detect_players = self.detect_players_noCuda
 
     #função para retornar homografia entre dois sistemas de pontos
     def getHomographyMatrix(self, ptsSrc, ptsFinal):
@@ -1452,17 +1452,17 @@ class VisionSystem:
     def getPointVirtual(self, ptSrc):
         '''
             Com o "ptSrc" da imagem virtual é encontrado sua posição em relação ao
-            novo sistema de coordenadas
-        
-            x = ptSrc[0]
-            y = ptSrc[1]
+            novo sistema de coordenadas O', esse valor em cm será o que será guardado nos objetos
+            (bola, robô e campo). Assim será possível realizar os calculos apenas no mundo virtual
 
-            #   coordenada final
-            x_f = (x - self.xnv)/3
-            y_f = (self.ynv - y)/3
+            Deve-se passar o índice correspondente a imagem virtualizada e ele retorna
+            a posição com cm (m/100)
+
+            O resultado é um ponto em centímetros (cm)
         '''
 
         #   transforma o ponto no novo sistema de coordenadas
+        
         x = ptSrc[0]
         y = ptSrc[1]
 
@@ -1480,7 +1480,6 @@ class VisionSystem:
             Pega o valor do ponto em cm, e transforma em índices para a imagem virtual
             para poder, então desenhar-lo.
         '''
-
         x_f =int(ptSrc[0]*3 +self.xnv)
         y_f = int(self.ynv-ptSrc[1]*3)
 
@@ -1520,7 +1519,7 @@ class VisionSystem:
     #===============| Definindo funções básicas|==============================
     # ============= métodos sem suporte ao CUDA =====================
     #puxando imagem
-    def load_image(self, imgPath):
+    def load_image_noCuda(self, imgPath):
         '''
             Função que carrega imagem na CPU por meio de um caminho (imgPath). Sem usar a GPU
         '''
@@ -1533,21 +1532,21 @@ class VisionSystem:
             return self.imgOrigim        
     
     #transformando imagem em tons de cinza
-    def gray_scale(self,img):
+    def gray_scale_noCuda(self,img):
         '''
             Coloca a imagem passada em tons de cinza, Sem usar a GPU
         '''
         return cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
     
     #aplicando o filtro mediana para possíveis ruídos
-    def median_blur(self, img, kernelSize = 3):
+    def median_blur_noCuda(self, img, kernelSize = 3):
         '''
             Aplica o filtro de mediana para reduzir ruídos. Sem usar a GPU.
         '''
         return cv2.medianBlur(img, kernelSize)
     
     #binarizando a imagem indo de um limir até 255
-    def binarize_up(self, img, threshold=150):
+    def binarize_up_noCuda(self, img, threshold=150):
         '''
             Binariza a imagem por meio de um threshold, ou seja, um limiar
             de intensidade dos pixels. Para isso, a imagem tem que estar em
@@ -1557,7 +1556,7 @@ class VisionSystem:
         return bin
 
     #trata ruídos da imagem binarizada
-    def treat_noise(self, binImg, it=1):
+    def trait_noise_noCuda(self, binImg, it=1):
         '''
             Trata o ruído de imagens binarizadas.
         '''
@@ -1566,7 +1565,7 @@ class VisionSystem:
         return binImgProc
     
     #recuperando objeto de maior área
-    def get_object(self,img):
+    def get_object_noCuda(self,img):
         '''
             Retorna o maior objeto encontrado
         '''
@@ -1574,7 +1573,7 @@ class VisionSystem:
         return contours[0]
     
     #recuperando coordenadas extremas que englobam o objeto maior 
-    def get_perspective(self, obj):
+    def get_perspective_noCuda(self, obj):
         '''
             Retorna um retângulo que envolve o objeto passado, e a partir disso
             retorna x,y, x+w e y+h
@@ -1583,7 +1582,7 @@ class VisionSystem:
         return x,y,x+w,y+h
     
     #função para realçar objetos brilhantes na imagem
-    def highlight_img(self, img, dim = 25):
+    def highlight_img_noCuda(self, img, dim = 25):
         '''
             Realça objetos brilhantes na imagem. Contudo, a imagem deve estar em
             tons de cinza.
@@ -1598,7 +1597,7 @@ class VisionSystem:
         return imgTrat
     
     #função para reduzir a imagem original
-    def reduce_window(self, img, coorVetor, d=10):
+    def reduce_window_noCuda(self, img, coorVetor, d=10):
         '''
             Reduz a imagem numa parte dela com base nas coordenadas x,y,x+w,y+h
             Pegando assim uma menor parte da imagem para processar
@@ -1622,7 +1621,7 @@ class VisionSystem:
             return img
         
     #função responsável para reduzir a imagem para os contornos do campo
-    def reduce_field(self, BinImg, Img, fieldWidth, d=10):
+    def reduce_field_noCuda(self, BinImg, Img, fieldWidth, d=10):
         '''
             Função responsável por reduzir a imagem tomando como base a imagem do campo
             e então realizar o processamento nela
@@ -1656,6 +1655,7 @@ class VisionSystem:
 
 
             pi = np.float32([[x-d,y-d],[x+w+d,y-d],[x-d,y+h+d],[x+w+d,y+h+d]])
+
             # Extrair região de interesse da imagem
             img_Reduce = Img[int(y-d):int(y+h+d), int(x-d):int(x+w+d)]
             bin_Reduce = BinImg[int(y-d):int(y+h+d), int(x-d):int(x+w+d)]
@@ -1688,28 +1688,29 @@ class VisionSystem:
 
         return bin_Reduce, img_Reduce, cooVetor
 
-    #sort values
-    def sort_points(self, points):
-        # Ordena os pontos primeiro pelo y (crescente) e depois pelo x (crescente)
-        points = sorted(points, key=lambda p: (p[1], p[0]))
+    #função para converter medidas
+    def convert_measures(self, w_cm, w_px):
+        '''
+            Ajusto a constante de proporcionaldiade de px para cm. 
+            Representada pela variável: prop_px_cm
+        '''
+        #atualizando proporções para realizar os devidos cálculos
+        self.prop_px_cm = w_px / w_cm
+
+    #função para listar os jogadores
+    def list_players(self, teamList):
+        '''
+            Simplesmente lista os jogadores detectados
+        '''
+        amount = len(teamList)
+        for i in range(amount):
+            print(teamList[i].team, teamList[i].id)
+            print("Posição: x =", teamList[i].pos[0], " y =", teamList[i].pos[1])
         
-        # Identificar os dois pontos superiores e os dois pontos inferiores
-        top_points = points[:2]
-        bottom_points = points[2:]
-        
-        # Ordenar os pontos superiores por x (crescente)
-        top_points = sorted(top_points, key=lambda p: p[0])
-        
-        # Ordenar os pontos inferiores por x (crescente)
-        bottom_points = sorted(bottom_points, key=lambda p: p[0])
-        
-        # Retornar os pontos na ordem desejada: [top_right, top_left, bottom_left, bottom_right]
-        sorted_points = np.array([top_points[0], top_points[1], bottom_points[1], bottom_points[0]], dtype=np.int32)
-        
-        return sorted_points
+        print("====================")
 
     #puxando intervalos de cores
-    def create_color_bounds(self, color_array):
+    def create_color_bounds_noCuda(self, color_array):
         '''
             Cria as bandas inferior e superior em HSV por meio de um array
             que passa a informação em HSV dada pelo usuário
@@ -1728,7 +1729,7 @@ class VisionSystem:
         return lower_bound, upper_bound
     
     #Encontrar contornos numa imagem binarizada
-    def find_binary_contours(self, image, lower_bound, upper_bound):
+    def find_binary_contours_noCuda(self, image, lower_bound, upper_bound):
         '''
             Encontra contornos na imagem capturada filtrnado com HSV
         '''
@@ -1736,11 +1737,11 @@ class VisionSystem:
         upper = np.array(upper_bound)
 
         if image is None:
-            print("[VisionSystem]: Em find_binary_contours() a Imagem é None")
+            print("[VisionSystem]: Em find_binary_contours_noCuda() a Imagem é None")
             return [],None
 
         if image.shape[1] < 30:
-            print("[VisionSystem]: Em find_binary_contours() a  janela é muito pequena, provável que nem exista")
+            print("[VisionSystem]: Em find_binary_contours_noCuda() a  janela é muito pequena, provável que nem exista")
             return [],None
         
         imageHSV = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
@@ -1757,7 +1758,7 @@ class VisionSystem:
         return contours
 
     #Desenhar circulos na imagem onde estão os jogadores
-    def draw_player_circle(self, imgDegub, robot:Robot):
+    def draw_player_circle_noCuda(self, imgDegub, robot:Robot):
         '''
             Desenha um círculo no jogador
         '''
@@ -1797,7 +1798,7 @@ class VisionSystem:
         cv2.putText(imgDegub, pos , (int(xi-30),int(yi+ri+20)), cv2.FONT_HERSHEY_SIMPLEX, 0.4, color, 1)'''
 
     #Desenhar circulos na imagem onde estão os jogadores
-    def draw_player_virtual(self, robot:Robot):
+    def draw_player_virtual_noCuda(self, robot:Robot):
         '''
             Desenha um círculo no jogador
         '''
@@ -1847,72 +1848,25 @@ class VisionSystem:
    
 
     #função para tratar imagem e retornar os objetos mais próximos de quadrados
-    def detect_squares(self, imgBin):
+    def isSquare_noCuda(self, contorno):
         '''
-            Essa função trata uma imagem e verifica se ele é um robô e não um ruído.
+            Essa função trata da imagem e verifica se ele é um robô e não um ruído.
             Isso é realizado verificando se é ou não próximo de um quadrado.
         '''
-        contours, _ = cv2.findContours(imgBin, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-        try:
-            # Criar uma máscara em branco para os quadrados
-            mascara = None
-            mascara = np.zeros_like(imgBin)
+        perimetro = cv2.arcLength(contorno, True)
+        approx = cv2.approxPolyDP(contorno, 0.04 * perimetro, True)
+        if len(approx) == 4:
+            # Verificar se é um quadrado
+            x, y, w, h = cv2.boundingRect(approx)
+            aspect_ratio = float(w) / h
+            if 0.7 <= aspect_ratio <= 1.3: #Esses valores foram chutados
+                # Desenhar contorno do quadrado na máscara
+                return True
+            else:
+                return False
 
-            contours_treat = []
-            # Iterar sobre os contornos encontrados para encontrar os quadrados
-            for contorno in contours:
-                perimetro = cv2.arcLength(contorno, True)
-                approx = cv2.approxPolyDP(contorno, 0.04 * perimetro, True)
-                if len(approx) == 4:
-                    # Verificar se é um quadrado
-                    x, y, w, h = cv2.boundingRect(approx)
-                    aspect_ratio = float(w) / h
-                    if 0.7 <= aspect_ratio <= 1.3: #Esses valores foram chutados
-                        # Desenhar contorno do quadrado na máscara
-                        cv2.drawContours(mascara, [contorno], 0, 255, -1)
-                        contours_treat.append(contorno)
-
-            # Aplicar a máscara na imagem binarizada
-            bin_res = cv2.bitwise_and(imgBin, imgBin, mask=mascara)
-
-            # Retorna a imagem tratada
-            return bin_res, contours_treat
-
-        except Exception as e:
-            print("Erro ao processar imagem:", e)
-            return imgBin, contours
-
-    # método para verificar se numa janela tem um robô com as cores configuradas
-    def detect_ally_robot(self, window, colorP, colorS):
-        '''
-        #### Função sem suporte ao CUDA
-        Função responsável por verificar se há um robô aliado dentro de uma janela, com base na cor primária e na secundária.
-
-        Ela retorna TRUE quando as cores são detectadas e retorna FALSE quando nenhuma ou apenas uma das cores é detectada
-
-        ### Variáveis:
-        - window: imagem que deseja ser processada
-        - colorP: cor principal em HSV, na forma de array [H,S,V]
-        - colorS: cor secundária em HSV, na forma de array [H,S,V]
-        - ColorT: Cor do time em HSV, na forma de array [H,S,V]
-        '''
-
-        # Criando limites das cores
-        first_lower_bound, first_upper_bound = self.create_color_bounds(colorP)
-        second_lower_bound, second_upper_bound = self.create_color_bounds(colorS)
-
-        # Procurando cores na janela
-        firstColorContours = self.find_binary_contours(window, first_lower_bound, first_upper_bound)
-        secondColorContours = self.find_binary_contours(window, second_lower_bound, second_upper_bound)
-
-        # Verificando se as cores foram encontradas
-        primaryFound = any(cv2.minEnclosingCircle(contour)[1] >= 0.1* self.secColorRadius for contour in firstColorContours)
-        secundaryFound = any(cv2.minEnclosingCircle(contour)[1] >= 0.1 * self.secColorRadius for contour in secondColorContours)
-
-        return primaryFound and secundaryFound
-    
     #função para aumentar a saturação de uma imagem
-    def upSaturation(self, img):
+    def upSaturation_noCuda(self, img):
         '''
             Essa função aumenta a saturação de uma imagem
         '''
@@ -1932,3 +1886,1216 @@ class VisionSystem:
         imagem_resultante = cv2.cvtColor(imagem_hsv_aumentada, cv2.COLOR_HSV2BGR)
 
         return imagem_resultante
+    
+    #função que trata a imagem binarizada dos jogadores e retorna apenas eles na imagem
+    def detect_squares_noCuda(self, imgBin):
+        '''
+            Essa função trata uma imagem e retorna a imagem binarizada apenas com os objetos mais próximos do quadrado bem como os contornos deles.
+
+            O retorno é na ordem:
+             - 1º: Imagem_binarizada_tratada;
+             - 2º:  lista_de_contornos
+        '''
+        # Encontrar contornos
+        contours, _ = cv2.findContours(imgBin, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+        try:
+
+            # Criar uma máscara em branco para os quadrados
+            mascara = None
+            mascara = np.zeros_like(imgBin)
+
+            contours_treat = []
+            # Iterar sobre os contornos encontrados para encontrar os quadrados
+            for contorno in contours:
+                perimetro = cv2.arcLength(contorno, True)
+                approx = cv2.approxPolyDP(contorno, 0.04 * perimetro, True)
+                if len(approx) == 4:
+                    # Verificar se é um quadrado
+                    x, y, w, h = cv2.boundingRect(approx)
+                    aspect_ratio = float(w) / h
+                    if 0.7 <= aspect_ratio <= 1.3:
+                        #verifico o tamanho, para que seja um tamanho considerável
+                        if np.sqrt(w*w+h*h) >= (7.5/4)*np.sqrt(2)*self.prop_px_cm:
+                            # Desenhar contorno do quadrado na máscara
+                            cv2.drawContours(mascara, [contorno], 0, 255, -1)
+                            contours_treat.append(contorno)
+
+            # Aplicar a máscara na imagem binarizada
+            bin_res = cv2.bitwise_and(imgBin, imgBin, mask=mascara)
+
+            # Retorna a imagem tratada
+            return bin_res, contours_treat
+
+        except Exception as e:
+            # Se ocorrer uma exceção, retorna a imagem original
+            print("Erro ao processar imagem:", e)
+            return imgBin, contours
+        
+        
+
+    # método para verificar se numa janela tem um robô com as cores configuradas
+    def detect_ally_robot_noCuda(self, window, colorP, colorS):
+        '''
+        #### Função sem suporte ao CUDA
+        Função responsável por verificar se há um robô aliado dentro de uma janela, com base na cor primária e na secundária.
+
+        Ela retorna TRUE quando as cores são detectadas e retorna FALSE quando nenhuma ou apenas uma das cores é detectada
+
+        ###Variáveis:
+        - window: imagem que deseja ser processada
+        - colorP: cor principal em HSV, na forma de array [H,S,V]
+        - colorS: cor secundária em HSV, na forma de array [H,S,V]
+        '''
+
+        # Criando limites das cores
+        first_lower_bound, first_upper_bound = self.create_color_bounds_noCuda(colorP)
+        second_lower_bound, second_upper_bound = self.create_color_bounds_noCuda(colorS)
+
+        # Procurando cores na janela
+        firstColorContours = self.find_binary_contours_noCuda(window, first_lower_bound, first_upper_bound)
+        secondColorContours = self.find_binary_contours_noCuda(window, second_lower_bound, second_upper_bound)
+
+        # Verificando se as cores foram encontradas
+        primaryFound = any(cv2.minEnclosingCircle(contour)[1] >= 0.1* self.secColorRadius for contour in firstColorContours)
+        secundaryFound = any(cv2.minEnclosingCircle(contour)[1] >= 0.1 * self.secColorRadius for contour in secondColorContours)
+
+        return primaryFound and secundaryFound
+    
+    # ==================== métodos com suporte ao CUDA ===============================
+    '''
+        As funções com suporte ao CUDA e programação na GPU tem uma lógica diferente
+        de processamento, necessário jogando informações na GPU e puxando devolta quando necessário.
+    
+        O funcionamento dessas funções dependem de uma Stream, para determinar o fluxo do programa
+        assim a GPU irá executar várias operações até recuperar os valores necessários.
+
+        Uma Stream é como se fosse uma lista de instruções.
+    
+    '''
+    #carrega a imagem na GPU
+    def load_image_Cuda(self, imgPath):
+        '''
+            #### Utilizando a GPU pelo suporte cuda. 
+            Essa função carrega uma imagem na GPU para ser tratada pelas outras funções.
+            O retorno é o objeto de referência a essa imagem.
+
+            Retonra o objeto de controle da imagem
+        '''
+        img = cv2.imread(imgPath)
+        img_gpu = cv2.cuda.GpuMat()
+        img_gpu.upload(img)
+        return img_gpu
+    
+    #convert a Imagem para o Cuda
+    def conv_img_Cuda(self, img):
+        '''
+            #### Utilizando a GPU pelo suporte cuda. 
+            Função para passar uma image da CPU para a GPU e retorna o endereço do objeto de
+            controle dessa imagem
+
+        '''
+        img_gpu = cv2.cuda.GpuMat()
+        img_gpu.upload(img)
+        return img_gpu
+    
+    #transformando imagem em tons de cinza
+    def gray_scale_Cuda(self,img, stream=None):
+        '''
+            #### Utilizando a GPU pelo suporte cuda. 
+            Função que passa uma imagem para tons de cinza na GPU
+        '''
+        return cv2.cuda.cvtColor(img, cv2.COLOR_RGB2GRAY, stream=stream)
+    
+    #aplicando o filtro mediana para possíveis ruídos
+    def median_blur_Cuda(self, img, kernelSize = 3,stream=None):
+        '''
+            #### Utilizando a GPU pelo suporte cuda. 
+            Filtro de mediana para eliminar possíveis ruídos, processamento na GPU
+        '''
+        medianFiler = cv2.cuda.createMedianFilter(cv2.CV_8UC1, cv2.CV_8UC1, kernelSize)
+        return medianFiler.apply(img,stream=stream)
+    
+    #binarizando a imagem indo de um limir até 255
+    def binarize_up_Cuda(self, img, threshold=150,stream=None):
+        '''
+            #### Utilizando a GPU pelo suporte cuda. 
+            Aplica uma binarização na imagem utilizando o GPU. Necessário a imagem
+            estar em tons de cinza pela função median_blur(). Essa função retorna o endereço
+            da GPU associada a essa imagem.
+        '''
+        _,bin = cv2.cuda.threshold(img, threshold, 255, cv2.THRESH_BINARY,stream=stream)
+        return bin
+
+    #tratar ruidos com o cuda (A imagem aqui tem que já estar na GPU)
+    def trait_noise_Cuda(self, img, it=1, stream = None):
+        '''
+            #### Utilizando a GPU pelo suporte cuda. 
+            Função que irá tratar ruídos na binarização. Portanto, a imagem tem que ser binarizada pela
+            função binarize_up(), que funciona encima de tons de cinza
+        '''
+        # Criar um elemento estruturante na GPU
+        struct_elem = cv2.getStructuringElement(cv2.MORPH_CROSS, (3,3))
+        d_struct_elem = cv2.cuda.createMorphologyFilter(cv2.MORPH_ERODE, img.depth(), struct_elem)
+
+        d_img = img
+        # Realizar a operação de erosão na GPU
+        for i in range(it):
+            d_img = d_struct_elem.apply(d_img, stream=stream)
+
+        return d_img
+    
+    #recuperando objeto de maior área
+    def get_object_Cuda(self,img):
+        '''
+            #### Utilizando a GPU pelo suporte cuda. 
+            Retorna o objeto de maior área dos contornos utilizando o cuda, porém,
+            essa função quando utilizada com suporte cuda é necessário uma imagem da CPU.
+        '''
+        contours, _ = cv2.findContours(img, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+        return contours[0]
+    
+    #recuperando coordenadas extremas que englobam o objeto maior 
+    def get_perspective_Cuda(self, obj):
+        '''
+            #### Utilizando a GPU pelo suporte cuda.  
+            Retorna os extremos do retângulo que envolve o objeto com maior área
+            x, y, w e h.
+
+            * (X,Y) => Indices do ponto a extrema esquerda superior da imagem.
+            * w e h => comprimento e largura (respectivamente)
+
+            O retorno da função é (X,y, x+w, y+h)
+
+            OBS: NECESSÁRIO UMA IMAGEM NA CPU!
+        '''
+        x,y,w,h = cv2.boundingRect(obj)
+        return x,y,x+w,y+h
+    
+    #função para realçar objetos brilhantes na imagem
+    def highlight_img_Cuda(self, img, dim = 25,stream=None):
+        '''
+            #### Utilizando a GPU pelo suporte cuda. 
+            função para realçar objetos brilhantes na imagem.
+            Retorna um endereço na GPU para o objeto relacionado.
+        '''
+        structElem = cv2.cuda.createMorphologyFilter(cv2.MORPH_ELLIPSE,cv2.CV_8UC1,(dim,dim))
+        imgProc = structElem.apply(img)
+
+        #ajuste de contraste
+        imgTrat = cv2.cuda.add(imgProc, imgProc,stream=stream)
+        imgTrat = cv2.cuda.add(imgTrat, imgTrat, stream=stream)
+        return imgTrat
+    
+    #Exemplo de função utilizando o pipeline da GPU
+    def pipelineGPU(self, img_gpu):
+        # Inicializa um objeto de pipeline na GPU
+        stream = cv2.cuda.Stream()
+
+        # Executa a operação de conversão para tons de cinza
+        img_gray_gpu = cv2.cuda.cvtColor(img_gpu, cv2.COLOR_BGR2GRAY, stream=stream)
+
+        # Executa a operação de binarização
+        _, img_bin_gpu = cv2.cuda.threshold(img_gray_gpu, 128, 255, cv2.THRESH_BINARY, stream=stream)
+
+        # Executa a operação de tratamento de ruído
+        img_bin_gpu_traty = self.trait_noise_Cuda(img_bin_gpu, stream=stream)
+
+        # Espera a conclusão de todas as operações no pipeline
+        stream.waitForCompletion()
+
+        return img_bin_gpu_traty
+    
+    #função para reduzir a imagem original
+    def reduce_window_Cuda(self, img, coorVetor, d=10, stream=None):
+        '''
+        #### Utilizando a GPU pelo suporte cuda. 
+        Função utilizada para reduzir a imagem a um tamanho menor.
+        Necessário informar o endereço da imagem na GPU, as coordenadas do 
+        vetor menor 
+        '''
+        try:
+            #recuperando dados do vetor coordenada
+            x,y,w,h = coorVetor[0],coorVetor[1],coorVetor[2],coorVetor[3]
+
+            src_points = cv2.cuda.GpuMat(1,4,cv2.CV_32FC2)
+            dst_points = cv2.cuda.GpuMat(1,4,cv2.CV_32FC2)
+
+            src_points.upload([[x-d,y-d],[x+w+d,y-d],[x-d,y+h+d],[x+w+d,y+h+d]])
+            dst_points.upload([[0,0],[w,0],[0,h],[w,h]])
+
+            #Matriz de transformação para nova perspectiva
+            matrix_gpu = cv2.cuda.GpuMat(3,3,cv2.CV_32F)
+
+            #calculando a matriz de transformação de perspectiva na CPU
+            matrix_cpu = cv2.getPerspectiveTransform(src_points.download(),dst_points.download(),stream=stream)
+
+            #aplicando transformação na GPU
+            matrix_gpu.upload(matrix_cpu)
+
+            #revisando nova imagem para processamento
+            img_Reduce = cv2.cuda.warpPerspective(img, matrix_gpu, (w,h),stream=stream)
+
+            #retornando imagem reduzidaa
+            return img_Reduce
+        except:
+            #Ocorreu um erro, então retorna a janela já inicial
+            return img
+        
+    #função responsável para reduzir a imagem para os contornos do campo
+    def reduce_field_Cuda(self, BinImg_gpu, Img_gpu, fieldWidth, d=10,stream=None):
+        '''
+            #### Utilizando a GPU pelo suporte cuda. 
+            Essa função reduz a imagem original a uma imagem com base no campo detectado
+            portanto, ela precisa inicialmente da imagem Binarizada para detectar o campo
+            o tamanho do campo e um valor d que irá representar uma borda.
+
+            - "binImg" é um imagem na GPU e "Img" é uma imagem na GPU.
+            - fieldWidth é o comprimento do campo
+            - "d" é o tamanho da borda da janela.
+
+            - O retorno da função são em matrizes na GPU
+
+        '''
+        #baixando imagem
+        img_cpu = BinImg_gpu.download()
+        binImg_cpu = Img_gpu.donwload()
+
+        #Diminuindo a dimensão da imagem para caber apenas o campo
+        cont, __ = cv2.findContours(binImg_cpu, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+        #objT = cont[0] #Encontra o objeto maior, nesse caso o campo, e então filtrarei a imagem para esse ponto
+        objT = max(cont, key=cv2.contourArea)
+        contour_area = cv2.contourArea(objT)
+
+        threshold = 50
+        
+        # print(f"Área do contorno encontrado: {contour_area}")
+        if not cont:
+            # print("Nenhum contorno encontrado.")
+            return binImg_cpu, img_cpu, [0, 0, 0, 0], 1
+        
+
+        try:
+            #Obtendo os vértices do retângulo'
+            x,y,w,h = cv2.boundingRect(objT) #Coordenadas da noav imagem
+
+            #Vetor das coordenadas
+            cooVetor = [x,y,w,h]
+            pontosIniciais = np.float32([[x-d,y-d],[x+w+d,y-d],[x-d,y+h+d],[x+w+d,y+h+d]])
+            novosExtremos = np.float32([[0,0],[w,0],[0,h],[w,h]])
+
+            #Matriz de transformação para nova perspectiva
+            matrizPerspectiva = cv2.getPerspectiveTransform(pontosIniciais,novosExtremos)
+
+            #revisando nova imagem para processamento
+            img_Reduce = cv2.warpPerspective(img_cpu, matrizPerspectiva, (w,h))
+            bin_Reduce = cv2.warpPerspective(binImg_cpu, matrizPerspectiva, (w,h))
+
+        except:
+            #Se ele não conseguir, retorna a imagem inicial...
+            bin_Reduce = binImg_cpu
+            img_Reduce = img_cpu
+            self.prop_px_cm = 1
+
+
+        if w > threshold and h > threshold:
+            pixelWidth = min(w, h)
+            self.convert_measures(fieldWidth, pixelWidth)
+
+        else:
+            self.prop_px_cm = self.prop_px_cm
+
+
+        return bin_Reduce, img_Reduce, cooVetor
+    
+    #sort values
+    def sort_points(self, points):
+        # Ordena os pontos primeiro pelo y (crescente) e depois pelo x (crescente)
+        points = sorted(points, key=lambda p: (p[1], p[0]))
+        
+        # Identificar os dois pontos superiores e os dois pontos inferiores
+        top_points = points[:2]
+        bottom_points = points[2:]
+        
+        # Ordenar os pontos superiores por x (crescente)
+        top_points = sorted(top_points, key=lambda p: p[0])
+        
+        # Ordenar os pontos inferiores por x (crescente)
+        bottom_points = sorted(bottom_points, key=lambda p: p[0])
+        
+        # Retornar os pontos na ordem desejada: [top_right, top_left, bottom_left, bottom_right]
+        sorted_points = np.array([top_points[0], top_points[1], bottom_points[1], bottom_points[0]], dtype=np.int32)
+        
+        return sorted_points
+
+    #puxando intervalos de cores
+    def create_color_bounds_Cuda(self, color_array):
+        '''
+            #### Utilizando a GPU pelo suporte cuda. 
+            Cria os intervalos de cores para realizar o processamento na GPU
+        '''
+        h = color_array[0]
+        s = color_array[1]
+        v = color_array[2]
+
+        hue_tolerance = 10
+        saturation_tolerance = 50
+        value_tolerance = 50
+
+        lower_bound = np.array([h - hue_tolerance, max(0, s - saturation_tolerance), max(0, v - value_tolerance)])
+        upper_bound = np.array([h + hue_tolerance, min(255, s + saturation_tolerance), min(255, v + value_tolerance)])
+
+        return lower_bound, upper_bound
+    
+    #Encontrar contornos numa imagem binarizada
+    def find_binary_contours_Cuda(self, image, lower_bound, upper_bound):
+        '''
+            #### Utilizando a GPU pelo suporte cuda. 
+            Encontra os contornos com base nos intervalos de cores solicitados
+        '''
+        imageHSV = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
+        binaryImage = cv2.inRange(imageHSV, lower_bound, upper_bound)
+        #Operações de fechamento e erosão
+        structuringElement = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5,5)) #(20,20) // (5,5)
+        binaryImage = cv2.morphologyEx(binaryImage, cv2.MORPH_CLOSE, structuringElement)
+        binaryImage = cv2.erode(binaryImage, structuringElement, iterations=1)
+
+        #Encontrando contorno da cor principal
+        contours, _ = cv2.findContours(binaryImage, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+
+        return contours
+
+    #Desenhar circulos na imagem onde estão os jogadores
+    def draw_player_circle_Cuda(self, imgDegub, robot:Robot):
+        '''
+            #### Utilizando a GPU pelo suporte cuda. 
+            Desenha círculos nos robôs.
+        '''
+        x = robot.position[0]
+        y = robot.position[1]
+        r = robot.radius
+
+        id = robot.id
+        team = robot.team
+
+        xi = int(x*self.prop_px_cm)
+        yi = int(y*self.prop_px_cm)
+        ri = int(r*self.prop_px_cm)
+
+        if(team == ID_Team.TEAM_ALLY):
+            color = (255, 0, 0)
+        elif(team == ID_Team.TEAM_ENEMY):
+            color = (0, 0, 255)
+        else:
+            color = (0, 200, 200)
+
+        cv2.circle(imgDegub, (xi, yi), (ri + 5), color, 2)
+        text = f"{team} {id}: {str(x)}, {str(y)}"
+        cv2.putText(imgDegub, text , (int(xi),int(yi+ri+20)), cv2.FONT_HERSHEY_SIMPLEX, 0.4, color, 1)
+        
+    def draw_player_circle_virtual_Cuda(self, imgDegub, robot:Robot):
+        '''
+            #### Utilizando a GPU pelo suporte cuda. 
+            Desenha círculos nos robôs.
+        '''
+        x = robot.position[0]
+        y = robot.position[1]
+        r = robot.radius
+
+        id = robot.id
+        team = robot.team
+
+        xi = int(x*self.prop_px_cm)
+        yi = int(y*self.prop_px_cm)
+        ri = int(r*self.prop_px_cm)
+
+        if(team == ID_Team.TEAM_ALLY):
+            color = (255, 0, 0)
+        elif(team == ID_Team.TEAM_ENEMY):
+            color = (0, 0, 255)
+        else:
+            color = (0, 200, 200)
+
+        cv2.circle(imgDegub, (xi, yi), (ri + 5), color, 2)
+        text = f"{team} {id}: {str(x)}, {str(y)}"
+        cv2.putText(imgDegub, text , (int(xi),int(yi+ri+20)), cv2.FONT_HERSHEY_SIMPLEX, 0.4, color, 1)
+    
+    
+    #=============| Definindo funções módulares | ===========================
+    #métodos sem suporte ao CUDA
+    def detect_field_noCuda(self, img ,debug):
+        '''
+            Função responsável por detectar o campo na imagem e gerar um ViewRect com as coordenadas
+            do campo que foi reduzido. Salvando o objeto em Field.
+
+            Os argumentos da função são configurações vindas do emulador.
+        '''
+
+        h = img.shape[0]
+        w = img.shape[1]
+        debug = debug
+
+        self.pixelWidth = min(w,h)
+
+        #conversão da imagem para pixels
+        self.convert_measures(self.fieldWidth, self.pixelWidth)
+
+        #flag para o laço while 
+        flagStop = False 
+
+        #looping principal
+        while self.offSetErode < 20 and not flagStop:
+            try:
+                #imagem original
+                self.frameOrigin = img.copy()
+
+                if img is None:
+                    print("[VisionSystem]: A imagem é nula!!")
+                #tomando imagem em tons de cinza
+                gray = self.gray_scale_noCuda(self.frameOrigin)
+
+                #aplica filtro de mediana para diminuir ruídos
+                blur = self.median_blur_noCuda(gray, 3)
+
+                #realça objetos brilhantes, que nesse caso é o campo
+                imgProc = self.highlight_img_noCuda(blur, self.dimMatrix)
+
+                #binarizando a imagem num limiar
+                binary = self.binarize_up_noCuda(imgProc, self.Thrashhold)
+
+                #tratando ruídos da imagem binarizada
+                self.binaryObjects = self.trait_noise_noCuda(binary, self.offSetErode)
+
+                #reduzindo imagem e gerando ViewRect
+                self.binReduceField, self.fieldReduce, coorVetor = self.reduce_field_noCuda(self.binaryObjects, self.frameOrigin, self.fieldWidth, self.offSetWindow)
+
+                if self.fieldReduce is None:
+                    print("[VisionSystem]: Passou do reduce field, mas o campo aqui não reduziu")
+                    print("[VisionSystem]: Coorvetor", coorVetor)
+
+                    self.binReduceField, self.fieldReduce = self.binaryObjects, self.frameOrigin
+                
+                #encontra extremos do paralelogramo
+                contours, _ = cv2.findContours(self.binReduceField, cv2.RETR_EXTERNAL,cv2.CHAIN_APPROX_SIMPLE)
+
+                #gerando os vertices que serão guardados na classe ViewRect
+                rectVer = np.array([0,0,0,0], dtype=np.int32)
+                
+                #loop através dos contornos encontrados
+                for contour in contours:
+                    #aproximar o contorno para um polígono com poucos vértices
+                    epsilon = 0.02*cv2.arcLength(contour, True)
+                    approx = cv2.approxPolyDP(contour, epsilon, True)
+
+                    #Se o polígono tem 4 vértices então é um retângulo
+                    if len(approx) == 4:
+                        try:
+                            #extrair os vértices do retângulo que é gerada na imagem reduzida! rectVer é a coordenada do paralelepípedo na imagem reduzida
+                            rectVer = np.array([approx[0][0], approx[1][0], approx[2][0], approx[3][0]], dtype=np.int32)
+                            
+                            #Organizando da forma que o algorítmo entende
+                            rectVer = self.sort_points(rectVer)
+                            
+                            #Verifica o tamanho do campo
+                            dp = rectVer[1]-rectVer[0]
+                            modDpPx = np.sqrt(dp[0]**2+dp[1]**2)
+
+                            self.modDpCm = modDpPx/self.prop_px_cm
+
+                            if self.modDpCm >= 60: #só salva um campo maior que 60 cm
+                                #coorVetor tem ascoordenadas x,y iniciais do retângulo que envolve o campo detectado, portanto, ele é da forma coorVetor = [x,y,w,h],                             
+                                dd = self.offSetWindow
+
+                                #Vértices reais na imagem real
+                                rv = rectVer + np.array([[coorVetor[0] - dd, coorVetor[1] - dd],
+                                [coorVetor[0] - dd, coorVetor[1] - dd],
+                                [coorVetor[0] - dd, coorVetor[1] - dd],
+                                [coorVetor[0] - dd, coorVetor[1] - dd]], dtype=np.int32)
+                                
+
+                                #rv é a janela com um "offset" de valor dd na imagem original.
+                                P1i=Point2D(rectVer[0, 0], rectVer[0, 1])
+                                P2i=Point2D(rectVer[1, 0], rectVer[1, 1])
+                                P3i=Point2D(rectVer[2, 0], rectVer[2, 1])
+                                P4i=Point2D(rectVer[3, 0], rectVer[3, 1])
+
+                                rect = Quad(P1=P1i, P2=P2i, P3=P3i, P4=P4i)
+
+                                
+                                #salvando extremos do objeto campo informando os extremos e o tamanho do campo
+                                self.field.updatePos(rect, self.fieldWidth, self.fieldHeight)
+                                
+                                ptsSource =np.array([P1i.getPos(),P2i.getPos(),P3i.getPos(),P4i.getPos()])
+                                ptsFinal  =np.array([self.fieldP1v,self.fieldP2v,self.fieldP3v,self.fieldP4v])
+                                
+                                #Adquirindo as matrizes de equivalência
+                                self.getHomographyMatrix(ptsSrc=ptsSource, ptsFinal=ptsFinal)
+
+                                #setando matrizes de homography para o campo conhecer
+                                self.field.setHomographyMatrix(mHomography=self.homography_matrix, invHomo=self.inv_homography_matrix)
+                                if(debug):
+                                    #Desenhar os vértices do retângulo na imagem original (Desenhando os retângulos no campo)
+                                    cv2.polylines(self.frameOrigin, [rv], True, (0,0,255), 4)
+                                    i = 0
+                                    for vertex in rv:
+                                        x,y = vertex 
+                                        cv2.circle(self.frameOrigin, (x,y),4,(0,255,0),-1)
+                                        cv2.putText(self.frameOrigin, str(i), (x,y-10),cv2.FONT_HERSHEY_SIMPLEX, 0.4,(0,255,0),1)
+                                        i=i+1
+
+                        except Exception as e:
+                            flagStop = False
+                            print("[VisionSystem]: Não conseguiu desenhar na imagem: \n",e)
+                            self.fieldReduce = img.copy()
+                            self.frameResult = self.fieldReduce.copy()
+                            traceback.print_exc()
+                
+                
+                flagStop = True 
+                self.frameResult = self.fieldReduce.copy()
+                return self.modDpCm
+
+            except Exception as e:
+                flagStop = False
+                self.offSetErode += 1
+                print("[VisionSystem]: Foi necessário subir um pouco o offset, devido ao erro:\n",e)
+                
+                # Captura a stack trace do erro
+                traceback.print_exc()
+
+                #retornaria as variáveis, mas ele vai atualizar as variáveis internas
+                self.fieldReduce = self.frameOrigin.copy()
+                #copio o campo reduzido para frameResult
+                self.frameResult = self.fieldReduce.copy()
+
+                return -1
+
+
+
+    #Detectar a imagem da bola na imagem
+    def detect_ball_noCuda(self, img, colorBall, debug:bool):
+        '''
+            Função responsável por detectar a bola na imagem, sem usar o suporte ao Cuda.
+
+            Necessário informar a imagem que irá ser processada para encontrar a bola. A cor da bola e se irá querer exibir ela na imagem, que tem que ser informada em HSV
+        '''
+        #copiando imagem inicial
+        self.ballImg = self.fieldReduce.copy()
+        if self.fieldReduce is None:
+            print("FIELDREDUCE É NONE")
+
+        #Cor laranja da bola 
+        h = colorBall[0]
+        s = colorBall[1]
+        v = colorBall[2]
+
+        hue_tolerance = 6
+        saturation_tolerance = 50
+        value_tolerance = 50
+
+        ball_lower_bound = np.array([h - hue_tolerance, max(0, s - saturation_tolerance), max(0, v - value_tolerance)])
+        ball_upper_bound = np.array([h + hue_tolerance, min(255, s + saturation_tolerance), min(255, v + value_tolerance)])
+
+        imgHSV = cv2.cvtColor(self.ballImg, cv2.COLOR_BGR2HSV)
+
+        self.binaryBall = cv2.inRange(imgHSV, ball_lower_bound, ball_upper_bound)
+
+        #Operações de erosão e fechamento
+        structuringElement = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5)) #(8,8)
+        self.binaryBall = cv2.morphologyEx(self.binaryBall, cv2.MORPH_CLOSE, structuringElement)
+        self.binaryBall = cv2.erode(self.binaryBall, structuringElement, iterations=1 )
+        
+        #Encontrando contornos da bola
+        contours, _ = cv2.findContours(self.binaryBall, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+        
+        if contours:
+            ballContour = max(contours, key=cv2.contourArea)
+            (xb, yb), rb = cv2.minEnclosingCircle(ballContour)
+
+            #passando o ponto para o espaço virtual
+            xv, yv = self.transformPoint(np.array([xb,yb]))
+
+            #valor do objeto dentro do sistema de coordenadas O'
+            xcm, ycm = self.getPointVirtual(np.array([xv,yv]))
+            
+            #Tempo que se passou
+            time = self.timer.getElapsedTime()
+
+            rb = self.ballRadiusP   #cm -> valor padrão
+
+            #atualizando posição do objeto bola
+            self.ball.setPosition(xcm, ycm, rb, time)
+            self.ball.setImgPosition(xb,yb,rb)
+
+            rb = int(rb/self.prop_px_cm)
+            xb = int(xb)
+            yb = int(yb)
+
+            # Circulando bola
+            cv2.circle(self.frameResult, (xb, yb), (rb + 2), (0, 0, 255), 2)
+            cv2.putText(self.frameResult, "B", (int(xb),int(yb-rb-10)), cv2.FONT_HERSHEY_SIMPLEX,0.4,(0,0,255), 1)
+            
+            #parte plotando na imagem virtual
+            xv = int(xv)
+            yv = int(yv)
+            
+            #desenhando na imagem virtual
+            cv2.circle(self.virtualImg, (xv, yv), 4, (0, 255,255), -1)
+            cv2.putText(self.virtualImg, "B", (int(xv-5),int(yv-rb-10)), cv2.FONT_HERSHEY_SIMPLEX,0.4,(0,255,255), 1)
+            cv2.arrowedLine(self.virtualImg, (xv, yv), ((xv + int(self.ball.direction[0])), (yv + int(self.ball.direction[1]))), (0, 255, 255), 2)
+
+
+
+    #Método para detectar os robôs com suporte ao Cuda
+    def detect_players_noCuda(self, img, debug, isT=False):
+        '''
+            Função responsável por detectar os robôs na imagem, sem usar o suporte ao Cuda.
+        
+            Ao chamar essa função, ela irá varrer os objetos da imagem e detectar neles os robôs.
+            Com isso,
+        '''
+        #zera o contador de players
+        self.playersCount = 0
+        self.enemiesCount = 0
+        self.alliesCount    = 0
+
+        #flags para encontrar os jogadores
+        #flags aliados
+        AgoalFlag = False
+        Aatk1Flag = False 
+        Aatk2Flag = False 
+        
+        #flagsAliado
+        EgoalFlag = False 
+        Eatk1Flag = False 
+        Eatk2Flag = False 
+
+        #Gerando uma cópia da imagem
+        imgDbg = img.copy()
+        #imagem para HSV
+        imgHSV = cv2.cvtColor(imgDbg, cv2.COLOR_BGR2HSV)
+
+        # encontrando os objetos
+        Objects = cv2.inRange(imgHSV, self.objectsDarkColor, self.objectsLightColor)
+
+        #Exclui a bola dos objetos identificados
+        self.binaryPlayers = cv2.subtract(Objects, self.binaryBall)
+
+
+        #REALIZA operações de fechamento e erosão para melhorar a imagem binária dos robôs
+        structuringElement = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
+        self.binaryPlayers = cv2.erode(self.binaryPlayers, structuringElement, iterations=1)
+
+        structuringElement = cv2.getStructuringElement(cv2.MORPH_RECT, (11, 11))
+        self.binaryPlayers = cv2.morphologyEx(self.binaryPlayers, cv2.MORPH_CLOSE, structuringElement)
+
+
+        #carregando cores claras e escuras do time aliado 
+        self.ally_lower_bound, self.ally_upper_bound = self.create_color_bounds_noCuda(self.allyColor)
+        self.enemy_lower_bound, self.enemy_upper_bound = self.create_color_bounds_noCuda(self.enemyColor)
+
+        #Reconhecimento de jogadores
+        self.binaryAllTeam = cv2.inRange(imgHSV, self.ally_lower_bound, self.ally_upper_bound) #Por enquanto, isso  não faz nada, só exibe na tela de debug todo o time reconhecido
+        
+        #encontra os contornos de todos os jogadores
+        structuringElement = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (6,6))
+        
+        # trato a imagem para deixar apenas os objetos 
+        self.binaryPlayers, players = self.detect_squares_noCuda(self.binaryPlayers)
+
+        #variáveis úteis
+        winSize = int(18*self.prop_px_cm)
+        endPt = np.float32([[0,0],[winSize,0],[0,winSize],[winSize,winSize]])
+
+        self.playerRadius       = (7.5/2)*np.sqrt(2)*self.prop_px_cm
+        self.mainColorRadius    = (7.5/4)*np.sqrt(5)*self.prop_px_cm
+        self.secColorRadius     = (self.playerRadius/2)
+
+        #Variáveis de debug de relatório
+        _qtdContour     = 0 
+        _qtdRobots      = 0
+        _qtdAllyColor   = 0
+        _qtdEnemyColor  = 0 
+        _Contour        = 0
+        _qtdProcContour = 0 
+        _qtdProcWindow  = 0
+        _qtdProcContour = len(players)
+        
+        #varre os objetos
+        for currentPlayers in players:
+            _qtdContour = _qtdContour+1
+            #verificar tamanho do objeto
+            (xi, yi), ri = cv2.minEnclosingCircle(currentPlayers)
+
+
+            if(ri > 0.3*self.playerRadius and ri < 2*self.playerRadius and self.playersCount < 6):
+                _qtdRobots = _qtdRobots+1
+                if(debug): cv2.circle(self.frameResult, (int(xi), int(yi)), (int(ri) + 5), (0, 255, 0), 2)
+
+
+                windowActual = imgDbg[int(yi-(winSize/2)):int(yi+(winSize/2)),int(xi-(winSize/2)):int(xi+(winSize/2))]
+
+                #verifica se há inimigos ou aliados
+                mainColorContours = self.find_binary_contours_noCuda(windowActual, self.ally_lower_bound, self.ally_upper_bound)
+                enemyColorContours = self.find_binary_contours_noCuda(windowActual, self.enemy_lower_bound, self.enemy_upper_bound)
+
+                # Se nesse objeto não haver a cor principal, então só pode ser um inimigo, então verifica se é inimigo
+                if enemyColorContours:
+                    '''
+                        Aqui ele retorna os contornos das cores inimigas, podendo aparecer mais de uma vez no processamento. Portanto, deve ter cuidado aqui.
+                    '''
+                    
+                    # Nessa primeira versão, não há diferença entre goleiro e jogadores
+                    self.enemyColorContour = max(enemyColorContours, key=cv2.contourArea)
+                    (xc, yc), rc = cv2.minEnclosingCircle(self.enemyColorContour)
+
+                    #transformar em valores inteiros
+                    rc = int (rc)
+
+                    # verifificar se é um objeto certo com base no tamanho
+                    if( rc >= 0.5 * self.mainColorRadius and self.enemiesCount <3):
+                        _qtdEnemyColor = _qtdEnemyColor+1
+                            #Calcula valor das coordenadas do objeto
+                        rcm = 5.30
+
+                        tm = self.timer.getElapsedTime()
+                            #encontrando valores virutais
+                        xcm, ycm = self.transformPoint(np.array([xi,yi]))
+
+                        #transferindo essa informação para o novo espaço com coordenada O'
+                        xcm, ycm = self.getPointVirtual(np.array([xcm, ycm]))
+                        
+                        #verifica se é o mesmo robô inimigo com base nas coordenadas
+                            #será o primeiro robô
+                        self.enemyTeam[self.enemiesCount].setPosition(x=xcm, y=ycm, r=rcm,image = windowActual,time=tm)
+                        self.enemyTeam[self.enemiesCount].updtPositionImg(xi=xi,yi=yi,ri=ri)
+                        self.enemyTeam[self.enemiesCount].setStatus(True)
+
+                        self.enemyTeam[self.enemiesCount].setColor(colorT=self.enemyColor)
+
+                        self.draw_player_circle_noCuda(self.frameResult, self.enemyTeam[self.enemiesCount])
+                        self.draw_player_virtual_noCuda(self.enemyTeam[self.enemiesCount])
+
+                        #garante não contar mais do que deve
+                        if self.enemiesCount < 3:                        
+                            #sobe a contagem de aliados
+                            self.enemiesCount += 1
+                        else:
+                            self.enemiesCount = 3
+
+                if mainColorContours: #verifica se é um aliado
+                    self.mainColorContour = max(mainColorContours, key=cv2.contourArea)
+                    (xc,yc), rc = cv2.minEnclosingCircle(self.mainColorContour)
+                    rc = int(rc)
+
+                    tim = self.timer.getElapsedTime()
+
+                    #calcular posições virtuais
+                    xcm, ycm = self.transformPoint(np.array([xi,yi]))
+                    rcm = 5.30
+
+                    #transferindo essa informação para o novo espaço com coordenada O'
+                    xcm, ycm = self.getPointVirtual(np.array([xcm, ycm]))
+                    #verifica tamanho do objeto
+                    if(rc >= 0.1*self.mainColorRadius and self.alliesCount <3):
+                        #passo 1 - detecta se é o goleiro
+                        if AgoalFlag is False: 
+                            if self.detect_ally_robot_noCuda(windowActual, self.goalAllyColor1, self.goalAllyColor2):
+                                _qtdAllyColor = _qtdAllyColor +1
+                                bot = self.allyTeam[ID_Robots.ROBOT_ALLY_GOAL]
+                                bot.setPosition(xcm,ycm,rcm,windowActual,time=tim)
+                                bot.updtPositionImg(xi,yi,ri)
+                                bot.setStatus(True)
+                                #setando as cores do robô
+                                bot.setColor(colorT=self.allyColor, colorP=self.goalAllyColor1 ,colorS=self.goalAllyColor2)
+                                #desenhando o jogador
+                                self.draw_player_circle_noCuda(self.frameResult, bot)
+                                self.draw_player_virtual_noCuda(bot)
+                                AgoalFlag = True 
+                                    
+                        #passo 2 - detecta se é o atacante 2
+                        if not Aatk1Flag: 
+                            if self.detect_ally_robot_noCuda(windowActual, self.atk1AllyColor1, self.atk1AllyColor2):
+                                _qtdAllyColor = _qtdAllyColor +1
+                                bot = self.allyTeam[ID_Robots.ROBOT_ALLY_1]
+                                bot.setPosition(xcm,ycm,rcm,windowActual,time=tim)
+                                bot.updtPositionImg(xi,yi,ri)
+                                bot.setStatus(True)
+                                #setando as cores do robô
+                                bot.setColor(colorT=self.allyColor, colorP=self.atk1AllyColor1 ,colorS=self.atk1AllyColor2)
+                                #desenhando o jogador
+                                self.draw_player_circle_noCuda(self.frameResult, bot)
+                                self.draw_player_virtual_noCuda(bot)
+                                Aatk1Flag = True 
+                                    
+                        #passo 3 - detecta  se é o atacante 3
+                        if not Aatk2Flag: 
+                            if self.detect_ally_robot_noCuda(windowActual, self.atk2AllyColor1, self.atk2AllyColor2):   
+                                _qtdAllyColor = _qtdAllyColor +1
+                                bot = self.allyTeam[ID_Robots.ROBOT_ALLY_2]
+                                bot.setPosition(xcm,ycm,rcm,windowActual,time=tim)
+                                bot.updtPositionImg(xi,yi,ri)
+                                bot.setStatus(True)
+                                #setando as cores do robô
+                                bot.setColor(colorT=self.allyColor, colorP=self.atk2AllyColor1 ,colorS=self.atk2AllyColor2)
+                                #desenhando o jogador
+                                self.draw_player_circle_noCuda(self.frameResult, bot)
+                                self.draw_player_virtual_noCuda(bot)
+                                Aatk2Flag = True
+                        
+
+                        #debug na imagem desenhando seta das direções
+                        if(debug and self.allyTeam[self.alliesCount].getStatus()):
+                            # Algoritmo para desenhar as linhas
+                            h = 30
+                            dx, dy = self.allyTeam[self.alliesCount].direction[:2]
+
+                            if dx == 0 and dy == 0:
+                                Dx = 0 
+                                Dy = 0
+                            else:
+                                if dx == 0:             # Se dx for zero, a linha é vertical
+                                    theta = np.pi / 2   # Ângulo reto
+                                else:
+                                    angular_coef = dy / dx
+                                    theta = np.arctan(angular_coef)
+                                Dx = h * np.cos(theta) if dx > 0 else -h * np.cos(theta)
+                                Dy = h * np.sin(theta) if dy > 0 else -h * np.sin(theta)
+                            
+                            xi = int(xi)
+                            yi = int(yi)
+
+                            #desenhando
+                            cv2.arrowedLine(self.frameResult, (xi, yi), (xi+Dx,yi+Dy), (0,255,0), 2)
+                            
+                        #garante não contar mais do que deve
+                        if self.alliesCount < 3:                        
+                            #sobe a contagem de aliados
+                            self.alliesCount += 1
+                        else:
+                            self.alliesCount = 3
+                # sobe a contagem de players
+                self.playersCount += 1
+        
+        Aatk1Flag = False
+        Aatk2Flag = False
+        AgoalFlag = False
+        Eatk1Flag = False
+        Eatk2Flag = False
+        EgoalFlag = False
+
+        #print("[",self._count,"],[",self._countProcess,"] ProcContour:",_qtdProcContour," /Robôs", _qtdRobots," A E = ", _qtdAllyColor, _qtdEnemyColor)
+        self._countProcess = self._countProcess+1
+
+    #desenhar robôs na imagem
+    def drawAllRobots(self):
+        '''
+            Desenhando todos os robôs na imagem final
+        '''
+        for bot in self.allyTeam:
+            if bot.getStatus is True:
+                self.draw_player_circle_noCuda(self.frameResult, bot)
+                self.draw_player_virtual_noCuda(bot)
+
+        for bot in self.enemyTeam:
+            if bot.getStatus is True:
+                self.draw_player_circle_noCuda(self.frameResult, bot)
+                self.draw_player_virtual_noCuda(bot)
+
+    #prevendo posição da bola
+    def predictBall(self, timestamp:int):
+        '''
+            Função para prever posição da bola com base na imagem
+            processo de encontrar a bola
+        '''
+
+        #objeto da bola
+        ball: Ball = self.ball 
+
+        if ball.getStatus():
+            ball.predictPosition(timestamp=timestamp)
+
+            P1, Dim = ball.getPredictPosition()
+
+            #Extremo esquerdo superior da janela de predição de posição
+            x_b = P1[0]
+            y_b = P1[0] 
+
+            #retornando as informações para a imagem real
+            x_b, y_b = self.getImageRealIndice([x_b,y_b])
+
+            x_b = int(x_b)
+            y_b = int(y_b)
+
+            #wndBall
+            wndBall = self.fieldReduce[y_b:y_b+Dim, x_b:x_b+Dim]
+
+            self.search_ball_noCuda(window=wndBall,color=self.ballColor,posBall=[x_b, y_b])
+        else:
+            #Verificar na imagem inteira 
+            self.detect_ball_noCuda(img=self.fieldReduce,colorBall= self.ballColor,debug=self.debug)
+
+
+
+    # função para para puxar informações de predição
+    def predictRobot(self, team:ID_Team, robot_id:ID_Robots, timestamp:int):
+        '''
+            prevê posições dos robôs informando i time dele e o identificador do robô
+        '''
+        bot: Robot 
+
+        if team == ID_Team.TEAM_ALLY: #aliado
+            bot: Robot = self.allyTeam[robot_id] 
+        else:# inimigo
+            bot: Robot = self.enemyTeam[robot_id]       
+
+        #verifica se ele foi ou não encontrado
+        if bot.getStatus():
+            #usa o predict
+            bot.predictPosition(timestamp)
+            
+            #posição do robô prevista
+            P1, Dim = bot.getPredictPosition()
+            
+            #Coordenadas do extremo do robô
+            x_r = P1[0]
+            y_r = P1[1]
+
+            #retornando as informações para a imagem real
+            x_r, y_r = self.getImageRealIndice([x_r,y_r])
+
+            x_r = int(x_r)
+            y_r = int(y_r)
+            
+            #Janela para realizar o processamento no robô
+            wndBot = self.fieldReduce[y_r:y_r+Dim, x_r:x_r+Dim]
+            
+            try:
+                #procura o jogador
+                if not self.search_robot_noCuda(window=wndBot, team=team, id=robot_id,debug=self.debug):
+                    #procuro na imagem toda
+                    if not self.search_robot_noCuda(window=self.fieldReduce, team=team, id=robot_id, debug=self.debug):
+                        bot.setStatus(False)
+                    else:
+                        bot.setStatus(True)
+            except:
+                bot.setStatus(False)
+
+
+        else:
+            #procurando na imagem toda
+            if not self.search_robot_noCuda(window=self.fieldReduce, team=team, id=robot_id, debug=self.debug):
+                bot.setStatus(False)
+            else:
+                bot.setStatus(True)
+
+        self.drawAllRobots()
+
+
+    # método para verificar se numa janela tem um robô com 2as cores configuradas
+    def search_robot_noCuda(self, window, team:ID_Team, id:ID_Robots,debug=False) -> bool:
+        '''
+        #### Função sem suporte ao CUDA
+        Função responsável por verificar se há um robô aliado dentro de uma janela, com base na cor primária e na secundária.
+
+        Ela retorna TRUE quando as cores são detectadas e retorna FALSE quando nenhuma ou apenas uma das cores é detectada
+
+        ### Variáveis:
+        - window: imagem que deseja ser processada
+        - colorP: cor principal em HSV, na forma de array [H,S,V]
+        - colorS: cor secundária em HSV, na forma de array [H,S,V]
+        - ColorT: Cor do time em HSV, na forma de array [H,S,V]
+        '''
+        #procuro qual robô  é o escolhido
+        bot: Robot = self.allyTeam[id] if team == ID_Team.TEAM_ALLY else self.enemyTeam[id]
+
+        #puxo as cores do robô escolhido
+        colorT, colorP, colorS = bot.getColors()
+
+        ''' e se o robÔ não tiver sido detectado ainda? Como ele vai procurar na imagem?'''
+        #Extraindo posição do tamanho da janela
+        if bot.getStatus():
+            p = bot.viewRect.Pe1 
+            x_w = p[0]
+            y_w = p[1]
+
+        window = window.copy()
+
+        # Criando limites das cores
+        team_lower_bound, team_upper_bound = self.create_color_bounds_noCuda(colorT)
+        
+        # Procurando cores na janela
+        teamColorContours = self.find_binary_contours_noCuda(window, team_lower_bound, team_upper_bound)
+        
+        #Converte imagem para HSV
+        windowHSV = cv2.cvtColor(window, cv2.COLOR_BGR2HSV)
+
+        #procura quadrados dentro da imagem 
+        objs = cv2.inRange(windowHSV, self.objectsDarkColor, self.objectsLightColor)
+        objs= cv2.erode(objs, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5)), iterations=1)
+        objs = cv2.morphologyEx(objs, cv2.MORPH_CLOSE,  cv2.getStructuringElement(cv2.MORPH_RECT, (11, 11)))
+
+        #valores importantes
+        _, bots = self.detect_squares_noCuda(objs)
+
+        #varre objetos encontrados na janela
+        for currentBot in bots:
+            (xi,yi), ri = cv2.minEnclosingCircle(currentBot)
+            
+            if bot.getStatus():
+                #posição do objeto robô na imagem original
+                x_r = xi + x_w 
+                y_r = yi + y_w
+            else:
+                #posição do objeto robô na imagem original
+                x_r = xi
+                y_r = yi
+            
+            rcm = 5.3
+
+            winSize = int(18*self.prop_px_cm)
+            windowActual = window[int(yi-(winSize/2)):int(yi+(winSize/2)),int(xi-(winSize/2)):int(xi+(winSize/2))]
+
+
+            if(ri > 0.5*self.playerRadius and ri < 1.5*self.playerRadius):
+
+                if(debug): 
+                    cv2.circle(self.frameResult, (int(x_r), int(y_r)), (int(ri) + 5), (0, 255, 0), 2)
+
+                #Encontrou contornos de inimigos na janela
+                if teamColorContours:
+                    if team == ID_Team.TEAM_ALLY and self.detect_ally_robot_noCuda(window, colorP=colorP, colorS=colorS):
+                        #converte coordenadas para o ponto virtual
+                        xcm, ycm = self.transformPoint(np.array([x_r, y_r]))
+
+                        xcm, ycm = self.getPointVirtual(np.array([xcm, ycm]))
+                        bot.updatePosition(x=xcm, y=ycm, r=rcm, image=windowActual,time=self.currentTime)
+                        bot.setStatus(True)
+
+                        #desenhando informações
+                        self.draw_player_circle_noCuda(self.frameResult, bot)
+                        self.draw_player_virtual_noCuda(bot)
+                        return True
+                    
+                    elif team == ID_Team.TEAM_ENEMY:
+                        #converte coordenadas para o ponto virtual
+                        #print(x_r, y_r)
+                        xcm, ycm = self.transformPoint(np.array([x_r, y_r]))
+
+                        xcm, ycm = self.getPointVirtual(np.array([xcm, ycm]))
+                        bot.updatePosition(x=xcm, y=ycm, r=rcm, image=windowActual, time=self.currentTime )
+                        bot.setStatus(True)
+
+
+                        self.draw_player_circle_noCuda(self.frameResult, bot)
+                        self.draw_player_virtual_noCuda(bot)
+
+                        return True 
+
+        return False 
+    
+
+    #Método para procurar a bola
+    def search_ball_noCuda(self, window, color, posBall):
+        
+        #copiando window
+        window = window.copy()
+        
+        #posições da janela na imagem reduzida para passar pra virtual
+        x_w = posBall[0]
+        y_w = posBall[1]
+
+        #cor da bola 
+        h = color[0]
+        s = color[1]
+        v = color[2]
+
+        hue_tolerance = 6
+        saturation_tolerance = 50
+        value_tolerance = 50
+
+        ball_lower_bound = np.array([h - hue_tolerance, max(0, s - saturation_tolerance), max(0, v - value_tolerance)])
+        ball_upper_bound = np.array([h + hue_tolerance, min(255, s + saturation_tolerance), min(255, v + value_tolerance)])
+
+        imgHSV = cv2.cvtColor(window, cv2.COLOR_BGR2HSV)
+        binBall = cv2.inRange(imgHSV, ball_lower_bound, ball_upper_bound)
+
+        #Operações de erosão e fechamento
+        structuringElement = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5)) #(8,8)
+        binBall = cv2.morphologyEx(binBall, cv2.MORPH_CLOSE, structuringElement)
+        binBall = cv2.erode(binBall, structuringElement, iterations=1 )
+        
+        #Encontrando contornos da bola
+        contours, _ = cv2.findContours(binBall, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+
+        #Encontrando a cor
+        if contours:
+            ballContour = max(contours, key=cv2.contourArea)
+            (xb,yb),rb = cv2.minEnclosingCircle(ballContour)
+
+            #Tempo
+            timeT = self.timer.getElapsedTime()
+
+            #transformando em coordenadas relativas a imagem reduzida prevista
+            xb = xb+x_w 
+            yb = yb+y_w 
+
+            #passando essas informações para o espaço virtual
+            xcm, ycm = self.transformPoint(np.array([xb,yb]))
+            xv, yv = self.getPointVirtual(np.array([xcm,ycm]))
+            
+            rb = self.ballRadiusP #cm
+            self.ball.updatePosition(x=xv, y=yv, r=rb,timestamp=timeT)
+
+            rb = int(rb/self.prop_px_cm)  
+
+            with self._lockThread:
+                #circulando a bola e adicionando partes na imagem virtual e real
+                cv2.circle(self.frameResult, (xb, yb), (rb+2), (0,0,255),2)
+                cv2.putText(self.frameResult,"B", (int(xb),int(yb-rb-10)),cv2.FONT_HERSHEY_SIMPLEX,0.4,(0,0,255), 1)
+        
+                #Transformando em inteiro para plotar na imagem
+                xv = int(xv)
+                yv = int(yv)
+                #Desenhando na imagem virtual
+                cv2.circle(self.virtualImg, (xv, yv), 4, (0, 255,255), -1)
+                cv2.putText(self.virtualImg, "B", (int(xv-5),int(yv-rb-10)), cv2.FONT_HERSHEY_SIMPLEX,0.4,(0,255,255), 1)
+                cv2.arrowedLine(self.virtualImg, (xv, yv), ((xv + int(self.ball.direction[0])), (yv + int(self.ball.direction[1]))), (0, 255, 255), 2)
+
+
+
+    
+    # ==================== métodos com suporte ao CUDA ======================
+
+    #===========| Definindo funções principais | ============================
+    #Métodos sem suporte ao cuda
+    #método para detectar o campo na imagem utilizar a GPU com o suporte ao CUDA
+    def detect_field_Cuda(self, img, debug):
+        '''
+        #### Utilizando a GPU pelo suporte cuda. 
+        Função responsável por detectar o campo na imagem e gerar um ViewRect com as coordenadas do campo que foi reduzido. Salvando o objeto em Field.
+        
+        '''
+        pass
+    
+    #Método para detectar a bola utilizando a GPU com o suporte ao CUDA
+    def detect_ball_Cuda(self,img, debug):
+        '''
+        #### Utilizando a GPU pelo suporte cuda. 
+        Função responsável por detectar a bola na imagem.
+        '''
+        pass
+    
+    #Método para detectar os robôs com suporte ao Cuda
+    def detect_players_Cuda(self, img, debug):
+        '''
+        #### Utilizando a GPU pelo suporte cuda. 
+        Função responsável por detectar os robôs na imagem.
+        '''
+        pass
+
+    #métodos com suporte ao cuda
+
+# Testar função principal e nova lógica
+if __name__ =='__main__':
+    print("Utilizada em função de main")

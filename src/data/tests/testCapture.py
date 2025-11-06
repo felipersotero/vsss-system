@@ -1,4 +1,4 @@
-from modules.VisionSys.objects import *
+from modules.VisionSys.components.objects import *
 from imports import *
 from app import *
 from modules.emulator.emulator import *

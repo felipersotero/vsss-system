@@ -1,5 +1,5 @@
 from ui.viewer import MyViewer
-from modules.VisionSys.objects import *
+from modules.VisionSys.components.objects import *
 from imports import *
 from tkinter import *
 from tkinter import ttk

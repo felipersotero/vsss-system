@@ -5,7 +5,7 @@ from modules.emulator.emulator import Emulator
 from ui.cards import *
 from modules.control.control import *
 from modules.communication.communication import *
-from modules.VisionSys.objects import *
+from modules.VisionSys.components.objects import *
 from ui.windowControl import *
 
 execution = False

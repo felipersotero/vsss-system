@@ -1,6 +1,6 @@
 from imports import *
 from ui.viewer import MyViewer
-from modules.VisionSys.objects import *
+from modules.VisionSys.components.objects import *
 from modules.control.control import *
 from modules.communication.communication import *
 import serial.tools.list_ports
