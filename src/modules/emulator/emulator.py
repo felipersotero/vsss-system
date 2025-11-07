@@ -35,6 +35,7 @@ class Emulator:
         self._init_app_references(App)
         self._init_state_variables()
         self._init_collections()
+        self._init_parallel_processing()
         self._init_viewers()
         self._init_control_system()
         self._init_timers(App)
@@ -96,6 +97,132 @@ class Emulator:
         self.processing_lock = threading.Lock()
 
     # ==============================================================
+    #  2.1 Processamento paralelo
+    #= =============================================================
+    def _init_parallel_processing(self):
+        """Configura variáveis para controle de processamento paralelo."""
+        self.output_queue = queue.Queue(maxsize=1)
+        self.vision_thread = None
+
+    # ==============================================================
+    # Processamento paralelo: thread de visão e loop da UI
+    # ==============================================================
+
+    def visionThread(self):
+        """Thread separada que faz captura e processamento de visão."""
+        print("[VISION THREAD] Iniciada.")
+        while self.cameraIsRunning:
+            loop_start = time.time()
+
+            try:
+                # --- Captura ---
+                frame = self.capture.getImage()
+                if frame is None:
+                    time.sleep(0.002)
+                    continue
+
+                # --- Processamento de visão ---
+                t_proc_start = time.time()
+                result = self.vs.processImg(frame, self.DEBUGA)
+                objects = self.vs.getObjects()
+                t_proc_end = time.time()
+
+                # --- Atualiza tempos ---
+                self.frameTime = (t_proc_end - t_proc_start) * 1000.0  # processamento
+                self.totalTime = (time.time() - loop_start) * 1000.0   # visão total
+                self.realTime = self.Timer.getElapsedTime()            # desde init
+                self.FPStime = int(1000 / self.totalTime) if self.totalTime > 0 else 0
+
+                # --- Atualiza objetos detectados ---
+                self.field = objects.get(ID_Objects.FIELD, self.field)
+                self.ball = objects.get(ID_Objects.BALL, self.ball)
+                self.allies = objects.get(ID_Objects.ALLIES, self.allies)
+                self.enemies = objects.get(ID_Objects.ENEMIES, self.enemies)
+
+                # --- Prepara pacote para a UI ---
+                data = {
+                    'frame': frame,
+                    'result': result,
+                    'field': self.field,
+                    'ball': self.ball,
+                    'allies': self.allies,
+                    'enemies': self.enemies,
+                    'vision_time': self.totalTime,
+                    'proc_time': self.frameTime,
+                    'real_time': self.realTime,
+                    'fps': self.FPStime
+                }
+
+                # Mantém apenas o último frame (fila maxsize=1)
+                if self.output_queue.full():
+                    try:
+                        self.output_queue.get_nowait()
+                    except queue.Empty:
+                        pass
+                self.output_queue.put_nowait(data)
+
+            except Exception as e:
+                print("[VISION THREAD] Erro:", e)
+                traceback.print_exc()
+                time.sleep(0.01)
+                continue
+
+        print("[VISION THREAD] Finalizada.")
+
+    def updateUI(self):
+        """Atualiza a interface com base nas informações da thread de visão."""
+        if not self.cameraIsRunning:
+            print("[UPDATE UI] Encerrado.")
+            self.Timer.stop()
+            return
+
+        try:
+            data = self.output_queue.get_nowait()
+            frame = data['frame']
+            result = data['result']
+            self.field = data['field']
+            self.ball = data['ball']
+            self.allies = data['allies']
+            self.enemies = data['enemies']
+            self.totalTime = data['vision_time']
+            self.frameTime = data['proc_time']
+            self.realTime = data['real_time']
+            self.FPStime = data['fps']
+
+            # --- Exibição segura (Tkinter thread principal) ---
+            if frame is not None:
+                self.viewer.show(frame)
+            if result is not None:
+                self.resultViewer.show(result)
+
+            # Atualiza debug
+            if self.DEBUGA:
+                try:
+                    imgs = self.vs.getDebugImages()
+                    if imgs and len(imgs) > 0 and imgs[0] is not None:
+                        self.debugFieldViewer.show(imgs[0])
+                except Exception:
+                    pass
+
+            # --- Atualiza UI (info cards e controle) ---
+            self.infoCards.updateInfo("FPS:", self.FPStime)
+            self.infoCards.updateInfo("Vision. (ms):", f"{self.totalTime:.2f}")
+            self.infoCards.updateInfo("Proc. (ms):", f"{self.frameTime:.2f}")
+            self.infoCards.updateInfo("Envio (ms):", f"{self.sendTime:.2f}")
+            self.infoCards.updateInfo("Timer (s):", f"{self.realTime / 1000:.2f}")
+            self.infoCards.updateInfo("Error Code:", self.errorCode)
+            self.infoCards.updateInfo("Modo:", self.Mode)
+
+            self.control.updateObjectsValues(self.field, self.ball, self.allies, self.enemies)
+
+        except queue.Empty:
+            pass
+
+        # Loop contínuo (~60 FPS)
+        self.viewer.window.after(16, self.updateUI)
+
+
+    # ==============================================================
     #  3. Filas, buffers e coleções
     # ==============================================================
     def _init_collections(self):
@@ -104,10 +231,10 @@ class Emulator:
         from collections import deque
 
         self.commands_queue = queue.Queue(maxsize=1)
-        self.sent_data_queue = queue.Queue(maxsize=1)
-        self.received_data_queue = queue.Queue(maxsize=1)
+        self.sent_data_queue = queue.Queue(maxsize=10)
+        self.received_data_queue = queue.Queue(maxsize=10)
 
-        self.maxDeque = 1
+        self.maxDeque = 4
         self.capture_deque = deque(maxlen=self.maxDeque)
 
         # Entidades controladas
@@ -147,11 +274,11 @@ class Emulator:
     def _init_timers(self, App):
         """Cria o temporizador de alta precisão."""
         self.Timer = HighPrecisionTimer(self)
-        self.frameTime = None
-        self.sendTime = None
-        self.FPStime = None
-        self.realTime = None
-        self.totalTime = None
+        self.frameTime = 0.0
+        self.sendTime = 0.0
+        self.FPStime = 0.0
+        self.realTime = 0.0
+        self.totalTime = 0.0
 
     # ==============================================================
     #  7. Informações do sistema operacional
@@ -464,14 +591,19 @@ class Emulator:
         print("[CAPTURA] Iniciando thread da câmera...")
 
         # Inicia thread de captura e processamento
-        self.captureThread = CameraCaptureThread(
-            main=self,
-            settingMenu=self.settingsTree,
-            capture_instance=self.capture,
-            deque=self.capture_deque
-        )
-        self.captureThread.start()
-        self.startThreadsLoop()
+        print("[EMULADOR] Iniciando modo paralelo de captura e processamento...")
+
+        self.cameraIsRunning = True
+        self.Timer.run()
+
+        # Inicia thread de visão (processamento pesado)
+        self.vision_thread = threading.Thread(target=self.visionThread, daemon=True)
+        self.vision_thread.start()
+
+        # Inicia loop da UI (Tkinter)
+        self.viewer.window.after(0, self.updateUI)
+
+
 
         # Se houver comunicação configurada, inicia a thread de envio
         if self.communication:
@@ -541,41 +673,56 @@ class Emulator:
         self.Timer.reset()
         self.stop()
 
-    #Método para Parar a Emulação.
     def stop(self):
-        """Interrompe completamente a execução do emulador e libera todos os recursos."""
-        print('[EMULADOR] Execução interrompida.')
+        """
+        Interrompe toda a execução do emulador, incluindo:
+        - Loop da UI (updateUI)
+        - Thread de visão (visionThread)
+        - Captura de câmera
+        - Temporizador (Timer)
+        """
+        print("[EMULADOR] Encerrando execução...")
 
-        # -----------------------------
-        # 🔹 1. Parar captura e threads
-        # -----------------------------
-        self._stop_capture_thread()
-        self._reset_capture()
-
-        # -----------------------------
-        # 🔹 2. Encerrar comunicação ativa
-        # -----------------------------
-        self._close_communication()
-
-        # -----------------------------
-        # 🔹 3. Atualizar interface e viewers
-        # -----------------------------
-        self._reset_ui_by_mode()
-        self.viewer.default_mode()
-        self.debugFieldViewer.default_mode()
-        self.infoCards.update()
-
-        # -----------------------------
-        # 🔹 4. Parar e zerar o timer
-        # -----------------------------
-        self.Timer.stop()
-        self.Timer.reset()
-
-        # -----------------------------
-        # 🔹 5. Resetar modo geral
-        # -----------------------------
-        self.Mode = MODE_DEFAULT
+        # --- sinaliza parada global ---
         self.cameraIsRunning = False
+
+        # --- encerra thread de visão, se ativa ---
+        if hasattr(self, "vision_thread") and self.vision_thread and self.vision_thread.is_alive():
+            print("[EMULADOR] Aguardando thread de visão encerrar...")
+            self.vision_thread.join(timeout=1.0)
+
+        # --- para captura de câmera ---
+        try:
+            if hasattr(self, "capture") and self.capture is not None:
+                self.capture.reset()
+        except Exception as e:
+            print("[EMULADOR] Erro ao resetar captura:", e)
+
+        # --- para o temporizador ---
+        try:
+            self.Timer.stop()
+            self.Timer.reset()
+        except Exception as e:
+            print("[EMULADOR] Erro ao parar Timer:", e)
+
+        # --- limpa a fila de saída (evita referências antigas) ---
+        try:
+            if hasattr(self, "output_queue") and not self.output_queue.empty():
+                while not self.output_queue.empty():
+                    self.output_queue.get_nowait()
+        except Exception:
+            pass
+
+        # --- zera tempos e status ---
+        self.totalTime = 0.0
+        self.frameTime = 0.0
+        self.sendTime = 0.0
+        self.realTime = 0.0
+        self.FPStime = 0
+        self.errorCode = 0
+
+        print("[EMULADOR] Execução finalizada com sucesso.")
+
 
     # Métodos auxiliares do stop
     def _stop_capture_thread(self):
@@ -625,184 +772,7 @@ class Emulator:
 
 
     # ============================ | Métodos de processamento | ==================
-    #Funções que executam os processos (execução por USB, por imagem ou )
-    def processUSB(self):
-          #print("[VS]: Novo processo de USB sendo utilizado")
-        #Id de captura
-        print("[PROC. THREAD]: INICIANDO TAREFA.")
-        while self.cameraIsRunning:
-            if len(self.capture_deque) == 0:  # Espera até que haja pelo menos um elemento no deque
-                time.sleep(0.02)  # Espera por 0.1 segundos antes de verificar 
-                continue
-            
-            self.frame = self.capture_deque[-1].copy()
-            print(f"[PROC. THREAD]: Frame capturado. Dimensões: {self.frame.shape}")
-            #puxando o tempo inicial do processamento, ou seja esse aqui, ou seja, o tempo
-            # que a imagem foi pega e enviada
-            dt = self.Timer.getElapsedTime()
-
-            # padronizando tipo de informação da fila
-            data_structure = {'frame': self.frame, 'debug': self.debug_view, 'time': dt}
-
-            #enviando dados na fila
-            while not self.sent_data_queue.empty():
-                try:
-                    self.sent_data_queue.get_nowait()
-                except queue.Empty:
-                    break
-
-            try:
-                self.sent_data_queue.put_nowait(data_structure)
-                print("[PROC. THREAD]: Dados enviados para a fila.")
-            except queue.Full:
-                print("[PROC. THREAD]: Fila de dados cheia, não foi possível enviar.")
-
-            self.vs.drawAllRobots()
-            time.sleep(self.delay/1000)
-        
-
-    #================================================================================
-    #=========== // Gerando tarefa para processar as imagens que chegam
-    #definindo nova função para processar imagens
-    def call_detection_system(self, input_queue, output_queue):
-        """Thread unificada para processar imagens"""
-        print("[DETECT.THREAD]: INICIANDO TAREFA.")
-        
-        while self.cameraIsRunning:
-            try:
-                if not input_queue.empty():
-                    with self.processing_lock:
-                        St1 = self.Timer.getElapsedTime()  # início
-                        received_data = input_queue.get(timeout=0.1)
-                        
-                        # Processamento
-                        result = self.vs.processImg(received_data.get('frame'), received_data.get('debug', False))
-                        
-                        # Resultado
-                        output_data = {
-                            'result': result,
-                            'objects': self.vs.virtualImg,
-                            'objects': self.vs.getObjects(),
-                            'time': St1  # Adicionar tempo inicial
-                        }
-
-                        # Calcula FPS e tempo de frame
-                        St2 = self.Timer.getElapsedTime()  # fim
-                        self.frameTime = (St2 - St1)
-                        self.FPStime = int(1000.0 / self.frameTime if self.frameTime != 0 else 0)
-                        
-                        output_queue.put(output_data)
-                        print("[DETECT.THREAD]: Dados processados e enviados para a fila.")
-
-            except queue.Empty:
-                time.sleep(self.delay/1000)
-            except Exception as e:
-                print(f"Erro geral: {e}")
-                traceback.print_exc()
-                
-            print("[DETECT.THREAD]: Tarefa finalizada. Câmera desligada.")
-
-    #========== // Gerando tarefa para exibir os resultados, quando há
-    def getResults(self):
-        """Pegar resultados processados e atualizar a GUI."""
-        if not self.cameraIsRunning:
-            print('[RESULT. THREAD]: Thread finalizada.')
-            return
-
-        try:
-            data = self.received_data_queue.get_nowait()
-            
-            # Processa dados recebidos
-            objects = data.get('objects', {})
-            self.result = data.get('result', None)
-            self.virtualRImg = data.get('virtual', None)
-            
-            # Atualiza objetos
-            try:
-                self.field = objects.get(ID_Objects.FIELD, self.field)
-                self.ball = objects.get(ID_Objects.BALL, self.ball)
-                self.allies = objects.get(ID_Objects.ALLIES, self.allies)
-                self.enemies = objects.get(ID_Objects.ENEMIES, self.enemies)
-            except Exception as e:
-                print(f"[RESULT.THREAD] Erro ao atualizar objetos: {e}")
-
-            # Atualiza UI com informações de timing
-            self.infoCards.updateInfo("FPS:", self.FPStime)
-            self.infoCards.updateInfo("Vision. (ms):", self.totalTime)
-            self.infoCards.updateInfo("Proc. (ms):", self.frameTime)
-            self.infoCards.updateInfo("Timer (s):", self.realTime)
-            
-            # Atualiza viewers
-            if self.frame is not None:
-                self.viewer.show(self.frame)
-                
-            if self.DEBUGA:
-                self.updateDebugViewers()
-
-            self.vs.drawAllRobots()
-            
-        except queue.Empty:
-            pass
-        except Exception as e:
-            print(f"[RESULT.THREAD] Erro: {e}")
-            traceback.print_exc()
-        finally:
-            # Re-schedule next update
-            self.viewer.window.after(self.delay, self.getResults)
-
-    # ========= // Definindo método que dá start nessas duas threads
-    def startThreadsLoop(self):
-        '''
-            Método responsável por iniciar as threads de processamento
-        '''
-        #dando start na thread de processamento
-        # Thread responsável
-        self.processUSBThread = threading.Thread(target=self.processUSB)
-        self.processUSBThread.daemon = True
-        self.processUSBThread.start()
-
-        #tempo para ajeitar tudo
-        time.sleep(0.010)
-
-        #dando start na thread de detecção
-        #possível perda de desempenho para ser analisado
-        self.procVideoThread = threading.Thread(target=self.call_detection_system, args=(self.sent_data_queue, self.received_data_queue))
-        self.procVideoThread.daemon = True
-        self.procVideoThread.start()
-
-        #tempo para ajeitar tudo
-        time.sleep(0.010)
-        
-        try:
-            self.viewer.window.after(self.delay, self.getResults)
-        except Exception:
-            print("[RESULT. THREAD]: Iniciando tarefa em thread (fallback)")
-            self.getResultsThread = threading.Thread(target=self.getResults)
-            self.getResultsThread.daemon = True
-            self.getResultsThread.start()
-            time.sleep(0.010)
-    
-    # ========= // Método para parar as threads
-    def stopThreadsLoop(self):
-        """Encerra todas as threads de processamento de forma segura"""
-        self.cameraIsRunning = False  # Sinaliza para threads pararem
-        time.sleep(0.1)  # Permite que threads vejam a mudança
-        
-        threads_to_stop = [
-            self.processUSBThread,
-            self.procVideoThread,
-            self.getResultsThread
-        ]
-        
-        for thread in threads_to_stop:
-            if thread and thread.is_alive():
-                try:
-                    thread.join(timeout=1.0)
-                    if thread.is_alive():
-                        print(f"Thread {thread.name} não encerrou no timeout")
-                except Exception as e:
-                    print(f"Erro ao encerrar thread: {e}")
-
+    # ========== // Trabalhar com um loop apenas // ==============
 
     #================================================================================
     #processando uma imagem utilizando o novo sistema de visão
