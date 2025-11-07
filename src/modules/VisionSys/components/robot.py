@@ -212,7 +212,7 @@ class Robot:
         """Atualiza posição detectada na imagem."""
         self._xi, self._yi, self._ri = int(xi), int(yi), int(ri)
 
-    def getImagePosition(self):
+    def getImagePosition(self): 
         """Retorna (xi, yi, ri)."""
         return self._xi, self._yi, self._ri
 

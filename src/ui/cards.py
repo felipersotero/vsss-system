@@ -228,7 +228,7 @@ class CardInfos:
         self.updateFunc("Sys:", str(self.emulator.OP+' '+self.emulator.OPversion))
         self.updateFunc("CUDA:",self.emulator.hasCuda)
         self.updateFunc("cuDev:",self.emulator.CudaDevice)
-        self.updateFunc("COM:",self.emulator.hasConection)
+        self.updateFunc("COM:",False)
         self.updateFunc("SC1:",self.emulator.commands)
         self.updateFunc("SC2:"," N/A ")
         self.updateFunc("SC3:"," N/A ")
