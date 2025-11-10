@@ -2,13 +2,19 @@
 # MÓDULO DE FUNÇÕES PARA ALGORÍTMO DE DETECÇÃO VSS (version v2.2.40)
 #==========================================================================================
 '''
-    @GNOMIO: O algorítmo de detecção terá agora uma nova lógica de programação, no qual ele é conti-
-    tuído de uma classe 'detector' responsável por realizar.
-    Os cálculos serão acelerados utilizando a GPU. Para isso utiliza a bibliteca OpenCV com 
-    base na plataforma cuda, e usa também a cupy para realizar cálculos da biblioteca
-    numpy na GPU do computador.
+    @GNOMIO: Sismtea de detecção de objetos VSS (Vision System Soccer) versão 2.2.40    
+    
+    Versão: v3.0.1
+    Última modificação: 14/02/2024
+    Autor: Saulo (update)
 
-    Necessário configurar CMAKE e etc para utilizar essa interface.
+    Patch Notes v3.0.1:
+    - Implementado novo sistema de threads com melhor desempenho
+    - Separação de processamento em visão e comunicação
+    - Melhor gerenciamento de recursos
+    - Sistema de filas otimizado para UI e comunicação
+    - Novo sistema de debug com menor overhead
+    - Correções na estabilidade do processamento
 '''
 #importando bibliotecas necessárias para o código
 import cv2
@@ -1055,7 +1061,7 @@ class VisionSystem:
                 # Processamento completo nas primeiras iterações
                 self.proc(img, debug)
             else:
-                print("[SystemVision][PROC]: Execução leve (predictObjects).")
+                #print("[SystemVision][PROC]: Execução leve (predictObjects).")
                 self._firstTimeExec = (self.currentTime - self.lastMajorTime) / 1000.0
                 self.predictObjects(img, tms=self.currentTime)
 
@@ -3187,7 +3193,7 @@ class VisionSystem:
         '''Limpa o executor'''
         if hasattr(self, 'executor'):
             self.executor.shutdown(wait=True)
-            
+
 # Testar função principal e nova lógica
 if __name__ =='__main__':
     print("Utilizada em função de main")

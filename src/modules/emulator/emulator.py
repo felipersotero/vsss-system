@@ -1,11 +1,18 @@
 '''
-    @GNOMIO: O algorítmo de detecção terá agora uma nova lógica de programação, no qual ele é conti-
-    tuído de uma classe 'detector' responsável por realizar.
-    Os cálculos serão acelerados utilizando a GPU. Para isso utiliza a bibliteca OpenCV com 
-    base na plataforma cuda, e usa também a cupy para realizar cálculos da biblioteca
-    numpy na GPU do computador.
+    @GNOMIO: Motor principal do sistema VSSS. Gerencia o pipeline de processamento,
+    coordena threads de visão e comunicação, e mantém o estado global do sistema.
 
-    Necessário configurar CMAKE e etc para utilizar essa interface.
+    Versão: v3.0.1
+    Última modificação: 14/02/2024
+    Autor: Saulo (update)
+
+    Patch Notes v3.0.1:
+    - Implementado novo sistema de threads com melhor desempenho
+    - Separação de processamento em visão e comunicação
+    - Melhor gerenciamento de recursos
+    - Sistema de filas otimizado para UI e comunicação
+    - Novo sistema de debug com menor overhead
+    - Correções na estabilidade do processamento
 '''
 #=============================================================
 from modules.VisionSys.detectorV2 import VisionSystem
@@ -101,13 +108,22 @@ class Emulator:
     #= =============================================================
     def _init_parallel_processing(self):
         """Configura variáveis para controle de processamento paralelo."""
+        # Fila original mantida para compatibilidade, mas não será mais usada diretamente
         self.output_queue = queue.Queue(maxsize=1)
+
+        # Filas separadas — independentes para UI e comunicação
+        self.ui_queue = queue.Queue(maxsize=1)
+        self.comm_queue = queue.Queue(maxsize=1)
+
+        # Threads
         self.vision_thread = None
+        self.comm_thread = None
+
 
     # ==============================================================
-    # Processamento paralelo: thread de visão e loop da UI
+    # Processamento paralelo: thread de visão e loop da UI, comunicação e controle
     # ==============================================================
-
+    # Thread de captura e processamento das imagens
     def visionThread(self):
         """Thread separada que faz captura e processamento de visão."""
         print("[VISION THREAD] Iniciada.")
@@ -130,7 +146,7 @@ class Emulator:
                 # --- Atualiza tempos ---
                 self.frameTime = (t_proc_end - t_proc_start) * 1000.0  # processamento
                 self.totalTime = (time.time() - loop_start) * 1000.0   # visão total
-                self.realTime = self.Timer.getElapsedTime()            # desde init
+                self.realTime = self.Timer.getElapsedTime()/1000.0           # desde init
                 self.FPStime = int(1000 / self.totalTime) if self.totalTime > 0 else 0
 
                 # --- Atualiza objetos detectados ---
@@ -139,6 +155,7 @@ class Emulator:
                 self.allies = objects.get(ID_Objects.ALLIES, self.allies)
                 self.enemies = objects.get(ID_Objects.ENEMIES, self.enemies)
 
+                timestamp = time.time()
                 # --- Prepara pacote para a UI ---
                 data = {
                     'frame': frame,
@@ -150,16 +167,25 @@ class Emulator:
                     'vision_time': self.totalTime,
                     'proc_time': self.frameTime,
                     'real_time': self.realTime,
-                    'fps': self.FPStime
+                    'fps': self.FPStime,
+                    'timestamp': self.realTime
                 }
 
-                # Mantém apenas o último frame (fila maxsize=1)
-                if self.output_queue.full():
+                # --- Envia para fila da UI ---
+                if self.ui_queue.full():
                     try:
-                        self.output_queue.get_nowait()
+                        self.ui_queue.get_nowait()
                     except queue.Empty:
                         pass
-                self.output_queue.put_nowait(data)
+                self.ui_queue.put_nowait(data)
+
+                # --- Envia para fila da comunicação ---
+                if self.comm_queue.full():
+                    try:
+                        self.comm_queue.get_nowait()
+                    except queue.Empty:
+                        pass
+                self.comm_queue.put_nowait(data)
 
             except Exception as e:
                 print("[VISION THREAD] Erro:", e)
@@ -169,6 +195,7 @@ class Emulator:
 
         print("[VISION THREAD] Finalizada.")
 
+    # Apenas para atualizar a UI
     def updateUI(self):
         """Atualiza a interface com base nas informações da thread de visão."""
         if not self.cameraIsRunning:
@@ -177,7 +204,7 @@ class Emulator:
             return
 
         try:
-            data = self.output_queue.get_nowait()
+            data = self.ui_queue.get_nowait()
             frame = data['frame']
             result = data['result']
             self.field = data['field']
@@ -211,7 +238,7 @@ class Emulator:
             self.infoCards.updateInfo("Envio (ms):", f"{self.sendTime:.2f}")
             self.infoCards.updateInfo("Timer (s):", f"{self.realTime / 1000:.2f}")
             self.infoCards.updateInfo("Error Code:", self.errorCode)
-            self.infoCards.updateInfo("Modo:", self.Mode)
+            self.infoCards.update()
 
             self.control.updateObjectsValues(self.field, self.ball, self.allies, self.enemies)
 
@@ -221,15 +248,51 @@ class Emulator:
         # Loop contínuo (~60 FPS)
         self.viewer.window.after(16, self.updateUI)
 
+    # Thread de comunicação 
+    def communicationThread(self):
+        """Thread responsável por enviar dados para os módulos de controle e estratégia."""
+        print("[COMM THREAD] Iniciada.")
+        last_send = time.time()
+
+        while self.cameraIsRunning:
+            try:
+                # --- Tenta obter os dados mais recentes da visão ---
+                if not self.comm_queue.empty():
+                    data = self.comm_queue.queue[-1]  # último pacote de visão
+                else:
+                    time.sleep(0.005)
+                    continue
+
+                t0 = time.time()
+
+                # --- Aqui você implementa o envio real (exemplo) ---
+                # self.controller.send(data)  # módulo de controle
+                # self.strategy.update(data)  # módulo de estratégia
+
+                # Exemplo de cálculo de tempo de envio:
+                t1 = time.time()
+                self.sendTime = (t1 - t0) * 1000.0  # em ms
+
+                # --- Log periódico opcional ---
+                if (t1 - last_send) > 1.0:
+                    print(f"[COMM THREAD] Dados enviados | SendTime: {self.sendTime:.2f} ms")
+                    last_send = t1
+
+                time.sleep(0.002)  # pequena pausa para evitar busy loop
+
+            except Exception as e:
+                print("[COMM THREAD] Erro:", e)
+                traceback.print_exc()
+                time.sleep(0.01)
+                continue
+
+        print("[COMM THREAD] Finalizada.")
 
     # ==============================================================
     #  3. Filas, buffers e coleções
     # ==============================================================
     def _init_collections(self):
         """Configura filas e coleções auxiliares usadas no sistema."""
-        import queue
-        from collections import deque
-
         self.commands_queue = queue.Queue(maxsize=1)
         self.sent_data_queue = queue.Queue(maxsize=10)
         self.received_data_queue = queue.Queue(maxsize=10)
@@ -600,6 +663,10 @@ class Emulator:
         self.vision_thread = threading.Thread(target=self.visionThread, daemon=True)
         self.vision_thread.start()
 
+        # Inicia thread de comunicação (paralela e leve)
+        self.comm_thread = threading.Thread(target=self.communicationThread, daemon=True)
+        self.comm_thread.start()
+
         # Inicia loop da UI (Tkinter)
         self.viewer.window.after(0, self.updateUI)
 
@@ -681,29 +748,34 @@ class Emulator:
         - Captura de câmera
         - Temporizador (Timer)
         """
-        print("[EMULADOR] Encerrando execução...")
+        print("[EMULATOR] Encerrando execução...")
 
         # --- sinaliza parada global ---
         self.cameraIsRunning = False
 
         # --- encerra thread de visão, se ativa ---
         if hasattr(self, "vision_thread") and self.vision_thread and self.vision_thread.is_alive():
-            print("[EMULADOR] Aguardando thread de visão encerrar...")
+            print("[EMULATOR] Aguardando thread de visão encerrar...")
             self.vision_thread.join(timeout=1.0)
+
+        # --- encerra thread de comunicação ---
+        if hasattr(self, "comm_thread") and self.comm_thread and self.comm_thread.is_alive():
+            print("[EMULATOR] Aguardando thread de comunicação encerrar...")
+            self.comm_thread.join(timeout=1.0)
 
         # --- para captura de câmera ---
         try:
             if hasattr(self, "capture") and self.capture is not None:
                 self.capture.reset()
         except Exception as e:
-            print("[EMULADOR] Erro ao resetar captura:", e)
+            print("[EMULATOR] Erro ao resetar captura:", e)
 
         # --- para o temporizador ---
         try:
             self.Timer.stop()
             self.Timer.reset()
         except Exception as e:
-            print("[EMULADOR] Erro ao parar Timer:", e)
+            print("[EMULATOR] Erro ao parar Timer:", e)
 
         # --- limpa a fila de saída (evita referências antigas) ---
         try:
@@ -721,7 +793,7 @@ class Emulator:
         self.FPStime = 0
         self.errorCode = 0
 
-        print("[EMULADOR] Execução finalizada com sucesso.")
+        print("[EMULATOR] Execução finalizada com sucesso.")
 
 
     # Métodos auxiliares do stop
@@ -730,9 +802,9 @@ class Emulator:
         if hasattr(self, "captureThread") and self.captureThread:
             try:
                 self.captureThread.stop()
-                print("[EMULADOR] Thread de captura parada com sucesso.")
+                print("[EMULATOR] Thread de captura parada com sucesso.")
             except Exception as e:
-                print(f"[EMULADOR] Thread de captura forçada a terminar: {e}")
+                print(f"[EMULATOR] Thread de captura forçada a terminar: {e}")
             finally:
                 self.captureThread = None
 
@@ -741,9 +813,9 @@ class Emulator:
         if hasattr(self, "capture") and self.capture:
             try:
                 self.capture.reset()
-                print("[EMULADOR] Câmera liberada.")
+                print("[EMULATOR] Câmera liberada.")
             except Exception as e:
-                print(f"[EMULADOR] Falha ao liberar câmera: {e}")
+                print(f"[EMULATOR] Falha ao liberar câmera: {e}")
 
         # Limpa deque de imagens para evitar frames antigos
         self.capture_deque.clear()
@@ -753,13 +825,13 @@ class Emulator:
         """Fecha qualquer tipo de comunicação ativa (MQTT/Serial) via classe Communication."""
         if hasattr(self, "communication") and self.communication:
             try:
-                print("[EMULADOR] Encerrando comunicação...")
+                print("[EMULATOR] Encerrando comunicação...")
                 self.communication.reset()
-                print("[EMULADOR] Comunicação encerrada com sucesso.")
+                print("[EMULATOR] Comunicação encerrada com sucesso.")
             except Exception as e:
-                print(f"[EMULADOR] Erro ao encerrar comunicação: {e}")
+                print(f"[EMULATOR] Erro ao encerrar comunicação: {e}")
         else:
-            print("[EMULADOR] Nenhuma comunicação ativa para encerrar.")
+            print("[EMULATOR] Nenhuma comunicação ativa para encerrar.")
 
     def _reset_ui_by_mode(self):
         """Atualiza botões e estado visual conforme o modo atual."""

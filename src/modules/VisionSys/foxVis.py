@@ -239,6 +239,9 @@ class VisionSystem:
         self.enemy_lower_bound  = None          # valor mínimo para detectar inimigos
         self.enemy_upper_bound  = None          # valor máximo para detectar inimigos
 
+        # Definindo lista de kernels morfológicos para utilizar
+        self.kernels_cache = {}
+
         # variáveis internas para realizar o tratamento de dados
         self.playersCount       = 0
         self.alliesCount        = 0
@@ -512,6 +515,11 @@ class VisionSystem:
 
         self._threads       = []
 
+    def get_kernel(self, shape, dim):
+        key = (shape, dim)
+        if key not in self.kernel_cache:
+            self.kernel_cache[key] = cv2.getStructuringElement(shape, (dim, dim))
+        return self.kernel_cache[key]
     #=====================================================================================================
     #======================|| Métodos de manipulação de pontos ||========================================
     def getHomographyMatrix(self, ptsSrc, ptsFinal):
@@ -641,79 +649,917 @@ class VisionSystem:
 
         self.min_diag = (7.5 / 4) * np.sqrt(2) * self.prop_px_cm
 
-    def detect_squares(self, imgBin):
+    def detect_squares(self,img_bin, min_diag=20):
         """
-        Trata uma imagem binarizada e retorna apenas os objetos com formato próximo de quadrado.
+        Processa uma imagem binarizada e retorna apenas os objetos com formato próximo de quadrado.
 
         Retorna:
-            - bin_res: imagem binarizada tratada com apenas os quadrados;
+            - bin_res: imagem binarizada com apenas os quadrados;
             - contours_treat: lista de contornos correspondentes aos quadrados.
         """
-        try:
-            # Encontrar contornos externos
-            contours, _ = cv2.findContours(imgBin, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-            if not contours:
-                return imgBin, []
+        contours, _ = cv2.findContours(img_bin, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        if not contours:
+            return img_bin, []
 
-            # Máscara em branco do mesmo tamanho da imagem
-            mascara = np.zeros_like(imgBin)
-            contours_treat = []
+        mask = np.zeros_like(img_bin)
+        contours_treat = []
 
-            for contorno in contours:
-                # Aproxima o contorno por um polígono e verifica se tem 4 lados
-                perimetro = cv2.arcLength(contorno, True)
-                approx = cv2.approxPolyDP(contorno, 0.04 * perimetro, True)
-                if len(approx) != 4:
-                    continue
+        for contour in contours:
+            if self.is_square(contour, min_diag):
+                cv2.drawContours(mask, [contour], -1, 255, -1)
+                contours_treat.append(contour)
 
-                # Verifica se é aproximadamente um quadrado
-                x, y, w, h = cv2.boundingRect(approx)
-                aspect_ratio = w / float(h)
+        bin_res = cv2.bitwise_and(img_bin, mask)
+        return bin_res, contours_treat
 
-                # Filtra por proporção e tamanho mínimo
-                if 0.7 <= aspect_ratio <= 1.3 and np.hypot(w, h) >= self.min_diag:
-                    cv2.drawContours(mascara, [contorno], -1, 255, -1)
-                    contours_treat.append(contorno)
-
-            # Aplica a máscara sobre a imagem binarizada
-            bin_res = cv2.bitwise_and(imgBin, mascara)
-
-            return bin_res, contours_treat
-
-        except Exception as e:
-            print(f"Erro ao processar imagem: {e}")
-            return imgBin, []
-
-    def isSquare(self, contorno):
+    def is_square(self, contour, min_diag=20):
         """
-        Verifica se o contorno corresponde a um quadrado (possível robô).
-        Retorna True se for aproximadamente quadrado, False caso contrário.
+        Verifica se o contorno corresponde aproximadamente a um quadrado.
+        Retorna True se for quadrado, False caso contrário.
         """
-        # Aproxima o contorno por um polígono
-        perimetro = cv2.arcLength(contorno, True)
-        approx = cv2.approxPolyDP(contorno, 0.04 * perimetro, True)
+        perimetro = cv2.arcLength(contour, True)
+        approx = cv2.approxPolyDP(contour, 0.04 * perimetro, True)
 
-        # Verifica se o polígono tem 4 lados
+        # Precisa ter 4 lados
         if len(approx) != 4:
             return False
 
-        # Calcula o retângulo delimitador e a proporção entre largura e altura
         x, y, w, h = cv2.boundingRect(approx)
         aspect_ratio = w / float(h)
+        diag = np.hypot(w, h)
 
-        # Retorna True se a proporção for próxima de 1 (quadrado)
-        return 0.7 <= aspect_ratio <= 1.3
+        # Aproximadamente quadrado e com tamanho mínimo
+        return 0.7 <= aspect_ratio <= 1.3 and diag >= min_diag
+
+    def trait_noise(self, binImg, it=1):
+        """
+        Reduz ruídos em imagens binarizadas sem uso de CUDA.
+
+        Parâmetros:
+            binImg (np.ndarray): imagem binarizada (grayscale ou binária 0/255).
+            it (int): número de iterações para operações morfológicas (default=1).
+
+        Retorna:
+            np.ndarray: imagem binarizada com menos ruído.
+        """
+        # Garante que a imagem esteja em 8 bits e com um único canal
+        if binImg.ndim == 3:
+            binImg = cv2.cvtColor(binImg, cv2.COLOR_BGR2GRAY)
+        if binImg.dtype != np.uint8:
+            binImg = cv2.convertScaleAbs(binImg)
+
+        # Kernel cruzado pequeno — preserva arestas e remove ruídos pontuais
+        kernel = cv2.getStructuringElement(cv2.MORPH_CROSS, (3, 3))
+
+        # Abertura (erosão + dilatação) remove ruídos brancos isolados
+        opened = cv2.morphologyEx(binImg, cv2.MORPH_OPEN, kernel, iterations=it)
+
+        # Fechamento (dilatação + erosão) remove buracos pequenos dentro dos objetos
+        closed = cv2.morphologyEx(opened, cv2.MORPH_CLOSE, kernel, iterations=1 if it < 2 else it - 1)
+
+        return closed
+
+    def get_max_contour(self, img):
+        """
+        Retorna o maior contorno encontrado em uma imagem binarizada.
+        
+        Parâmetros:
+            img (np.ndarray): imagem binarizada (0 e 255).
+        
+        Retorna:
+            np.ndarray | None: contorno com maior área ou None se não houver contornos válidos.
+        """
+        # Garante formato adequado: imagem em 8 bits, 1 canal
+        if img.ndim == 3:
+            img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+        if img.dtype != np.uint8:
+            img = cv2.convertScaleAbs(img)
+
+        # Busca apenas contornos externos (evita hierarquias desnecessárias)
+        contours, _ = cv2.findContours(img, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+        # Retorna None se não houver contornos
+        if not contours:
+            return None
+
+        # Seleciona o contorno com maior área acima de um limiar mínimo (evita ruído)
+        max_contour = max(contours, key=cv2.contourArea)
+        if cv2.contourArea(max_contour) < 10:  # limiar ajustável conforme a aplicação
+            return None
+
+        return max_contour
+
+        #recuperando coordenadas extremas que englobam o objeto maior
+     
+    def get_perspective(self, contour):
+        """
+        Retorna as coordenadas (x1, y1, x2, y2) do retângulo delimitador
+        do contorno fornecido.
+
+        Parâmetros:
+            contour (np.ndarray): contorno do objeto (como retornado por cv2.findContours).
+
+        Retorna:
+            tuple[int, int, int, int] | None:
+                (x1, y1, x2, y2) → coordenadas dos cantos do retângulo.
+                Retorna None se o contorno for inválido ou vazio.
+        """
+        # Verifica se o contorno é válido e não vazio
+        if contour is None or len(contour) == 0:
+            return None
+
+        # Garante que o contorno tenha o formato adequado
+        contour = np.array(contour).astype(np.int32)
+
+        # Obtém o retângulo delimitador
+        x, y, w, h = cv2.boundingRect(contour)
+
+        # Retorna coordenadas absolutas (x1, y1, x2, y2)
+        return x, y, x + w, y + h
+
+    def enhance_gray_objects(self, grayImg):
+        """
+        Realça objetos em uma imagem em tons de cinza, melhorando contraste e definição
+        antes da binarização (threshold). Ideal para destacar os robôs (quadrados ~7,5 cm).
+
+        Parâmetros:
+            grayImg (np.ndarray): imagem em escala de cinza (uint8).
+
+        Retorna:
+            np.ndarray: imagem realçada (uint8).
+        """
+        try:
+            # Garante formato e tipo corretos
+            if len(grayImg.shape) != 2:
+                grayImg = cv2.cvtColor(grayImg, cv2.COLOR_BGR2GRAY)
+            grayImg = cv2.convertScaleAbs(grayImg)
+
+            # 1Equalização adaptativa do histograma (CLAHE)
+            clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+            img_eq = clahe.apply(grayImg)
+
+            # 2️ Filtro bilateral (suaviza sem perder bordas)
+            img_smooth = cv2.bilateralFilter(img_eq, d=5, sigmaColor=75, sigmaSpace=75)
+
+            # 3️ Realce de bordas com unsharp masking
+            sharp = cv2.addWeighted(img_eq, 1.5, img_smooth, -0.5, 0)
+
+            return sharp
+
+        except Exception as e:
+            print(f"[SystemVision][ENHANCE_GRAY]: Erro ao realçar imagem — {e}")
+            return grayImg
+        
+    def binarize_up(self, img, threshold=150):
+        '''
+            Binariza a imagem por meio de um threshold, ou seja, um limiar
+            de intensidade dos pixels. Para isso, a imagem tem que estar em
+            tons de cinza. Tratada pela função median_blur().
+        '''
+        _,bin = cv2.threshold(img, threshold, 255, cv2.THRESH_BINARY)
+        return bin
+
+    def reduce_window(self, img, coorVetor, d=10):
+        """
+        Reduz a imagem para uma subjanela baseada nas coordenadas (x, y, w, h),
+        adicionando uma margem opcional e mantendo performance elevada.
+
+        Parâmetros:
+            img (np.ndarray): imagem original (grayscale ou BGR).
+            coorVetor (list | tuple): [x, y, w, h] delimitando a janela.
+            d (int): margem adicional em pixels (default = 10).
+
+        Retorna:
+            np.ndarray: imagem recortada (ou original em caso de erro).
+        """
+        try:
+            x, y, w, h = map(int, coorVetor)
+
+            # Valida dimensões
+            if w <= 0 or h <= 0:
+                print("[SystemVision][REDUCE_WINDOW]: Dimensões inválidas de recorte.")
+                return img
+
+            # Calcula limites da janela com margem
+            x1 = max(0, x - d)
+            y1 = max(0, y - d)
+            x2 = min(img.shape[1], x + w + d)
+            y2 = min(img.shape[0], y + h + d)
+
+            # Recorte direto — evita warpPerspective (muito mais rápido)
+            subimg = img[y1:y2, x1:x2]
+
+            # Retorna imagem recortada ou original se algo deu errado
+            if subimg.size == 0:
+                print("[SystemVision][REDUCE_WINDOW]: Subimagem vazia.")
+                return img
+
+            return subimg
+
+        except Exception as e:
+            print(f"[SystemVision][REDUCE_WINDOW]: Erro ao reduzir janela — {e}")
+            return img
+        
+
+    def reduce_field(self, BinImg, Img, fieldWidth, d=10):
+        """
+        Reduz a imagem para a região do campo (maior contorno encontrado)
+        e retorna as imagens recortadas + coordenadas do retângulo.
+
+        Parâmetros:
+            BinImg (np.ndarray): imagem binarizada do campo.
+            Img (np.ndarray): imagem original colorida.
+            fieldWidth (float): largura real do campo (em cm, por exemplo).
+            d (int): margem adicional em pixels (default = 10).
+
+        Retorna:
+            tuple: (bin_Reduce, img_Reduce, cooVetor)
+                - bin_Reduce: imagem binarizada reduzida
+                - img_Reduce: imagem colorida reduzida
+                - cooVetor: [x, y, w, h] do campo detectado
+        """
+        try:
+            #  Encontra o maior contorno (presumido como o campo)
+            contours, _ = cv2.findContours(BinImg, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+            if not contours:
+                print("[SystemVision][REDUCE_FIELD]: Nenhum contorno encontrado.")
+                return BinImg, Img, [0, 0, 0, 0]
+
+            objT = max(contours, key=cv2.contourArea)
+            x, y, w, h = cv2.boundingRect(objT)
+
+            #  Validação de dimensões
+            if w <= 0 or h <= 0:
+                print("[SystemVision][REDUCE_FIELD]: Contorno com dimensões inválidas.")
+                return BinImg, Img, [0, 0, 0, 0]
+
+            #  Define coordenadas com margem (sem ultrapassar bordas)
+            x1 = max(0, x - d)
+            y1 = max(0, y - d)
+            x2 = min(BinImg.shape[1], x + w + d)
+            y2 = min(BinImg.shape[0], y + h + d)
+
+            #  Recorte eficiente
+            bin_Reduce = BinImg[y1:y2, x1:x2]
+            img_Reduce = Img[y1:y2, x1:x2]
+            cooVetor = [x, y, w, h]
+
+            #  Atualiza campo de visão
+            rect = Quad(
+                Point2D(x1, y1),
+                Point2D(x2, y1),
+                Point2D(x2, y2),
+                Point2D(x1, y2)
+            )
+            self.viewCapture.setViewCapture(rect, cooVetor)
+
+            #  Atualiza proporção pixel/cm
+            if w > 50 and h > 50:
+                pixelWidth = min(w, h)
+                self.convert_measures(fieldWidth, pixelWidth)
+
+            return bin_Reduce, img_Reduce, cooVetor
+
+        except Exception as e:
+            print(f"[SystemVision][REDUCE_FIELD]: Erro ao reduzir campo — {e}")
+            self.prop_px_cm = 1
+            return BinImg, Img, [0, 0, 0, 0]
+
+    def create_color_bounds(self, hsv_color, hue_tol=10, sat_tol=50, val_tol=50):
+        """
+        Cria os limites inferior e superior em HSV a partir de uma cor base e tolerâncias.
+
+        Parâmetros:
+            hsv_color (iterable): cor base em HSV (H, S, V).
+            hue_tol (int): tolerância para o matiz (H).
+            sat_tol (int): tolerância para a saturação (S).
+            val_tol (int): tolerância para o valor (V).
+
+        Retorna:
+            tuple[np.ndarray, np.ndarray]: (lower_bound, upper_bound)
+        """
+        try:
+            h, s, v = map(int, hsv_color)
+
+            # Limites com saturação e valor dentro do intervalo válido
+            lower = np.array([
+                max(0, h - hue_tol),
+                max(0, s - sat_tol),
+                max(0, v - val_tol)
+            ], dtype=np.uint8)
+
+            upper = np.array([
+                min(179, h + hue_tol),   # H em OpenCV vai de 0 a 179
+                min(255, s + sat_tol),
+                min(255, v + val_tol)
+            ], dtype=np.uint8)
+
+            return lower, upper
+
+        except Exception as e:
+            print(f"[VisionSystem][COLOR_BOUNDS]: Erro ao criar limites HSV — {e}")
+            return np.array([0, 0, 0], dtype=np.uint8), np.array([179, 255, 255], dtype=np.uint8)
+
+    def find_binary_contours(self, image, lower_bound, upper_bound):
+        """
+        Encontra contornos numa imagem filtrando por faixa HSV.
+
+        Parâmetros:
+            image (np.ndarray): imagem BGR.
+            lower_bound (np.ndarray): limite inferior em HSV.
+            upper_bound (np.ndarray): limite superior em HSV.
+
+        Retorna:
+            list[np.ndarray]: lista de contornos encontrados.
+        """
+        try:
+            #  Validações iniciais
+            if image is None or image.size == 0:
+                print("[VisionSystem][CONTOURS]: Imagem vazia ou None.")
+                return []
+
+            if image.shape[1] < 30 or image.shape[0] < 30:
+                print("[VisionSystem][CONTOURS]: Janela muito pequena.")
+                return []
+
+            #  Conversão para HSV
+            image_hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
+
+            # Criação da máscara binária
+            mask = cv2.inRange(image_hsv, lower_bound, upper_bound)
+
+            # 🧹 Limpeza rápida (muito mais leve que morfologia pesada)
+            kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
+            mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel, iterations=1)
+            mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel, iterations=1)
+
+            #  Encontrar contornos externos
+            contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+            return contours
+
+        except Exception as e:
+            print(f"[VisionSystem][CONTOURS]: Erro ao processar contornos — {e}")
+            return []
+
+        #sort values
+    def sort_points(self, points):
+        # Ordena os pontos primeiro pelo y (crescente) e depois pelo x (crescente)
+        points = sorted(points, key=lambda p: (p[1], p[0]))
+        
+        # Identificar os dois pontos superiores e os dois pontos inferiores
+        top_points = points[:2]
+        bottom_points = points[2:]
+        
+        # Ordenar os pontos superiores por x (crescente)
+        top_points = sorted(top_points, key=lambda p: p[0])
+        
+        # Ordenar os pontos inferiores por x (crescente)
+        bottom_points = sorted(bottom_points, key=lambda p: p[0])
+        
+        # Retornar os pontos na ordem desejada: [top_right, top_left, bottom_left, bottom_right]
+        sorted_points = np.array([top_points[0], top_points[1], bottom_points[1], bottom_points[0]], dtype=np.int32)
+        
+        return sorted_points
 
 
     #======================================| Métodos de Depuração |==========================================
 
+    def draw_player_circle(self, img_debug, robot: Robot):
+        """
+        Desenha um círculo no jogador com a cor e o identificador do time.
+
+        Parâmetros:
+            img_debug (np.ndarray): imagem onde o círculo será desenhado.
+            robot (Robot): instância do robô com atributos (xi, yi, ri, team, id).
+        """
+        try:
+            # Conversões rápidas para int
+            xi, yi, ri = map(int, (robot.xi, robot.yi, robot.ri))
+
+            # Define cor e prefixo do time
+            team_colors = {
+                ID_Team.TEAM_ALLY: (255, 0, 0),   # Azul
+                ID_Team.TEAM_ENEMY: (0, 0, 255),  # Vermelho
+            }
+            color = team_colors.get(robot.team, (0, 255, 0))  # Verde para neutro
+
+            # Mapeamento simples de IDs
+            id_labels = {
+                ID_Robots.ROBOT_ALLY_GOAL:  "G",
+                ID_Robots.ROBOT_ALLY_1:     "A1",
+                ID_Robots.ROBOT_ALLY_2:     "A2",
+                ID_Robots.ROBOT_ENEMY_GOAL: "G",
+                ID_Robots.ROBOT_ENEMY_1:    "A1",
+                ID_Robots.ROBOT_ENEMY_2:    "A2"
+            }
+
+            # Texto (Ex.: "A1", "EG", etc.)
+            prefix = "A" if robot.team == ID_Team.TEAM_ALLY else ("E" if robot.team == ID_Team.TEAM_ENEMY else "N")
+            label = id_labels.get(robot.id, "?")
+            text = f"{prefix}{label}"
+
+            # Desenha o círculo e o texto
+            cv2.circle(img_debug, (xi, yi), ri + 5, color, 2)
+            cv2.putText(img_debug, text, (xi - 10, yi - ri - 10),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1, cv2.LINE_AA)
+
+        except Exception as e:
+            print(f"[VisionSystem][DRAW_CIRCLE]: Erro ao desenhar robô — {e}")
 
 
+    def draw_player_virtual(self, robot: Robot):
+        """
+        Desenha um círculo representando o jogador na imagem virtual.
 
+        Parâmetros:
+            robot (Robot): instância do robô com atributos (position, radius, team, id).
+        """
+        try:
+            # --- Conversões e coordenadas ---
+            xi, yi = map(int, self.getImageIndice(np.array(robot.position)))
+            ri = int(robot.radius)
 
+            # --- Definição de cores e rótulos ---
+            team_colors = {
+                ID_Team.TEAM_ALLY: (255, 255, 0),  # Amarelo
+                ID_Team.TEAM_ENEMY: (0, 0, 255),   # Vermelho
+            }
+            color = team_colors.get(robot.team, (0, 255, 0))  # Verde para neutro
 
+            id_labels = {
+                ID_Robots.ROBOT_ALLY_GOAL:  "G",
+                ID_Robots.ROBOT_ALLY_1:     "A1",
+                ID_Robots.ROBOT_ALLY_2:     "A2",
+                ID_Robots.ROBOT_ENEMY_GOAL: "G",
+                ID_Robots.ROBOT_ENEMY_1:    "A1",
+                ID_Robots.ROBOT_ENEMY_2:    "A2"
+            }
 
+            prefix = "A" if robot.team == ID_Team.TEAM_ALLY else (
+                    "E" if robot.team == ID_Team.TEAM_ENEMY else "N")
+            label = id_labels.get(robot.id, "?")
+            text = f"{prefix}{label}"
+
+            # --- Desenho principal ---
+            cv2.circle(self.virtualImg, (xi, yi), 4, color, -1)
+
+            # Escala de 3 px/cm (ajuste do tamanho visual do robô)
+            radius_scaled = int(3 * ri)
+            cv2.circle(self.virtualImg, (xi, yi), radius_scaled, color, 1)
+
+            # --- Texto ---
+            if self.debug:
+                text_pos = (xi - 8, yi - radius_scaled - 4)
+            else:
+                text_pos = (xi - 8, yi - 14)
+
+            cv2.putText(self.virtualImg, text, text_pos,
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.4, color, 1, cv2.LINE_AA)
+
+        except Exception as e:
+            print(f"[VisionSystem][DRAW_PLAYER_VIRTUAL]: Erro ao desenhar robô virtual — {e}")
 
     #========================================|Métodos principais de processamento | ============================
+    # Métodos pontuais de processamento podem ser adicionados aqui conforme necessário
+    def detect_ally_robot(self, window: np.ndarray, colorP: list[int], colorS: list[int]) -> bool:
+        """
+        Verifica se há um robô aliado dentro de uma janela, com base em duas cores (primária e secundária).
 
-#======================// Fim do Módulo \\================================================#
+        Retorna:
+            bool: True se ambas as cores forem detectadas e próximas entre si, False caso contrário.
+
+        Parâmetros:
+            window (np.ndarray): subimagem em que será feita a busca.
+            colorP (list[int]): cor primária em HSV (ex: [H, S, V]).
+            colorS (list[int]): cor secundária em HSV (ex: [H, S, V]).
+        """
+        try:
+            # Cria limites HSV para ambas as cores
+            p_lower, p_upper = self.create_color_bounds(colorP)
+            s_lower, s_upper = self.create_color_bounds(colorS)
+
+            # Obtém contornos binários das cores
+            contoursP = self.find_binary_contours(window, p_lower, p_upper)
+            contoursS = self.find_binary_contours(window, s_lower, s_upper)
+
+            # Raio mínimo válido para descartar ruídos
+            min_radius = 0.1 * self.secColorRadius
+
+            # Calcula centros válidos das duas cores
+            centersP = [cv2.minEnclosingCircle(c)[0] for c in contoursP if cv2.minEnclosingCircle(c)[1] >= min_radius]
+            centersS = [cv2.minEnclosingCircle(c)[0] for c in contoursS if cv2.minEnclosingCircle(c)[1] >= min_radius]
+
+            if not centersP or not centersS:
+                return False
+
+            # Verifica se há pelo menos um par de centros próximos (cores do mesmo robô)
+            max_dist = 2.5 * self.secColorRadius  # distância máxima aceitável entre as cores
+            for (x1, y1) in centersP:
+                for (x2, y2) in centersS:
+                    if np.hypot(x1 - x2, y1 - y2) <= max_dist:
+                        return True
+
+            return False
+
+        except Exception as e:
+            print(f"[detect_ally_robot_noCuda] Erro ao processar imagem: {e}")
+            return False
+
+
+    #==================================| Métodos módulares do processo de detecção|=========================================
+    def detect_field(self, img: np.ndarray, debug: bool = False) -> dict:
+        """
+        Detecta o campo na imagem e atualiza o objeto Field com as coordenadas e homografia.
+
+        Parâmetros:
+            img (np.ndarray): imagem original (frame da câmera).
+            debug (bool): se True, desenha os vértices detectados na imagem.
+
+        Retorna:
+            dict: {
+                "success": bool,                # True se o campo foi detectado
+                "modDpCm": float | None,        # largura detectada em cm
+                "frameResult": np.ndarray,      # imagem reduzida ou original
+                "rect_vertices": np.ndarray | None, # vértices do campo
+                "homography": np.ndarray | None,    # matriz de homografia
+                "inv_homography": np.ndarray | None, # inversa da homografia
+                "binary_field": np.ndarray | None,  # imagem binária processada
+            }
+        """
+        result = {
+            "success": False,
+            "modDpCm": None,
+            "frameResult": img.copy() if img is not None else None,
+            "rect_vertices": None,
+            "homography": None,
+            "inv_homography": None,
+            "binary_field": None,
+        }
+
+        try:
+            if img is None:
+                print("[VisionSystem] Erro: imagem recebida é nula.")
+                return result
+
+            h, w = img.shape[:2]
+            self.pixelWidth = min(w, h)
+            self.convert_measures(self.fieldWidth, self.pixelWidth)
+
+            # pré-processamento inicial
+            frame_origin = img.copy()
+            gray = cv2.cvtColor(frame_origin, cv2.COLOR_RGB2GRAY)
+            blur = cv2.medianBlur(gray, 3)
+            img_proc = self.enhance_gray_objects(blur, self.dimMatrix)
+            binary = self.binarize_up(img_proc, self.Thrashhold)
+
+            # remove ruído inicial
+            binary_objects = self.trait_noise(binary, self.offSetErode)
+            bin_reduce_field, field_reduce, coor_vetor = self.reduce_field(
+                binary_objects, frame_origin, self.fieldWidth, self.offSetWindow
+            )
+
+            if field_reduce is None:
+                print("[VisionSystem] Campo não reduzido — fallback para imagem original.")
+                bin_reduce_field, field_reduce = binary_objects, frame_origin.copy()
+
+            result["binary_field"] = bin_reduce_field.copy()
+
+            # encontra contornos externos
+            contours, _ = cv2.findContours(bin_reduce_field, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+            found_valid = False
+
+            for contour in contours:
+                epsilon = 0.02 * cv2.arcLength(contour, True)
+                approx = cv2.approxPolyDP(contour, epsilon, True)
+
+                # apenas quadriláteros são aceitos
+                if len(approx) != 4:
+                    continue
+
+                rect_ver = np.array([p[0] for p in approx], dtype=np.int32)
+                rect_ver = self.sort_points(rect_ver)
+
+                # verifica tamanho mínimo
+                dp = rect_ver[1] - rect_ver[0]
+                mod_dp_px = np.hypot(dp[0], dp[1])
+                mod_dp_cm = mod_dp_px / self.prop_px_cm
+
+                if mod_dp_cm < 60:  # muito pequeno pra ser o campo
+                    continue
+
+                # aplica offset e calcula vértices reais
+                dd = self.offSetWindow
+                rv = rect_ver + np.array([[coor_vetor[0] - dd, coor_vetor[1] - dd]] * 4, dtype=np.int32)
+
+                # cria estrutura de vértices
+                points = [Point2D(*pt) for pt in rect_ver]
+                rect = Quad(P1=points[0], P2=points[1], P3=points[2], P4=points[3])
+
+                # atualiza o objeto Field
+                self.field.updatePos(rect, self.fieldWidth, self.fieldHeight)
+                pts_src = np.array([p.getPos() for p in points])
+                pts_dst = np.array([self.fieldP1v, self.fieldP2v, self.fieldP3v, self.fieldP4v])
+                self.getHomographyMatrix(pts_src, pts_dst)
+                self.field.setHomographyMatrix(self.homography_matrix, self.inv_homography_matrix)
+
+                # debug visual
+                if debug:
+                    cv2.polylines(frame_origin, [rv], True, (0, 0, 255), 4)
+                    for i, (x, y) in enumerate(rv):
+                        cv2.circle(frame_origin, (x, y), 4, (0, 255, 0), -1)
+                        cv2.putText(frame_origin, str(i), (x, y - 10),
+                                    cv2.FONT_HERSHEY_SIMPLEX, 0.4, (0, 255, 0), 1)
+
+                # sucesso — salva resultados
+                result.update({
+                    "success": True,
+                    "modDpCm": mod_dp_cm,
+                    "frameResult": field_reduce.copy(),
+                    "rect_vertices": rv,
+                    "homography": self.homography_matrix.copy(),
+                    "inv_homography": self.inv_homography_matrix.copy(),
+                })
+
+                found_valid = True
+                break  # achou campo, encerra loop
+
+            if not found_valid:
+                print("[VisionSystem] Nenhum campo válido detectado.")
+
+            return result
+
+        except Exception as e:
+            print(f"[VisionSystem] Falha em detect_field: {e}")
+            traceback.print_exc()
+            return result
+
+    def detect_ball(self, img: np.ndarray, colorBall: tuple[int, int, int], debug: bool = False) -> dict:
+        """
+        Detecta a bola na imagem reduzida com base na cor HSV fornecida.
+
+        Parâmetros:
+            img (np.ndarray): Imagem reduzida do campo (área onde a bola pode estar).
+            colorBall (tuple): Cor HSV de referência da bola (H, S, V).
+            debug (bool): Se True, desenha a bola e informações na imagem.
+
+        Retorna:
+            dict: {
+                "success": bool,                  # True se a bola foi detectada
+                "frameResult": np.ndarray,        # Imagem com a bola destacada (ou cópia original)
+                "binaryMask": np.ndarray,         # Máscara binária usada na detecção
+                "position_px": (float, float) | None,  # Posição (x, y) em pixels na imagem reduzida
+                "position_cm": (float, float) | None,  # Posição (x, y) no espaço em cm
+                "radius_px": float | None,        # Raio da bola em pixels
+                "radius_cm": float | None,        # Raio da bola em cm
+            }
+        """
+        result = {
+            "success": False,
+            "frameResult": img.copy() if img is not None else None,
+            "binaryMask": None,
+            "position_px": None,
+            "position_cm": None,
+            "radius_px": None,
+            "radius_cm": None,
+        }
+
+        try:
+            if img is None:
+                print("[VisionSystem] Erro: imagem recebida é nula.")
+                return result
+
+            frame = img.copy()
+
+            # Conversão para HSV e criação da máscara laranja
+            img_hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
+            h, s, v = colorBall
+
+            hue_tol, sat_tol, val_tol = 6, 50, 50
+            lower_bound = np.array([h - hue_tol, max(0, s - sat_tol), max(0, v - val_tol)])
+            upper_bound = np.array([h + hue_tol, min(255, s + sat_tol), min(255, v + val_tol)])
+
+            binary_mask = cv2.inRange(img_hsv, lower_bound, upper_bound)
+            result["binaryMask"] = binary_mask.copy()
+
+            # Filtragem morfológica (remoção de ruído)
+            kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
+            binary_mask = cv2.morphologyEx(binary_mask, cv2.MORPH_CLOSE, kernel)
+            binary_mask = cv2.erode(binary_mask, kernel, iterations=1)
+
+            # Contornos
+            contours, _ = cv2.findContours(binary_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+            if not contours:
+                if debug:
+                    print("[VisionSystem] Nenhum contorno laranja encontrado.")
+                return result
+
+            # Seleciona o maior contorno (bola)
+            ball_contour = max(contours, key=cv2.contourArea)
+            (xb, yb), rb = cv2.minEnclosingCircle(ball_contour)
+
+            # Rejeita falsos positivos (manchas pequenas)
+            if cv2.contourArea(ball_contour) < 10:
+                if debug:
+                    print("[VisionSystem] Objeto muito pequeno para ser a bola.")
+                return result
+
+            # Conversões de coordenadas
+            xv, yv = self.transformPoint(np.array([xb, yb]))
+            xcm, ycm = self.getPointVirtual(np.array([xv, yv]))
+
+            # Atualiza o objeto bola
+            rb_cm = self.ballRadiusP  # raio padrão em cm
+            time = self.timer.getElapsedTime()
+
+            self.ball.setPosition(xcm, ycm, rb_cm, time)
+            self.ball.setImgPosition(xb, yb, rb_cm)
+
+            # Atualiza resultado
+            result.update({
+                "success": True,
+                "position_px": (xb, yb),
+                "position_cm": (xcm, ycm),
+                "radius_px": rb,
+                "radius_cm": rb_cm,
+            })
+
+            # Desenho de debug
+            if debug:
+                xb, yb, rb = int(xb), int(yb), int(rb / self.prop_px_cm)
+                cv2.circle(frame, (xb, yb), rb + 2, (0, 0, 255), 2)
+                cv2.putText(frame, "B", (xb, yb - rb - 10),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.4, (0, 0, 255), 1)
+
+                xv, yv = int(xv), int(yv)
+                cv2.circle(self.virtualImg, (xv, yv), 4, (0, 255, 255), -1)
+                cv2.putText(self.virtualImg, "B", (xv - 5, yv - rb - 10),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.4, (0, 255, 255), 1)
+                cv2.arrowedLine(self.virtualImg, (xv, yv),
+                                (xv + int(self.ball.direction[0]), yv + int(self.ball.direction[1])),
+                                (0, 255, 255), 2)
+
+            result["frameResult"] = frame
+            return result
+
+        except Exception as e:
+            print(f"[VisionSystem] Erro em detect_ball: {e}")
+            traceback.print_exc()
+            return result
+
+    def detect_players(self, img: np.ndarray, debug: bool = False) -> dict:
+        """
+        Detecta todos os robôs (aliados e inimigos) na imagem reduzida do campo.
+
+        Parâmetros:
+            img (np.ndarray): imagem reduzida do campo.
+            debug (bool): se True, desenha círculos e setas dos robôs detectados.
+
+        Retorna:
+            dict: {
+                "success": bool,
+                "frameResult": np.ndarray,
+                "binaryPlayers": np.ndarray,
+                "num_allies": int,
+                "num_enemies": int,
+                "ally_positions": list[tuple[float, float]],
+                "enemy_positions": list[tuple[float, float]]
+            }
+        """
+        result = {
+            "success": False,
+            "frameResult": img.copy() if img is not None else None,
+            "binaryPlayers": None,
+            "num_allies": 0,
+            "num_enemies": 0,
+            "ally_positions": [],
+            "enemy_positions": [],
+        }
+
+        try:
+            if img is None:
+                print("[VisionSystem] Erro: imagem recebida é nula.")
+                return result
+
+            # Reinicia contadores e estados dos robôs
+            self.playersCount = self.enemiesCount = self.alliesCount = 0
+            for bot in self.enemyTeam:
+                bot.setStatus(False)
+            for bot in self.allyTeam:
+                bot.setStatus(False)
+
+            frame = img.copy()
+            hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
+
+            # --- 1. Máscara para objetos escuros (robôs) ---
+            mask_objects = cv2.inRange(hsv, self.objectsDarkColor, self.objectsLightColor)
+
+            # Remove a bola da máscara (se disponível)
+            if hasattr(self, "binaryBall") and self.binaryBall is not None and self.binaryBall.size > 0:
+                binary_ball = cv2.resize(self.binaryBall, (mask_objects.shape[1], mask_objects.shape[0]))
+            else:
+                binary_ball = np.zeros_like(mask_objects)
+
+            binary_players = cv2.subtract(mask_objects, binary_ball)
+
+            # --- 2. Filtragem morfológica ---
+            kernel1 = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
+            kernel2 = cv2.getStructuringElement(cv2.MORPH_RECT, (11, 11))
+            binary_players = cv2.erode(binary_players, kernel1, iterations=1)
+            binary_players = cv2.morphologyEx(binary_players, cv2.MORPH_CLOSE, kernel2)
+            result["binaryPlayers"] = binary_players.copy()
+
+            # --- 3. Detecta quadrados (robôs) ---
+            binary_players, contours = self.detect_squares(binary_players)
+            if not contours:
+                if debug:
+                    print("[VisionSystem] Nenhum contorno de robô encontrado.")
+                return result
+
+            # --- 4. Ajustes geométricos ---
+            win_size = int(18 * self.prop_px_cm)
+            self.playerRadius = (7.5 / 2) * np.sqrt(2) * self.prop_px_cm
+            self.mainColorRadius = (7.5 / 4) * np.sqrt(5) * self.prop_px_cm
+            self.secColorRadius = self.playerRadius / 2
+
+            # --- 5. Limites de cores principais ---
+            ally_lower, ally_upper = self.create_color_bounds(self.allyColor)
+            enemy_lower, enemy_upper = self.create_color_bounds(self.enemyColor)
+
+            # --- 6. Loop principal: processar cada robô ---
+            for contour in contours:
+                (xi, yi), ri = cv2.minEnclosingCircle(contour)
+                if not (0.2 * self.playerRadius <= ri <= 2 * self.playerRadius):
+                    continue
+
+                # recorte local
+                x1, y1 = max(0, int(xi - win_size / 2)), max(0, int(yi - win_size / 2))
+                x2, y2 = min(frame.shape[1], int(xi + win_size / 2)), min(frame.shape[0], int(yi + win_size / 2))
+                window = frame[y1:y2, x1:x2]
+
+                # --- verifica se é inimigo ou aliado ---
+                ally_contours = self.find_binary_contours(window, ally_lower, ally_upper)
+                enemy_contours = self.find_binary_contours(window, enemy_lower, enemy_upper)
+
+                # Coordenadas reais
+                tm = self.timer.getElapsedTime()
+                xv, yv = self.transformPoint(np.array([xi, yi]))
+                xcm, ycm = self.getPointVirtual(np.array([xv, yv]))
+                rcm = 5.30  # raio padrão em cm
+
+                # === Inimigo ===
+                if enemy_contours and self.enemiesCount < 3:
+                    contour_enemy = max(enemy_contours, key=cv2.contourArea)
+                    (_, _), rc = cv2.minEnclosingCircle(contour_enemy)
+                    if rc >= 0.5 * self.mainColorRadius:
+                        bot = self.enemyTeam[self.enemiesCount]
+                        bot.setPosition(xcm, ycm, rcm, window, tm)
+                        bot.updtPositionImg(xi, yi, ri)
+                        bot.setStatus(True)
+                        bot.setColor(colorT=self.enemyColor)
+                        self.draw_player_circle(self.frameResult, bot)
+                        self.draw_player_virtual(bot)
+
+                        result["enemy_positions"].append((xcm, ycm))
+                        self.enemiesCount += 1
+
+                # === Aliado ===
+                elif ally_contours and self.alliesCount < 3:
+                    contour_ally = max(ally_contours, key=cv2.contourArea)
+                    (_, _), rc = cv2.minEnclosingCircle(contour_ally)
+                    if rc >= 0.3 * self.mainColorRadius:
+                        bot = self.allyTeam[self.alliesCount]
+                        bot.setPosition(xcm, ycm, rcm, window, tm)
+                        bot.updtPositionImg(xi, yi, ri)
+                        bot.setStatus(True)
+                        bot.setColor(colorT=self.allyColor)
+                        self.draw_player_circle(self.frameResult, bot)
+                        self.draw_player_virtual(bot)
+
+                        result["ally_positions"].append((xcm, ycm))
+                        self.alliesCount += 1
+
+                # --- Debug visual ---
+                if debug:
+                    cv2.circle(self.frameResult, (int(xi), int(yi)), int(ri) + 4, (0, 255, 0), 2)
+
+            # Atualiza totais
+            result.update({
+                "success": self.alliesCount + self.enemiesCount > 0,
+                "num_allies": self.alliesCount,
+                "num_enemies": self.enemiesCount,
+            })
+
+            return result
+
+        except Exception as e:
+            print(f"[VisionSystem] Erro em detect_players: {e}")
+            traceback.print_exc()
+            return result
+
+    #====================================| PIPELINES DE PROCESSAMENTO |==========================================
+    
+
+
+    
+    
+    #=======================================|FIM DOS MÉTODOS |=============================================
