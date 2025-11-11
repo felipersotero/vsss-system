@@ -465,7 +465,7 @@ class Emulator:
         # -------------------------
         # 🔹 CUDA
         # -------------------------
-        self.CUDAselected = self.hasCudaDevice() if self.CUDAService == 'true' else False
+        self.CUDAselected = "Don't have cuda"
 
         # -------------------------
         # 🔹 Comunicação (via classe Communication)

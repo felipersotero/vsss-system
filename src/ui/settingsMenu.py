@@ -443,212 +443,144 @@ class settingsMenu(Frame):
             messagebox.showwarning("Cuidado!", "Tem que estar selecionado o modo de captura por câmera")
 
 
-    #janela de seleção de cores
     def open_color_pick_window(self, item):
-        #informa que já tem uma instância de filho
         self._hasChild = True
-
         self.mode = self.tree.item('I006','value')[0]
         self.imgPath = self.tree.item('I004','value')[0]
         self.camPath = self.tree.item('I003','value')[0]
 
-        new_window = Toplevel(self.tree)
-        new_window.title("Seleção de cores")
-        self.root = new_window
+        win = Toplevel(self.tree)
+        win.title("Seleção de cores")
+        self.root = win
+        win.resizable(False, False)
 
-
+        # ícone
         try:
-            if(self.app.system == 'Windows'):
-                self.root.iconbitmap('src/data/icon.ico')
-            elif(self.app.system =='Linux'):
-                self.root.iconbitmap('src/data/icon.ico')
-            else:
-                self.root.iconbitmap('src/data/icon.ico')
+            win.iconbitmap('src/data/icon.ico')
         except:
             print("[APP]: Problemas em acessar o ícone")
 
-        self.root.resizable(False, False)#Não permitindo mudar
-        
-        #objeto de captura
+        # captura de vídeo (se necessário)
         self.cap = None
+        if self.mode == "camera":
+            try:
+                self.cap = cv2.VideoCapture(int(self.camPath))
+            except:
+                self.cap = cv2.VideoCapture(0)
 
         def close_window():
-            if self.mode == "camera": self.cap.release()
-            self.root.destroy()
+            if self.cap: self.cap.release()
+            win.destroy()
             self.cap = None
-
-            #informa que a janela foi liberada
             self._hasChild = False
+        win.protocol("WM_DELETE_WINDOW", close_window)
 
-        #adiciona um protocolo a new_window para desligar a câmera
-        new_window.protocol("WM_DELETE_WINDOW", close_window)
-
-        def update_color(val=None):
-            h = hue_scale.get()
-            s = saturation_scale.get()
-            v = value_scale.get()
-
-            hsv_color = np.array([h, s, v], dtype=np.uint8)
-            bgr_color = cv2.cvtColor(np.uint8([[hsv_color]]), cv2.COLOR_HSV2BGR)
-            rgb_color = rgb_to_hex(bgr_color[0, 0, :])
-
-            color_display.configure(bg=rgb_color)
-
+        # converte BGR para hex para Label
         def rgb_to_hex(rgb):
             return f'#{rgb[2]:02X}{rgb[1]:02X}{rgb[0]:02X}'
-        
+
+        # lê HSV dos sliders
+        def get_color_from_sliders():
+            return np.array([hue_scale.get(), saturation_scale.get(), value_scale.get()], dtype=np.uint8)
+
+        # atualiza Label de cor
+        def update_color(val=None):
+            hsv = get_color_from_sliders()
+            bgr = cv2.cvtColor(np.uint8([[hsv]]), cv2.COLOR_HSV2BGR)[0,0]
+            color_display.configure(bg=rgb_to_hex(bgr))
+
+        # salvar cor selecionada
         def pick_color():
-            hsv_color = get_color()
-            #messagebox.showinfo(title="Color Picker", message=str(hsv_color))
-            self.tree.set(item,'Valor',hsv_color)
-            self.nodes[item] = hsv_color
-
-            # bgr_color = cv2.cvtColor(np.uint8([[hsv_color]]), cv2.COLOR_HSV2BGR)
-            # rgb_color = rgb_to_hex(bgr_color[0, 0, :])
-
-            # self.tree.tag_configure('custom_color', background=rgb_color)
-            # self.tree.item(item, tags=('custom_color'))
-
+            hsv = get_color_from_sliders()
+            self.tree.set(item,'Valor', hsv)
+            self.nodes[item] = hsv
             close_window()
 
-        def get_color():
-            h = hue_scale.get()
-            s = saturation_scale.get()
-            v = value_scale.get()
-            hsv_color = np.array([h, s, v], dtype=np.uint8)
-
-            return hsv_color
-
+        # função para converter string para array
         def string_to_int_array(array):
             values = array.strip("[]").split()
-            int_array = list(map(int, values))
+            return list(map(int, values))
 
-            return int_array
-        
-        close_button = Button(new_window, text="Voltar", command=close_window)
-        close_button.pack(pady=10)
+        # botões
+        Button(win, text="Voltar", command=close_window).pack(pady=10)
+        Button(win, text="Selecionar cor", command=pick_color).pack()
 
-        show_button = Button(self.root, text="Selecionar cor", command=pick_color)
-        show_button.pack()
+        # sliders
+        current_hsv = string_to_int_array(self.tree.item(item,'value')[0])
+        hue_scale = Scale(win, from_=0, to=179, orient="horizontal", label="Matiz (H)", length=300, command=update_color)
+        hue_scale.set(current_hsv[0]); hue_scale.pack()
+        saturation_scale = Scale(win, from_=0, to=255, orient="horizontal", label="Saturação (S)", length=300, command=update_color)
+        saturation_scale.set(current_hsv[1]); saturation_scale.pack()
+        value_scale = Scale(win, from_=0, to=255, orient="horizontal", label="Valor (V)", length=300, command=update_color)
+        value_scale.set(current_hsv[2]); value_scale.pack()
 
-        current_hsv = string_to_int_array(self.tree.item(item, 'value')[0])
-
-        hue_initial = current_hsv[0]
-        saturation_initial = current_hsv[1]
-        value_initial = current_hsv[2]
-
-        hue_label = Label(self.root, text="Matiz (H)")
-        hue_label.pack()
-        hue_scale = Scale(self.root, from_=0, to=179, orient="horizontal", command=update_color, length=300)
-        hue_scale.set(hue_initial)  # Valor inicial
-        hue_scale.pack()
-
-        saturation_label = Label(self.root, text="Saturação (S)")
-        saturation_label.pack()
-        saturation_scale = Scale(self.root, from_=0, to=255, orient="horizontal", command=update_color, length=300)
-        saturation_scale.set(saturation_initial)  # Valor inicial
-        saturation_scale.pack()
-
-        value_label = Label(self.root, text="Valor (V)")
-        value_label.pack()
-        value_scale = Scale(self.root, from_=0, to=255, orient="horizontal", command=update_color, length=300)
-        value_scale.set(value_initial)  # Valor inicial
-        value_scale.pack()
-
-        # Criação da área de exibição da cor em tempo real
-        color_display = Label(self.root, text="Cor Definida", width=10, height=2, bg="gray")
+        color_display = Label(win, text="Cor Definida", width=10, height=2, bg="gray")
         color_display.pack()
 
-        # Criação da área de exibição da imagem original (quadro da webcam)
-        original_frame_label = Label(self.root, text="Imagem Original")
-        original_frame_label.pack()
+        # labels para imagens
+        original_label = Label(win, text="Imagem Original"); original_label.pack()
+        masked_label = Label(win, text="Imagem Filtrada"); masked_label.pack()
 
-        # Criação da área de exibição da máscara da cor selecionada
-        masked_frame_label = Label(self.root, text="Imagem Filtrada")
-        masked_frame_label.pack()
+        # tolerâncias
+        hue_tol = 6 if self.tree.item(item,'text')=='Cor da bola' else 10
+        sat_tol, val_tol = 50, 50
+        img_w, img_h = 300, 150
 
-        if self.tree.item(item, 'text') == 'Cor da bola':
-            hue_tolerance = 6
-        else:
-            hue_tolerance = 10
-        saturation_tolerance = 50
-        value_tolerance = 50
+        # clique para escolher cor
+        def on_click(event):
+            if hasattr(capture_frame, 'last_frame'):
+                frame_hsv = cv2.cvtColor(capture_frame.last_frame, cv2.COLOR_BGR2HSV)
+                # converte coordenadas do click para coordenadas da imagem original
+                x = int(event.x * capture_frame.last_frame.shape[1] / img_w)
+                y = int(event.y * capture_frame.last_frame.shape[0] / img_h)
 
-        image_width = 300
-        image_height = 150
+                # define limites do vizinho 3x3
+                x1, y1 = max(0, x-1), max(0, y-1)
+                x2, y2 = min(frame_hsv.shape[1]-1, x+1), min(frame_hsv.shape[0]-1, y+1)
 
-        #Funções para ler imagem ou capturar vídeo
-        # Função para ler imagem
-        if self.mode == "imagem":
-            def capture_image():
+                # pega os pixels 3x3 e calcula a média
+                hsv_neighbors = frame_hsv[y1:y2+1, x1:x2+1]
+                mean_hsv = np.mean(hsv_neighbors.reshape(-1,3), axis=0).astype(int)
+
+                # atualiza sliders e display
+                hue_scale.set(mean_hsv[0])
+                saturation_scale.set(mean_hsv[1])
+                value_scale.set(mean_hsv[2])
+                update_color()
+
+        original_label.bind("<Button-1>", on_click)
+
+        # função para captura (imagem ou vídeo)
+        def capture_frame():
+            if self.mode=="imagem":
                 frame = cv2.imread(self.imgPath)
-                frame = cv2.resize(frame, (image_width, image_height))
-                hsv_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
-
-                # Criação da máscara da cor selecionada
-                h = hue_scale.get()
-                s = saturation_scale.get()
-                v = value_scale.get()
-                lower_bound = np.array([h - hue_tolerance, max(0, s - saturation_tolerance), max(0, v - value_tolerance)])
-                upper_bound = np.array([h + hue_tolerance, min(255, s + saturation_tolerance), min(255, v + value_tolerance)])
-                mask = cv2.inRange(hsv_frame, lower_bound, upper_bound)
-
-                # Atualiza a máscara na tela
-                masked_frame = cv2.bitwise_and(frame, frame, mask=mask)
-                masked_frame_rgb = cv2.cvtColor(masked_frame, cv2.COLOR_BGR2RGB)
-                masked_frame_label.img = ImageTk.PhotoImage(image=Image.fromarray(masked_frame_rgb))
-                masked_frame_label.config(image=masked_frame_label.img)
-
-                frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                original_frame_label.img = ImageTk.PhotoImage(image=Image.fromarray(frame_rgb))
-                original_frame_label.config(image=original_frame_label.img)
-                self.root.after(10, capture_image)
-            self.root.after(10, capture_image)
-
-        # Função para capturar vídeo da webcam
-        if self.mode == "camera":
-            # Inicializa a captura de vídeo da webcam
-            try:
-                self.cap = cv2.VideoCapture(int(self.camPath))  # 0 representa a primeira câmera disponível
-            except:
-                try:
-                    self.cap = cv2.VideoCapture(int(0))
-                except:
-                    print("[APP]: Camera não encontrada")
-
-            # Captura um quadro inicial para obter informações de tamanho
-            ret, frame = self.cap.read()
-            if ret:
-                frame = cv2.resize(frame, (image_width, image_height))
-                hsv_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
-                frame_bgr = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
-
-            def capture_video():
+            elif self.cap:
                 ret, frame = self.cap.read()
-                if ret:
-                    frame = cv2.resize(frame, (image_width, image_height))
-                    hsv_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
+                if not ret: return
+            else:
+                return
 
-                    # Criação da máscara da cor selecionada
-                    h = hue_scale.get()
-                    s = saturation_scale.get()
-                    v = value_scale.get()
-                    lower_bound = np.array([h - hue_tolerance, max(0, s - saturation_tolerance), max(0, v - value_tolerance)])
-                    upper_bound = np.array([h + hue_tolerance, min(255, s + saturation_tolerance), min(255, v + value_tolerance)])
-                    mask = cv2.inRange(hsv_frame, lower_bound, upper_bound)
+            frame = cv2.resize(frame, (img_w, img_h))
+            capture_frame.last_frame = frame.copy()
 
-                    # Atualiza a máscara na tela
-                    masked_frame = cv2.bitwise_and(frame, frame, mask=mask)
-                    masked_frame_rgb = cv2.cvtColor(masked_frame, cv2.COLOR_BGR2RGB)
-                    masked_frame_label.img = ImageTk.PhotoImage(image=Image.fromarray(masked_frame_rgb))
-                    masked_frame_label.config(image=masked_frame_label.img)
+            # cria máscara
+            h,s,v = get_color_from_sliders()
+            lower = np.array([h-hue_tol, max(0,s-sat_tol), max(0,v-val_tol)])
+            upper = np.array([h+hue_tol, min(255,s+sat_tol), min(255,v+val_tol)])
+            hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
+            mask = cv2.inRange(hsv, lower, upper)
+            masked = cv2.bitwise_and(frame, frame, mask=mask)
 
-                    frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                    original_frame_label.img = ImageTk.PhotoImage(image=Image.fromarray(frame_rgb))
-                    original_frame_label.config(image=original_frame_label.img)
+            # atualiza Labels
+            for img, lbl in [(frame, original_label), (masked, masked_label)]:
+                img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+                lbl.img = ImageTk.PhotoImage(Image.fromarray(img_rgb))
+                lbl.config(image=lbl.img)
 
-                    self.root.after(10, capture_video)
-            self.root.after(10, capture_video)
+            win.after(10, capture_frame)
+
+        capture_frame()
+
             #self.root.mainloop()
 
     #Adquirindo os dados com o get_tree_data, é uma função recursiva

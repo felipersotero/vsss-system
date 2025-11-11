@@ -53,7 +53,6 @@ class InstallerApp(tk.Tk):
         self.geometry("600x450")
         self.center_window()
         self.installing = False
-        self.cancel_requested = False
 
         # Ícone (coloque installer_icon.ico na mesma pasta)
         icon_path = os.path.join(os.path.dirname(__file__), "installer_icon.ico")
@@ -83,9 +82,6 @@ class InstallerApp(tk.Tk):
         self.install_button = tk.Button(self.button_frame, text="Instalar", command=self.start_install_thread, width=12)
         self.install_button.pack(side="left", padx=10)
 
-        self.cancel_button = tk.Button(self.button_frame, text="Cancelar", command=self.cancel_install, width=12, state="disabled")
-        self.cancel_button.pack(side="left", padx=10)
-
         self.start_button = tk.Button(self.button_frame, text="Iniciar Aplicação", command=self.run_main, width=16, state="disabled")
         self.start_button.pack(side="left", padx=10)
 
@@ -110,16 +106,10 @@ class InstallerApp(tk.Tk):
 
     def start_install_thread(self):
         self.install_button.config(state="disabled")
-        self.cancel_button.config(state="normal")
         self.progress["value"] = 0
         self.status_text.set("Iniciando instalação...")
-        self.cancel_requested = False
         threading.Thread(target=self.install_packages, daemon=True).start()
 
-    def cancel_install(self):
-        if self.installing:
-            self.cancel_requested = True
-            self.status_text.set("Cancelando instalação...")
 
     def install_packages(self):
         self.installing = True
@@ -127,13 +117,6 @@ class InstallerApp(tk.Tk):
         self.progress["maximum"] = total
 
         for i, (pkg, module) in enumerate(PACKAGE_MODULE_MAP.items(), start=1):
-            if self.cancel_requested:
-                self.status_text.set("Instalação cancelada.")
-                self.log("[!] Instalação cancelada pelo usuário")
-                self.installing = False
-                self.install_button.config(state="normal")
-                self.cancel_button.config(state="disabled")
-                return
 
             self.status_text.set(f"Verificando {pkg}...")
             self.update()
@@ -155,7 +138,6 @@ class InstallerApp(tk.Tk):
         self.log("[✔] Todos os pacotes estão prontos")
         messagebox.showinfo("Concluído", "Todos os pacotes necessários foram instalados.")
         self.installing = False
-        self.cancel_button.config(state="disabled")
         self.start_button.config(state="normal")
 
     @staticmethod

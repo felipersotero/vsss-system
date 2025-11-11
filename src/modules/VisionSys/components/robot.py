@@ -1,229 +1,201 @@
 import numpy as np
+import cv2
 from modules.VisionSys.components.objects import *
 
 class Robot:
-    def __init__(self, id, team, x=0, y=0, theta=0, r=0,
+    def __init__(self, id: ID_Robots, team: ID_Team, x=0, y=0, r=0, 
                  image=cv2.imread('src/images/dark_screen.png'),
                  colorTeam=None, colorCar1=None, colorCar2=None):
-        """
-        Classe Robot com suporte a Filtro de Kalman (EKF)
-        - (x, y, θ): coordenadas reais no campo
-        - (xi, yi, ri): coordenadas na imagem de detecção
-        """
+        '''
+        Classe Robot utilizada no algoritmo de detecção para representar os robôs.
+        '''
+
+        # --- Identificadores ---
         self.id = id
         self.team = team
 
-        # Estado físico real
-        self._x = float(x)
-        self._y = float(y)
-        self._theta = float(theta)
+        # --- Posição e movimento ---
+        self.position = np.array([round(x, 2), round(y, 2)])
+        self.lastPosition = self.position
+        self.newPosition = self.position
+        self.direction = np.array([0.0, 0.0])
+        self.velocity = np.array([0.0, 0.0])
 
-        # Posição de imagem (detecção visual)
-        self._xi = 0
-        self._yi = 0
-        self._ri = 0
+        # --- Informação na imagem ---
+        self.xi = 0
+        self.yi = 0
+        self.ri = 0
 
-        # Raio real e imagem
-        self.radius = float(r)
-        self.image = image
+        # --- Geometria ---
+        self.radius = round(r, 2)
+        self.objLimit = Circle(self.radius, Point2D(x, y))
+        self.bbox = BorderBox(GeometryType.CIRCLE, self.objLimit)
+        self.ObjType = ObjTypeMove.MOVING
+        self.objTypeSystem = ObjTypeVision.ROBOT
 
-        # Direção e velocidade
-        self.direction = np.array([np.cos(theta), np.sin(theta)])
-        self.velocity = np.zeros(2)
-
-        # Tempo
-        self.lastTimestamp = 0.0
-        self.newTimestamp = 0.0
-        self.dT = 0.0
-
-        # Estado de detecção
+        # --- Status ---
         self.detected = False
+        self.possessionBall = False
 
-        # Cores do robô
+        # --- Imagem e janela ---
+        self.image = image
+        self.dimMatrix = image.shape[1] if image is not None else 0
+        self.viewRect = ViewBot(Point2D(self.position[0], self.position[1]), self.dimMatrix)
+
+        # --- Cores ---
         self.colorTeam = colorTeam
         self.colorCar1 = colorCar1
         self.colorCar2 = colorCar2
 
-        # Kalman Filter
-        self.kf_initialized = False
-        self.x_hat = np.array([[self._x], [self._y], [self._theta]])
-        self.P = np.eye(3) * 1e-2
-        self.Q = np.eye(3) * 1e-3
-        self.R = np.eye(3) * 1e-2
+        # --- Tempo ---
+        self.lastTimestamp = 0
+        self.newTimestamp = 0
+        self.dT = 0
 
-        # Imagem de detecção do carro
-        self.image = image 
-        self.dimMatrix = image.shape[1]
+        # --- Filtro de Kalman ---
+        self.kalman_initialized = False
+        self.kalman_state = np.zeros((4, 1))  # [x, y, vx, vy]
+        self.kalman_P = np.eye(4) * 1000.0
+        self.kalman_Q = np.eye(4) * 0.01
+        self.kalman_R = np.eye(2) * 5.0
+        self.kalman_last_time = None
 
-        # Janela para informar a posição do jogador:
-        self.viewRect = ViewBot(Point2D(self._x, self._y), int(self.radius + 14))
-    
+    # ======================================================================
+    # 🔹 Atualização de posição
+    # ======================================================================
 
-    # -------------------------------
-    # PROPRIEDADES - COORDENADAS REAIS
-    # -------------------------------
-    @property
-    def x(self): return self._x
+    def setPosition(self, x, y, r, image, time):
+        self.lastTimestamp = self.newTimestamp
+        self.newTimestamp = time
+        self.dT = self.newTimestamp - self.lastTimestamp if self.lastTimestamp != 0 else 0.0
 
-    @x.setter
-    def x(self, value):
-        self._x = round(float(value), 3)
-        self._update_direction()
+        self.lastPosition = self.position
+        if np.linalg.norm([x - self.lastPosition[0], y - self.lastPosition[1]]) > 0.5:
+            self.position = np.array([round(x, 2), round(y, 2)])
+        else:
+            self.position = self.lastPosition
 
-    @property
-    def y(self): return self._y
+        self.radius = round(r, 2)
+        self.image = image
+        if image is not None:
+            self.viewRect.setDimension(image.shape[1])
 
-    @y.setter
-    def y(self, value):
-        self._y = round(float(value), 3)
-        self._update_direction()
+        self.newPosition = self.position
+        self.direction = self.newPosition - self.lastPosition
+        self.objLimit = Circle(self.radius, Point2D(x, y))
+        self.viewRect.updateViewBot(Point2D(x, y))
+        self.updateBbox()
 
-    @property
-    def theta(self): return self._theta
+        # Atualiza filtro de Kalman
+        self.update_kalman(self.position, time)
 
-    @theta.setter
-    def theta(self, value):
-        self._theta = float(value) % (2 * np.pi)
-        self._update_direction()
+    def updatePosition(self, x, y, r, image, time):
+        self.setPosition(x, y, r, image, time)
 
-    # -------------------------------
-    # PROPRIEDADES - COORDENADAS DE IMAGEM
-    # -------------------------------
-    @property
-    def xi(self): return self._xi
+    # ======================================================================
+    # 🔹 Filtro de Kalman
+    # ======================================================================
 
-    @xi.setter
-    def xi(self, value): self._xi = int(value)
+    def update_kalman(self, measured_pos, timestamp):
+        x, y = measured_pos
+        z = np.array([[x], [y]])
 
-    @property
-    def yi(self): return self._yi
-
-    @yi.setter
-    def yi(self, value): self._yi = int(value)
-
-    @property
-    def ri(self): return self._ri
-
-    @ri.setter
-    def ri(self, value): self._ri = int(value)
-
-    # -------------------------------
-    # DIREÇÃO E VELOCIDADE
-    # -------------------------------
-    def _update_direction(self):
-        """Atualiza vetor de direção com base no ângulo atual."""
-        self.direction = np.array([np.cos(self._theta), np.sin(self._theta)])
-
-    # -------------------------------
-    # FILTRO DE KALMAN
-    # -------------------------------
-    def init_kalman(self, P0=None, Q=None, R=None):
-        """Inicializa o EKF"""
-        self.kf_initialized = True
-        if P0 is not None: self.P = P0
-        if Q is not None: self.Q = Q
-        if R is not None: self.R = R
-        self.x_hat = np.array([[self._x], [self._y], [self._theta]])
-
-    def ekf_predict(self, wl, wr, L, Rw, dt):
-        """
-        Predição (modelo diferencial)
-        wl, wr: velocidades das rodas
-        L: distância entre rodas
-        Rw: raio das rodas
-        """
-        if not self.kf_initialized:
-            self.init_kalman()
-
-        v = (Rw / 2.0) * (wr + wl)
-        w = (Rw / L) * (wr - wl)
-        theta = self.x_hat[2, 0]
-
-        # Predição do estado
-        x_pred = self.x_hat[0, 0] + v * np.cos(theta) * dt
-        y_pred = self.x_hat[1, 0] + v * np.sin(theta) * dt
-        theta_pred = theta + w * dt
-        self.x_hat = np.array([[x_pred], [y_pred], [theta_pred]])
-
-        # Jacobiano A_k
-        A = np.eye(3)
-        A[0, 2] = -v * np.sin(theta) * dt
-        A[1, 2] =  v * np.cos(theta) * dt
-
-        # Covariância
-        self.P = A @ self.P @ A.T + self.Q
-
-        # Atualiza estado real
-        self._x, self._y, self._theta = x_pred, y_pred, theta_pred
-        self._update_direction()
-
-    def ekf_update(self, z):
-        """Atualização com medida z = [x, y, θ]"""
-        if not self.kf_initialized:
-            self.init_kalman()
-
-        H = np.eye(3)
-        y_tilde = z.reshape(3, 1) - H @ self.x_hat
-        S = H @ self.P @ H.T + self.R
-        K = self.P @ H.T @ np.linalg.inv(S)
-
-        self.x_hat += K @ y_tilde
-        self.P = (np.eye(3) - K @ H) @ self.P
-
-        self._x, self._y, self._theta = self.x_hat.flatten()
-        self._update_direction()
-
-    # -------------------------------
-    # PREDIÇÃO E JANELA DE BUSCA
-    # -------------------------------
-    def predictPosition(self, wl=None, wr=None, L=0.1, Rw=0.02, timestamp=0.0):
-        """Prevê posição do robô usando EKF"""
-        if self.lastTimestamp == 0:
-            self.lastTimestamp = timestamp
+        # Inicialização
+        if not self.kalman_initialized:
+            self.kalman_state[:2, 0] = [x, y]
+            self.kalman_initialized = True
+            self.kalman_last_time = timestamp
             return
 
-        self.dT = timestamp - self.lastTimestamp
-        self.lastTimestamp = timestamp
+        dt = max(timestamp - self.kalman_last_time, 1e-3)
+        self.kalman_last_time = timestamp
 
-        if self.kf_initialized and wl is not None and wr is not None:
-            self.ekf_predict(wl, wr, L, Rw, self.dT)
+        F = np.array([
+            [1, 0, dt, 0],
+            [0, 1, 0, dt],
+            [0, 0, 1, 0],
+            [0, 0, 0, 1]
+        ])
 
-    def getSearchWindow(self, scale_factor=2.0):
-        """Define a janela adaptativa baseada na incerteza (P)."""
-        if not self.kf_initialized:
-            return (int(self._xi), int(self._yi), 40, 40)
+        # Predição
+        self.kalman_state = F @ self.kalman_state
+        self.kalman_P = F @ self.kalman_P @ F.T + self.kalman_Q
 
-        sigma_x = np.sqrt(self.P[0, 0])
-        sigma_y = np.sqrt(self.P[1, 1])
-        w = int(scale_factor * sigma_x * 100)
-        h = int(scale_factor * sigma_y * 100)
-        return (int(self._xi - w / 2), int(self._yi - h / 2), w, h)
+        # Observação
+        H = np.array([
+            [1, 0, 0, 0],
+            [0, 1, 0, 0]
+        ])
 
-    # -------------------------------
-    # MÉTODOS DE STATUS
-    # -------------------------------
-    def setDetected(self, status: bool):
+        # Atualização
+        y_residual = z - H @ self.kalman_state
+        S = H @ self.kalman_P @ H.T + self.kalman_R
+        K = self.kalman_P @ H.T @ np.linalg.inv(S)
+
+        self.kalman_state += K @ y_residual
+        self.kalman_P = (np.eye(4) - K @ H) @ self.kalman_P
+
+    @property
+    def position_filtered(self):
+        if not self.kalman_initialized:
+            return self.newPosition
+        return self.kalman_state[:2, 0]
+
+    @property
+    def velocity_filtered(self):
+        if not self.kalman_initialized:
+            return np.array([0.0, 0.0])
+        return self.kalman_state[2:, 0]
+
+    def predict_position(self, dt=0.05):
+        if not self.kalman_initialized:
+            return self.newPosition
+        F = np.array([
+            [1, 0, dt, 0],
+            [0, 1, 0, dt],
+            [0, 0, 1, 0],
+            [0, 0, 0, 1]
+        ])
+        predicted = F @ self.kalman_state
+        return predicted[:2, 0]
+
+    # ======================================================================
+    # 🔹 Informações auxiliares
+    # ======================================================================
+
+    def updtPositionImg(self, xi, yi, ri):
+        self.xi = xi
+        self.yi = yi
+        self.ri = ri
+
+    def setStatus(self, status):
         self.detected = status
+
+    def setColor(self, colorT=None, colorP=None, colorS=None):
+        self.colorTeam = colorT
+        self.colorCar1 = colorP
+        self.colorCar2 = colorS
+
+    def setTeamColor(self, colorTeam=None):
+        self.colorTeam = colorTeam
+
+    def setRadius(self, radius):
+        self.radius = round(radius, 2)
+
+    def getVelocity(self, timestamp):
+        if not self.kalman_initialized:
+            return np.array([0.0, 0.0])
+        return self.velocity_filtered
+
+    def updateBbox(self):
+        self.objLimit = Circle(Point2D(self.position[0], self.position[1]), self.radius)
+        self.bbox.attPosition(self.objLimit)
+
+    def getPredictPosition(self):
+        return self.viewRect.Pe1, self.viewRect.DimMatrix
 
     def getStatus(self):
         return self.detected
 
-    def setImagePosition(self, xi, yi, ri):
-        """Atualiza posição detectada na imagem."""
-        self._xi, self._yi, self._ri = int(xi), int(yi), int(ri)
-
-    def getImagePosition(self): 
-        """Retorna (xi, yi, ri)."""
-        return self._xi, self._yi, self._ri
-
-    def updatePosition(self, x, y, r, image, time):
-        return 1
-
-    def setColor(self, colorTeam, colorCar1, colorCar2):
-        """Define as cores do robô."""
-        self.colorTeam = colorTeam
-        self.colorCar1 = colorCar1
-        self.colorCar2 = colorCar2
-
-    def getColor(self):
+    def getColors(self):
         return self.colorTeam, self.colorCar1, self.colorCar2

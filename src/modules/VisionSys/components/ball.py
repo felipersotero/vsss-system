@@ -1,179 +1,176 @@
 import numpy as np
 from modules.VisionSys.components.objects import *
+# NOVA CLASSE BALL (substituir a antiga)
 
 class Ball:
     '''
-    Classe responsável por representar a bola no sistema de visão, com suporte
-    ao Filtro de Kalman linear clássico (posição + velocidade).
+    @GNOMIO: A classe bola é responsável por pegar informações do objeto bola que será utilizado no processo de detecção
     '''
-    def __init__(self, x=0.0, y=0.0, r=0.0):
-        # --- Estado inicial (x, y, vx, vy)
-        self._x = np.array([[x], [y], [0.0], [0.0]])  # estado estimado
-        self._P = np.eye(4) * 1.0                     # covariância inicial
+    def __init__(self, x=0, y=0, r=0):
+        #posição, raio e direção da boal
+        self.position = np.array([x, x])
+        self.radius = r
+        self.direction = np.array([0, 0])
 
-        # --- Modelo de ruído
-        self._Q = np.eye(4) * 0.1   # ruído do processo
-        self._R = np.eye(2) * 5.0   # ruído da medição (visão)
-
-        # --- Matriz de medição
-        self._H = np.zeros((2, 4))
-        self._H[0, 0] = 1
-        self._H[1, 1] = 1
-
-        # --- Matriz de transição (atualizada com Δt a cada passo)
-        self._A = np.eye(4)
-
-        # --- Medição mais recente
-        self._z = np.zeros((2, 1))
-
-        # --- Atributos geométricos e visuais
-        self._radius = r
-        self._position = np.array([x, y])
-        self._velocity = np.array([0.0, 0.0])
-        self._direction = np.array([0.0, 0.0])
-
-        self.objLimit = Circle(Point2D(x, y), self._radius)
+        #gerando bbox para sistema de colisão
+        self.objLimit = Circle(Point2D(x,y),self.radius)
         self.bbox = BorderBox(GeometryType.CIRCLE, self.objLimit)
-        self.viewBall = ViewBot(Point2D(self._position[0], self._position[1]), int(r + 14))
 
+        #posições da bola na imagem de origem reduzida
+        self.xi = 0
+        self.yi = 0
+        self.ri = 0
+
+
+        #definindo uma viewBot para a bola
+        self.viewBall = ViewBot(Point2D(self.position[0], self.position[1]),int(r+14))
+
+        #Informações do tipo de objeto no sistema
         self.ObjType = ObjTypeMove.MOVING
         self.objTypeSystem = ObjTypeVision.BALL
+        
+        #informações de posição para cálculo da velocidade
+        self.lastPosition = self.position
+        self.newPosition = self.position 
 
-        # --- Coordenadas da bola na imagem (para debug)
-        self._xi = 0
-        self._yi = 0
-        self._ri = 0
+        #ideia de tempo
+        #novo horário
+        self.newTimestamp = 0 
 
-        # --- Controle temporal
-        self.lastTimestamp = 0
-        self.newTimestamp = 0
+        #antigo horário
+        self.oldTimestamp = 0
+
+        #intervalo de tempo atual
         self.dT = 0
 
-        # --- Estado de detecção
-        self.status = False
 
-    # ===============================================================
-    #                       PROPRIEDADES (Getters e Setters)
-    # ===============================================================
+        #status de se foi encontrada
+        self.status = False 
 
-    # posição x (real)
-    @property
-    def x(self): return float(self._x[0])
-    @x.setter
-    def x(self, value): self._x[0, 0] = float(value)
+    #setando posição da bola
+    def setPosition(self,x,y,r, timestamp=0):
+        '''
+        Função responsável para setar o objeto no projeto
+        nesse caso o deslocamento se torna nulo
+        '''
+        #atribuindo tempo
+        self.newTimeStamp = timestamp
+        self.lastTimestamp = timestamp
 
-    # posição y (real)
-    @property
-    def y(self): return float(self._x[1])
-    @y.setter
-    def y(self, value): self._x[1, 0] = float(value)
+        #Atualizando raio
+        self.radius = r
 
-    # velocidade vx
-    @property
-    def vx(self): return float(self._x[2])
-    @vx.setter
-    def vx(self, value): self._x[2, 0] = float(value)
+        #Atualizando posições do sistema
+        self.newPosition = np.array([x, y])
+        self.position = self.newPosition 
 
-    # velocidade vy
-    @property
-    def vy(self): return float(self._x[3])
-    @vy.setter
-    def vy(self, value): self._x[3, 0] = float(value)
+        self.lastPosition = self.position
 
-    # coordenadas na imagem
-    @property
-    def xi(self): return self._xi
-    @xi.setter
-    def xi(self, value): self._xi = int(value)
+        #calculando a direção. No set a direção é 0
+        self.direction = self.newPosition - self.lastPosition
 
-    @property
-    def yi(self): return self._yi
-    @yi.setter
-    def yi(self, value): self._yi = int(value)
+        #atualizando tempo
+        self.oldTimestamp = self.newTimeStamp
+        self.newTimestamp = timestamp
+        self.dT = self.newTimestamp - self.oldTimestamp
 
-    @property
-    def ri(self): return self._ri
-    @ri.setter
-    def ri(self, value): self._ri = int(value)
-
-    # raio (em campo real)
-    @property
-    def radius(self): return self._radius
-    @radius.setter
-    def radius(self, value):
-        self._radius = float(value)
+        #Atualizando posição da borderbox
         self.updateBbox()
 
-    # posição e velocidade vetoriais
-    @property
-    def position(self): return self._position
-    @property
-    def velocity(self): return self._velocity
+        self.status = True 
 
-    # ===============================================================
-    #                       FILTRO DE KALMAN
-    # ===============================================================
-
-    def kalman_predict(self, dt: float):
+    #atualizando posição da bola
+    def updatePosition(self, x, y,r, timestamp):
         '''
-        Etapa de predição do filtro de Kalman.
-        Atualiza o estado e a covariância com base no modelo de movimento.
+        Função responsável por atualizar a posição do objeto.
         '''
-        self.dT = dt
-        self._A = np.array([
-            [1, 0, dt, 0],
-            [0, 1, 0, dt],
-            [0, 0, 1, 0 ],
-            [0, 0, 0, 1 ]
-        ])
 
-        # Predição
-        self._x = self._A @ self._x
-        self._P = self._A @ self._P @ self._A.T + self._Q
+        #Atualizando raio
+        self.radius = r
 
-        # Atualiza atributos derivados
-        self._position = self._x[0:2, 0]
-        self._velocity = self._x[2:4, 0]
-        self.viewBall.updateViewBot(Point2D(self._position[0], self._position[1]))
+        #Atualizando posições do sistema
+        self.lastPosition = self.position
+        self.newPosition = np.array([x, y])
+        self.position = self.newPosition 
+        
+        #atualizando direção
+        self.direction = self.newPosition - self.lastPosition
 
-    def kalman_update(self, z_meas: np.ndarray):
-        '''
-        Etapa de atualização (correção) do filtro de Kalman.
-        '''
-        self._z = z_meas.reshape((2, 1))
-        y = self._z - self._H @ self._x                           # inovação
-        S = self._H @ self._P @ self._H.T + self._R                # cov. da inovação
-        K = self._P @ self._H.T @ np.linalg.inv(S)                 # ganho de Kalman
+        self.oldTimestamp = self.newTimeStamp
+        self.newTimestamp = timestamp
+        self.dT = self.newTimestamp - self.oldTimestamp
 
-        self._x = self._x + K @ y
-        self._P = (np.eye(4) - K @ self._H) @ self._P
-
-        self._position = self._x[0:2, 0]
-        self._velocity = self._x[2:4, 0]
-
+        #Atualizando posição da borderbox
         self.updateBbox()
-        self.viewBall.updateViewBot(Point2D(self._position[0], self._position[1]))
 
-    # ===============================================================
-    #                        OUTROS MÉTODOS
-    # ===============================================================
+        self.status = True 
 
+    #recuperando a velocidade da bola
+    def getVelocity(self, timestamp):
+        '''
+            Retorna a velocidade da bola no instante que foi chamada.
+        '''
+        #Vejo quanto tempo se passou
+        self.oldTimestamp = self.newTimeStamp
+        self.newTimeStamp = timestamp
+        self.dT = self.newTimeStamp - self.oldTimestamp
+
+        #calculo a velocidade 
+        if timestamp != 0: 
+            if self.dT > 0.01:  # mínimo de 10ms
+                self.velocity = self.direction / self.dT
+            else:
+                self.velocity = np.array([0, 0])
+        else:
+            self.velocity = np.array[0,0]
+
+        return self.velocity
+    
+    #Atualiza borderbox
     def updateBbox(self):
-        self.objLimit = Circle(Point2D(self._position[0], self._position[1]), self._radius)
-        self.bbox = BorderBox(GeometryType.CIRCLE, self.objLimit)
+        '''
+            Essa função é responsável por atualizar a borderbox do objeto bola
+            apenas é necessário chamar ela .
+        '''
+        #Gerando objeto de informações
+        self.objLimit = Circle(Point2D(self.position[0],self.position[1]),self.radius)
 
-    def predictPosition(self, timestamp):
-        self.kalman_predict(timestamp - self.newTimestamp)
-        self.newTimestamp = timestamp
+        #Gerando uma bbox para sistema de colisões
+        self.bbox = BorderBox(GeometryType.CIRCLE,self.objLimit)
 
-    def setPosition(self, x, y, r, timestamp=0):
-        self.kalman_update(np.array([x, y]))
-        self._radius = r
-        self.newTimestamp = timestamp
-        self.status = True
+    #viewbot da bola
+    def predictPosition(self,timestamp):
+        '''
+        Prevê a posição do robô com base no tempo que se passou, para atualizar os valores
+        
+        Aproximação da posição do robô
+        '''
+        self.getVelocity(timestamp=timestamp)
+        
+        #passo para mover a tela
+        stepPosition = self.velocity*self.dT
+
+        #transfiro os pontos de identificação
+        self.viewBall.translateViewBot(Point2D(stepPosition[0],stepPosition[1]))
 
     def getPredictPosition(self):
+        '''
+            Retorna o indice da imagem e a dimensão da janela onde estará a bola
+        '''
         return self.viewBall.Pe1, self.viewBall.DimMatrix
 
+    #verificando estado da bola
     def getStatus(self):
         return self.status
+
+    #...
+    def setImgPosition(self,xb, yb, rb):
+        self.xb = xb
+        self.yb = yb 
+        self.rb = rb 
+
+    #definindo função para setar a cor da bola para pesquisa
+    def setBallColor(self, colorBall):
+        self.color = colorBall 
+#Definição da classe campo
+

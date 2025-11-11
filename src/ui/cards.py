@@ -67,20 +67,35 @@ class Card:
         self.canvas.create_image(x,y, anchor=NW, image=self.image)
 
     def set_content(self, id, status, position, radius, image):
-        x = str(position[0])
-        y = str(position[1])
-        r = radius
+        try:
+            # Garante que posição e raio sejam válidos
+            if position is not None and len(position) >= 2:
+                x = f"{float(position[0]):.1f}"
+                y = f"{float(position[1]):.1f}"
+            else:
+                x, y = "0.00", "0.00"
 
-        if status:
-            color = 'green'
-        else:
-            color = 'red'
+            r = f"{float(radius):.1f}" if radius is not None else "0.00"
 
-        self.idLabel.config(text=f"{id} - {status}", bg=color)
-        self.positionLabel.config(text=f"x: {x} cm | y: {y} cm\n r = {r} cm")
+            # Define texto e cor conforme o status
+            if status:
+                status_text = "Detectado"
+                color = "lightgreen"
+            else:
+                status_text = "Não Detectado"
+                color = "lightcoral"
 
-        if image is not None:
-            self.show_image(image)
+            # Atualiza labels
+            self.idLabel.config(text=f"{status_text}", bg=color)
+            self.positionLabel.config(text=f"x: {x} cm | y: {y} cm\nr = {r} cm")
+
+            # Exibe imagem, se houver
+            if image is not None:
+                self.show_image(image)
+
+        except Exception as e:
+            print(f"[Card][set_content] Erro ao atualizar card ({id}): {e}")
+
 
 
 class CardInfos:
