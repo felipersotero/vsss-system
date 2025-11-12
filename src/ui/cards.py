@@ -87,7 +87,7 @@ class Card:
 
             # Atualiza labels
             self.idLabel.config(text=f"{status_text}", bg=color)
-            self.positionLabel.config(text=f"x: {x} cm | y: {y} cm\nr = {r} cm")
+            self.positionLabel.config(text=f"POS: [{x} | {y}] cm\nr = {r} cm")
 
             # Exibe imagem, se houver
             if image is not None:

@@ -58,6 +58,7 @@ class Field:
         self.height: int = 0 
         self.width: int = 0 
 
+
         # Inicializar o ambiente OpenCL
         if cv2.ocl.haveOpenCL(): cv2.ocl.setUseOpenCL(True)
         else: print("[VS]: Não foi possível otimizar com OpenCL")

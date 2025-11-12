@@ -199,3 +199,52 @@ class Robot:
 
     def getColors(self):
         return self.colorTeam, self.colorCar1, self.colorCar2
+
+    def resetState(self):
+        """
+        Reinicia apenas o estado transitório do robô,
+        sem apagar o histórico do filtro de Kalman.
+        Usado entre frames de vídeo.
+        """
+        self.direction = np.array([0.0, 0.0])
+        self.velocity = np.array([0.0, 0.0])
+        self.detected = False
+        self.possessionBall = False
+        self.dT = 0.0
+
+        # Mantém posição e Kalman
+        self.lastPosition = self.position
+        self.newPosition = self.position
+
+        # Atualiza geometria e limites
+        self.objLimit = Circle(self.radius, Point2D(self.position[0], self.position[1]))
+        self.updateBbox()
+        self.viewRect.updateViewBot(Point2D(self.position[0], self.position[1]))
+
+
+    def reset(self):
+        """
+        Reset completo — limpa todos os estados, incluindo o filtro de Kalman.
+        Usado apenas no modo imagem ou reinicialização total.
+        """
+        self.position = np.array([0.0, 0.0])
+        self.lastPosition = self.position
+        self.newPosition = self.position
+        self.direction = np.array([0.0, 0.0])
+        self.velocity = np.array([0.0, 0.0])
+        self.detected = False
+        self.possessionBall = False
+        self.dT = 0.0
+        self.lastTimestamp = 0
+        self.newTimestamp = 0
+
+        # Reset do filtro de Kalman
+        self.kalman_initialized = False
+        self.kalman_state = np.zeros((4, 1))
+        self.kalman_P = np.eye(4) * 1000.0
+        self.kalman_last_time = None
+
+        # Atualiza geometria
+        self.objLimit = Circle(self.radius, Point2D(0, 0))
+        self.updateBbox()
+        self.viewRect.updateViewBot(Point2D(0, 0))

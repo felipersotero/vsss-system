@@ -591,6 +591,10 @@ class Emulator:
         # -----------------------------
         # 🔹 Criar e aplicar configuração do emulador
         # -----------------------------
+        #Reseto as configurações do sistema de visão
+        self.vs._resetVs()
+
+        #Recarrego as novas
         self.EConfig = EConfig(
             offSetWindow=self.OffSetBord,
             offSetErode=self.OffSetErode,
@@ -854,6 +858,7 @@ class Emulator:
         self.capture.setImagePath(self.ImgPath)
         self.frame = self.capture.getImage()
         self.debugFrame = self.frame.copy()
+
         #Método de RUN para imagem
         result = self.vs.processImg(self.debugFrame, debug=self.DEBUGA)
 
@@ -870,7 +875,12 @@ class Emulator:
             self.debugObjectsViewer.show(binaryBall)
             self.debugPlayersViewer.show(binaryPlayers)
             self.debugTeamViewer.show(binaryTeam)
-        
+        else:
+            self.debugFieldViewer.clear()
+            self.debugObjectsViewer.clear()
+            self.debugPlayersViewer.clear()
+            self.debugTeamViewer.clear()
+            
         #imagens de resultado
         self.resultViewer.show(result)
         self.virtualResult.show(self.vs.virtualImg)
