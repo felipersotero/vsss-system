@@ -550,7 +550,8 @@ class VisionSystem:
 
             else:
                 # Usa o Kalman para prever posições dos objetos
-                self.predictObjects(img, tms=self.currentTime)
+                #self.predictObjects(img, tms=self.currentTime)
+                pass 
 
         # --- Caso 2: processamento completo periódico ---
         else:
