@@ -147,6 +147,7 @@ class Emulator:
                 self.frameTime = (t_proc_end - t_proc_start) * 1000.0  # processamento
                 self.totalTime = (time.time() - loop_start) * 1000.0   # visão total
                 self.realTime = self.Timer.getElapsedTime()/1000.0           # desde init
+                #print("[EMULADOR]: Tempo total em segundos ", self.realTime)
                 self.FPStime = int(1000 / self.totalTime) if self.totalTime > 0 else 0
 
                 # --- Atualiza objetos detectados ---
@@ -155,7 +156,6 @@ class Emulator:
                 self.allies = objects.get(ID_Objects.ALLIES, self.allies)
                 self.enemies = objects.get(ID_Objects.ENEMIES, self.enemies)
 
-                timestamp = time.time()
                 # --- Prepara pacote para a UI ---
                 data = {
                     'frame': frame,
