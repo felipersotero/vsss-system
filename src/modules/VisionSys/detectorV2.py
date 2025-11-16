@@ -509,7 +509,6 @@ class VisionSystem:
         self.frameOrigin = img
         self.currentTime = self.timer.getElapsedTime()
 
-        print("[SISTEMA DE VISÃO]: Tempo", self.currentTime)
         # --- Caso especial: modo imagem (emulação única) ---
         if self.emulatorMode == MODE_IMAGE:
             # Reseta contadores
@@ -1327,7 +1326,7 @@ class VisionSystem:
         cv2.putText(
                 self.virtualImg,
                 text,
-                (int(xi - 8), int(yi - 14)),
+                (int(xi - 8), int(yi - 20)),
                 cv2.FONT_HERSHEY_SIMPLEX,
                 0.4,
                 color,
@@ -1827,7 +1826,8 @@ class VisionSystem:
                     if debug:
                         print(f"  🔴 Inimigo detectado | Raio cor: {rc:.2f}")
                     if rc >= 0.6 * mainColorRadius:
-                        #Direção do robô nas coordenadas virtuais
+                        #Direção do robô nas coordenadas da imagem, apenas transformando corretamente
+                        # como as coordenadas da imagem tem y negativo como padrão, inverte o sinal dele
                         direction = np.array([xi,-yi]) - np.array([x_m,-y_m]) 
 
                         #Normalizando
@@ -1876,7 +1876,8 @@ class VisionSystem:
 
                         for flag, c1, c2, bot_id, name in ally_checks:
                             if flag and self.detect_ally_robot(windowActual, c1, c2):
-                                #Direção do robô nas coordenadas virtuais
+                                #Direção do robô nas coordenadas da imagem, apenas transformando corretamente
+                                # como as coordenadas da imagem tem y negativo como padrão, inverte o sinal dele
                                 direction = np.array([xi,-yi]) - np.array([x_m,-y_m]) 
 
                                 #Normalizando

@@ -64,11 +64,19 @@ class Robot:
     # Kalman init
     # --------------------------
     def _init_kalman(self):
-        # State: [x, y, theta]
-        self.kalman_state = np.zeros((3, 1), float)
-        self.kalman_P = np.eye(3) * 500.0
-        self.kalman_Q = np.eye(3) * 0.01
-        self.kalman_R = np.eye(3) * 2.0
+        # State: [x, y, theta, vx, vy, omega]
+        self.kalman_state = np.zeros((6, 1), float)
+
+        # Covariances
+        self.kalman_P = np.eye(6) * 400.0
+
+        # Processo (acelerações pequenas)
+        self.kalman_Q = np.diag([0.01, 0.01, 0.01, 5.0, 5.0, 1.0])
+
+        # Ruído de medição do sistema de visão
+        # Medimos apenas x, y, theta  → tamanho 3x3
+        self.kalman_R = np.diag([3.0, 3.0, 0.5])
+
         self.kalman_initialized = False
         self.kalman_last_time = None
 
@@ -98,16 +106,29 @@ class Robot:
         self._direction = np.array([np.cos(self._theta), np.sin(self._theta)])
 
     @property
+    def position_filtered(self):
+        if not self.kalman_initialized:
+            return self.position
+        return self.kalman_state[:2, 0]
+
+    @property
     def theta_filtered(self):
         if not self.kalman_initialized:
             return self.theta
         return float(self.kalman_state[2, 0])
 
     @property
-    def position_filtered(self):
+    def velocity_filtered(self):
         if not self.kalman_initialized:
-            return self.position
-        return self.kalman_state[:2, 0]
+            return np.array([0.0, 0.0])
+        return self.kalman_state[3:5, 0]
+
+    @property
+    def omega_filtered(self):
+        if not self.kalman_initialized:
+            return 0.0
+        return float(self.kalman_state[5, 0])
+
 
     # --------------------------
     # Position update
@@ -150,11 +171,16 @@ class Robot:
     # Kalman update
     # --------------------------
     def update_kalman(self, z_list, timestamp):
+        """
+        Kalman completo para estado: [x, y, theta, vx, vy, omega]
+        Medição: [x, y, theta]
+        """
         x, y, theta_meas = z_list
         z = np.array([[x], [y], [theta_meas]])
 
+        # Inicialização
         if not self.kalman_initialized:
-            self.kalman_state = z.copy()
+            self.kalman_state[:3, 0] = [x, y, theta_meas]
             self.kalman_initialized = True
             self.kalman_last_time = timestamp
             return
@@ -162,21 +188,42 @@ class Robot:
         dt = max(timestamp - self.kalman_last_time, 1e-3)
         self.kalman_last_time = timestamp
 
-        # Prediction (simple identity model)
-        F = np.eye(3)
+        # -----------------------------------------------------------
+        # 1) PREDICTION
+        # -----------------------------------------------------------
+
+        # Modelo constante-velocidade
+        F = np.array([
+            [1, 0, 0, dt, 0,  0],
+            [0, 1, 0, 0,  dt, 0],
+            [0, 0, 1, 0,  0, dt],
+            [0, 0, 0, 1,  0,  0],
+            [0, 0, 0, 0,  1,  0],
+            [0, 0, 0, 0,  0,  1],
+        ], float)
+
         self.kalman_state = F @ self.kalman_state
         self.kalman_P = F @ self.kalman_P @ F.T + self.kalman_Q
 
-        # Measurement update
-        H = np.eye(3)
+        # -----------------------------------------------------------
+        # 2) UPDATE (measurement)
+        # -----------------------------------------------------------
+
+        H = np.array([
+            [1, 0, 0, 0, 0, 0],    # x
+            [0, 1, 0, 0, 0, 0],    # y
+            [0, 0, 1, 0, 0, 0],    # theta
+        ])
+
         y_residual = z - H @ self.kalman_state
         S = H @ self.kalman_P @ H.T + self.kalman_R
         K = self.kalman_P @ H.T @ np.linalg.inv(S)
 
-        self.kalman_state += K @ y_residual
-        self.kalman_P = (np.eye(3) - K @ H) @ self.kalman_P
+        # Atualiza
+        self.kalman_state = self.kalman_state + K @ y_residual
+        self.kalman_P = (np.eye(6) - K @ H) @ self.kalman_P
 
-    # --------------------------
+        # --------------------------
     # Aux
     # --------------------------
     def updateBbox(self):
