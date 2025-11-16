@@ -1,14 +1,14 @@
 # ==========================================================================================
-# MÓDULO DE FUNÇÕES PARA ALGORÍTMO DE DETECÇÃO VSS (version v2.2.40)
+# MÓDULO DE FUNÇÕES PARA ALGORÍTMO DE DETECÇÃO VSS (version v3.0.40)
 #==========================================================================================
 '''
     @GNOMIO: Sismtea de detecção de objetos VSS (Vision System Soccer) versão 2.2.40    
     
-    Versão: v3.0.12
-    Última modificação: 11/11/2025
+    Versão: v3.0.40
+    Última modificação: 16/11/2025
     Autor: Saulo (update)
 
-    Patch Notes v3.0.3:
+    Patch Notes v3.1.105:
     - Implementado novo sistema de threads com melhor desempenho
     - Separação de processamento em visão e comunicação
     - Melhor gerenciamento de recursos
