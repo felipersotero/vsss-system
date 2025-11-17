@@ -3,14 +3,14 @@ import time
 
 # Função que será executada de forma linear
 def process_data_linear(data):
-    result = sum(data) * 1000  # Simulação de uma operação complexa
+    result = sum(data) * 100000  # Simulação de uma operação complexa
     return result
 
 # Função que será executada de forma paralela
 def process_data_parallel(data):
     results = []
     for d in data:
-        result = d * 1000  # Simulação de uma operação complexa
+        result = d * 100000  # Simulação de uma operação complexa
         results.append(result)
     return results
 

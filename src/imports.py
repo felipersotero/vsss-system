@@ -18,15 +18,12 @@ import serial.tools.list_ports
 import re
 
 #Bibliotecas 
-from detector import *
-from detectorV2 import *
+from modules.VisionSys.detectorV2 import *
 
 #suporte a GPU
 from cv2 import cuda
 import platform 
-import pycuda.driver as pycuda
-import numba
-from objects import *
+from modules.VisionSys.components.objects import *
 
 # Inicializar o ambiente OpenCL
 if cv2.ocl.haveOpenCL(): cv2.ocl.setUseOpenCL(True)

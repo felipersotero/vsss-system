@@ -1,9 +1,9 @@
-from objects import *
-from modules import *
+from modules.VisionSys.components.objects import *
+from imports import *
 from app import *
-from emulator import *
-from communication import *
-from detectorV2 import *
+from modules.emulator.emulator import *
+from modules.communication.communication import *
+from modules.VisionSys.detectorV2 import *
 
 
 

@@ -1,119 +1,108 @@
-# 📚 Documentação do Sistema - VSSS (Very Small Size Soccer)
+# VSSS System ⚽️🤖
 
-## 📌 Visão Geral
+Bem-vindo ao VSSS System — um kit modular de visão computacional e controle para Very Small Size Soccer (VSSS).  
+É prático, extensível e feito para acelerar experimentos com visão, controle e comunicação de robôs pequenos.
 
-Este projeto é um sistema completo para competições de **Very Small Size Soccer (VSSS)**, englobando **visão computacional**, **interface gráfica**, **processamento de imagens**, **teoria do controle** e **simulação/emulação**.
+Por que o VSSS System?
+- Pipeline de visão pronto para detectar campo, bola e robôs em tempo real.
+- Emulador multi-thread para orquestrar captura, visão, controle e comunicação.
+- Interface gráfica (Tkinter) para experimentar parâmetros sem mexer em código.
+- Suporte opcional a GPU (CUDA) para quem quer rodar mais rápido.
 
-O **arquivo principal** de execução é `main.py`, que inicia a aplicação principal (`app.py`). O sistema processa imagens capturadas pela câmera, detecta a posição da bola e dos robôs, e fornece essas informações para tomada de decisões estratégicas.
+Vamos lá — rápido overview
+- Detector (src/modules/VisionSys/detectorV2.py): núcleo de visão, detecção e predição.
+- Emulador (src/modules/emulator): coordena captura, threads, UI e comunicação.
+- UI (src/ui): visualização, cards e menu de configurações.
+- Assets e configuração: src/data, src/images
+- Entrada principal: main.py
 
-## 🚀 Como Executar o Projeto
+## Quick Start (rápido)
+1. Clone o repositório:
+   ```bash
+   git clone <seu-repositorio>
+   ```
+2. Instale dependências (duas opções, descritas abaixo).
+3. Rode:
+   ```bash
+   python main.py
+   ```
+4. Abra a interface e ajuste cores / fontes de captura no menu de configurações.
 
-### 1️⃣ Instalar as Dependências
+## Instalação — escolha sua forma
 
-Certifique-se de que possui o Python instalado (versão 3.8 ou superior). Para instalar as bibliotecas necessárias, utilize:
+**Opção A — pip (terminal)**
+- Recomendado para usuários confortáveis com terminal:
+  ```bash
+  python -m pip install -r src/data/requirements.txt
+  ```
 
-```bash
-pip install -r src/data/requirements.txt
-```
+**Opção B — instalador gráfico (install.py)**
+- Executa verificação e instala pacotes via GUI, útil para iniciantes:
+  ```bash
+  python install.py
+  ```
+- O instalador confirma pacotes, mostra progresso e permite iniciar o app ao final.
 
-### 2️⃣ Rodar a Aplicação
+Dica: se preferir, o main.py também pode acionar rotinas de instalação (ver comentários em main.py).
 
-Execute o arquivo principal:
+## Uso e modos de execução
+- **Modo imagem (estático)**: ideal para testes rápidos com screenshots.
+- **Modo vídeo**: processa arquivos de vídeo.
+- **Modo câmera (USB/interna)**: captura ao vivo e exibe resultados em tempo real.
+- Ative debug na UI para ver máscaras binárias e janelas de busca.
 
-```bash
-python main.py
-```
+## Seções úteis
+- **Configurações**: ajuste ofset, thresholds e cores no menu de configurações (UI).
+- **Logs e performance**: o emulador fornece tempos de processamento e FPS via cards.
+- **Comunicação**: suporte MQTT e Serial — configure no painel de comunicação.
 
-## 📂 Estrutura do Projeto
+## Conselhos práticos
+- Problemas com a câmera? Verifique permissões, índice e drivers.
+- Resultado ruim em pouca luz? Aumente saturação ou use iluminação melhor.
+- Quer desempenho? Use OpenCV com suporte CUDA e habilite UseCuda.
 
-```plaintext
-📁 Projeto-VSSS/
-│-- main.py                # Arquivo principal para rodar a aplicação
-│-- requirements.txt       # Lista de dependências do projeto
-│-- 📂 src/                # Diretório principal do código
-|   |--📂 data             # Arquivos principais para configuração e backup
-|   |--📂 imagens          # Imagens para testar processamento
-|   |--📂 videos           # Videos para testar processamento
-|   |--📂 theme            # Arquivos de tema importantes para a interface
-│   │-- app.py             # Inicializa a interface gráfica (GUI)
-│   │-- cards.py           # Configura cards para interface gráfica (GUI)
-│   │-- communication.py   # Gerencia a comunicação do sistema
-│   │-- control.py         # Funções e lógica de controle do sistema
-│   │-- detector.py        # Módulo de detecção legado
-│   │-- detectorV2.py      # Módulo de detecção e interpretação do sistema atual
-│   │-- emulator.py        # Engine da aplicação
-│   │-- modules.py         # Organização dos módulos utilizados em todo o projeto
-│   │-- objects.py         # Definição dos objetos básicos do projeto
-│   │-- settingsMenu.py    # Configuração do menu inteligente da interface
-│   │-- strategy.py        # Arquivo com as funções de estratégia
-│   │-- viewer.py          # Configuração da tela de exibição de imagens
-│   │-- windowControl.py   # Controle da interface dos robôs
-```
+## Comunidade e contribuição
+- Abra issues para bugs, discussões ou sugestões.
+- PRs pequenas e comentadas são bem-vindas — explique mudanças e teste localmente.
+- Siga o padrão de branches: feature/x, fix/x, docs/x.
 
-## 🖥️ Módulos do Sistema
+## Código de conduta
+- Seja respeitoso nas discussões, mantenha comunicação construtiva e cite referências quando usar código de terceiros.
 
-### 📌 `main.py`
-Arquivo principal do projeto. Ele:
-- Inicializa a interface gráfica.
-- Verifica e instala as dependências automaticamente.
-- Gerencia a execução do `app.py`.
+## Colaboradores
+- GN0M10
+- Contribuidores futuros: seu nome aqui! 🙌
 
-### 📌 `app.py`
-Gerencia a **tela principal** da aplicação e a classe `App`, responsável por:
-- Criar e configurar a janela principal (`configure_window()`).
-- Criar os **frames** principais da interface gráfica (`create_main_frames()`).
-- Criar **subframes** específicos de configuração (`create_settings_frame()`).
-- Gerenciar **widgets** da interface (botões, imagens, menus, etc.).
-- Inicializar o **Emulador (`Emulator`)**.
+## Checklist do projeto
+- [x] Sistema de Visão V2
+- [x] Emulador multi-thread
+- [x] Interface gráfica básica
+- [x] Comunicação MQTT/Serial
+- [ ] Otimizações CUDA
+- [ ] Sistema de estratégia
+- [ ] Documentação completa
+- [ ] Testes unitários
+- [ ] Exemplos e tutoriais
 
-### 📌 `settingsMenu.py`
-Gerencia a lista de configurações do sistema. Contém:
-- Funções para adicionar e acessar nós (`add_node`, `att_node_id`).
-- Manipulação da interface ao clicar em um campo (`on_double_click`).
-- Leitura e salvamento de dados (`save_to_json`, `load_from_json`).
+## Patch Notes (resumido)
+### v3.0.1 — 2024-02-14
+- Atualização de classes base e documentação.
+- Melhor gerenciamento de threads e filas.
+- Novo debug com menor overhead.
+- Correções de estabilidade no processamento de imagens.
 
-### 📌 `viewer.py`
-Cria telas para **visualização das imagens de depuração**. Contém a classe `MyViewer`, que possui funções como:
-- `config()` - Configuração inicial.
-- `reset_config()` - Reset das configurações.
-- `default_mode()` - Modo padrão de exibição.
-- `show()` - Exibição das imagens processadas.
+### v3.0.0
+- Reescrita parcial do pipeline de detecção.
+- Implementação inicial de EKF para robôs.
+- Melhorias em pré-processamento e filtragem.
 
-### 📌 `emulator.py`
-Arquivo com a lógica da Engine da aplicação, organizando-se em:
-1. **Construtor:** Define as variáveis principais.
-2. **Funções Gerais:**
-   - `load_vars()`: Carrega as variáveis do JSON.
-   - `format_var()`: Formata os dados carregados.
-   - `init()`, `stop()`: Inicializa e encerra a simulação.
-3. **Funções de Execução:**
-   - `processUSB()`, `processImage()`, `processVideo()`
+## Licença
+- MIT — veja o arquivo LICENSE.
 
-### 📌 `detectorV2.py`
-Módulo de **visão computacional**, responsável por detectar a **bola, os robôs e o campo** em tempo real.
-- Compatível com **GPU (OpenCV CUDA)** para acelerar processamento.
-- Detecta objetos e prevê suas posições.
-- Suporte a filtros avançados e transformações de imagem.
+## Precisa de ajuda?
+- Abra uma issue descrevendo:
+  1) Ambiente (SO, Python, OpenCV)
+  2) Passos para reproduzir
+  3) Logs/prints relevantes
 
-### 📌 `control.py`
-Contém **algoritmos de controle** dos robôs, incluindo:
-- Controle PID básico.
-- Ajuste de velocidade e direção.
-- Cálculo de trajetória para movimentação eficiente.
 
-### 📌 `strategy.py`
-Gerencia a **inteligência dos robôs** e estratégia de jogo.
-- Define comportamento ofensivo/defensivo.
-- Implementação de FSM (Finite State Machine) para tomadas de decisão.
-
-## ⚙️ Melhorias Futuras
-- Implementação de **Filtro de Kalman** para melhorar a precisão na detecção.
-- Melhorias na estratégia com **aprendizado de máquina (Reinforcement Learning)**.
-- Integração com **simuladores avançados (Gazebo, Webots, etc.)**.
-
-## 📄 Licença
-Este projeto está sob a licença **MIT**. Sinta-se à vontade para modificar e contribuir! 🤖⚽
-
----
-
-💡 **Sugestão:** Caso precise de mais detalhes técnicos sobre um módulo específico, consulte os arquivos individuais dentro da pasta `src/`.

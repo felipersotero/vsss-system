@@ -2,18 +2,23 @@
 #  Variáveis, objetos e constantes padrões do código
 #==========================================================================================
 '''
-    @GNOMIO: Definições que serão utilizadas como base no código, para serem utilizadas durante o processamento do sistema de visão.
+    @GNOMIO: Descrição de objetos, cosntantes e padrão do código para ser utilizado.
+
+    Versão: v3.0.1
+    Última modificação: 14/02/2024
+    Autor: Saulo (update)
+
+    Patch Notes v3.0.1:
+    - Apenas atualizada algumas classes.
 '''
 import numpy as np
 import time
-from viewer import MyViewer
+from ui.viewer import MyViewer
 import threading
 import queue
 import tkinter 
 from collections import deque
-from settingsMenu import *
-
-
+from ui.settingsMenu import *
 
 from tkinter import *
 from tkinter import ttk

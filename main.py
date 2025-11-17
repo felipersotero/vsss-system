@@ -1,41 +1,99 @@
 import sys
-import subprocess
-import pkg_resources
 import os
+import importlib.util
+import subprocess
+import tkinter as tk
+from tkinter import messagebox
 
-# Função para verificar e instalar os pacotes do requirements.txt
-def install_requirements(requirements_file='src/data/requirements.txt'):
-    if not os.path.isfile(requirements_file):
-        print(f"[ERRO] Arquivo '{requirements_file}' não encontrado!")
+REQUIREMENTS_FILE = "src/data/requirements.txt"
+INSTALATOR_SCRIPT = "instalator.py"
+
+PACKAGE_MODULE_MAP = {
+    "annotated-types": "annotated_types",
+    "anyio": "anyio",
+    "appdirs": "appdirs",
+    "certifi": "certifi",
+    "colorama": "colorama",
+    "distro": "distro",
+    "h11": "h11",
+    "httpcore": "httpcore",
+    "httpx": "httpx",
+    "idna": "idna",
+    "jiter": "jiter",
+    "llvmlite": "llvmlite",
+    "Mako": "mako",
+    "MarkupSafe": "markupsafe",
+    "numpy": "numpy",
+    "openai": "openai",
+    "paho-mqtt": "paho.mqtt",
+    "pillow": "PIL",
+    "platformdirs": "platformdirs",
+    "pydantic": "pydantic",
+    "pydantic_core": "pydantic_core",
+    "pyglet": "pyglet",
+    "pyserial": "serial",
+    "pytools": "pytools",
+    "pytube": "pytube",
+    "pywin32": "win32api",
+    "setuptools": "setuptools",
+    "sniffio": "sniffio",
+    "tk": "tkinter",
+    "tqdm": "tqdm",
+    "ttkthemes": "ttkthemes",
+    "typing_extensions": "typing_extensions",
+    "Unidecode": "unidecode",
+    "WMI": "wmi",
+    "yt-dlp": "yt_dlp",
+}
+
+def parse_requirements(file_path):
+    if not os.path.isfile(file_path):
+        messagebox.showerror("Erro", f"Arquivo de requirements não encontrado:\n{file_path}")
         sys.exit(1)
-    
-    # Lê o requirements.txt
-    with open(requirements_file) as f:
-        required = f.read().splitlines()
-    
-    # Verifica o que já está instalado
-    installed = {pkg.key for pkg in pkg_resources.working_set}
 
-    # Trata nomes e ignora linhas vazias ou comentários
-    required_clean = [pkg.split('==')[0].strip().lower() for pkg in required if pkg.strip() and not pkg.startswith('#')]
+    packages = []
+    with open(file_path, "r", encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if line and not line.startswith("#"):
+                pkg = line.split("==")[0]
+                packages.append(pkg)
+    return packages
 
-    # Descobre o que está faltando
-    missing = [pkg for pkg in required_clean if pkg.lower() not in installed]
+def is_installed(package_name):
+    module_name = PACKAGE_MODULE_MAP.get(package_name, package_name.replace("-", "_").lower())
+    return importlib.util.find_spec(module_name) is not None
 
-    # Instala os pacotes faltantes, se houver
+def check_missing_packages():
+    packages = parse_requirements(REQUIREMENTS_FILE)
+    missing = [pkg for pkg in packages if not is_installed(pkg)]
+    return missing
+
+def prompt_install():
+    root = tk.Tk()
+    root.withdraw()  # Esconde a janela principal
+    missing = check_missing_packages()
     if missing:
-        print(f"[INFO] Instalando pacotes necessários: {missing}")
-        subprocess.check_call([sys.executable, '-m', 'pip', 'install', '-r', requirements_file])
+        msg = "Alguns pacotes necessários não estão instalados:\n\n"
+        msg += ", ".join(missing[:10])
+        if len(missing) > 10:
+            msg += f", ... (+{len(missing)-10} outros)"
+        msg += "\n\nDeseja instalar agora?"
+        if messagebox.askyesno("Dependências faltando", msg):
+            root.destroy()
+            # Chama o instalador
+            subprocess.call([sys.executable, INSTALATOR_SCRIPT])
+        else:
+            messagebox.showwarning("Atenção", "O programa pode não funcionar corretamente sem os pacotes necessários.")
+            root.destroy()
     else:
-        print("[INFO] Todos os pacotes já estão instalados!")
+        root.destroy()
 
-# ⚙️ 1. Verifica e instala pacotes
-install_requirements()
+# Primeiro verifica e instala se necessário
+prompt_install()
 
-# ⚙️ 2. Continua com o seu app normalmente
-sys.path.append('./src/')  # Caminho para os módulos
-
+# Agora adiciona src/ ao path e inicia a aplicação
+sys.path.append("./src/")
 from app import App
 
-# ⚙️ 3. Inicia o app
 app = App()

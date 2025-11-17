@@ -1,4 +1,4 @@
-from modules import *
+from imports import *
 
 #Classe de player para o aplicativo
 class MyViewer:
@@ -56,6 +56,11 @@ class MyViewer:
         y = (max_height - new_height) // 2
     
         self.canvas.create_image(x,y, anchor=NW, image=self.image)
+    
+    def clear(self):
+        """Apaga tudo e coloca fundo preto."""
+        self.canvas.delete("all")
+        self.canvas.create_rectangle(0, 0, 748, 510, fill="black")
 
 class WindowsViewer:
     def __init__(self, window: Frame):
@@ -165,3 +170,8 @@ class WindowsViewer:
             self.canvas4.create_image(self.x, self.y, anchor=NW, image=self.listaDeImagens[3])
             self.canvas5.create_image(self.x, self.y, anchor=NW, image=self.listaDeImagens[4])
             self.canvas6.create_image(self.x, self.y, anchor=NW, image=self.listaDeImagens[5])
+
+    def clear(self):
+        """Apaga tudo e coloca fundo preto."""
+        self.canvas.delete("all")
+        self.canvas.create_rectangle(0, 0, 748, 510, fill="black")

@@ -1,12 +1,30 @@
-from modules import *
-from settingsMenu import settingsMenu
-from viewer import MyViewer, WindowsViewer
-from emulator import Emulator
-from cards import *
-from control import *
-from communication import *
-from objects import *
-from windowControl import *
+'''
+    @GNOMIO: Aplicação principal do sistema VSSS. Responsável por criar e gerenciar a interface gráfica,
+    inicializar os módulos e coordenar a interação entre eles.
+
+    Versão: v3.0.1
+    Última modificação: 14/02/2024
+    Autor: Saulo (update)
+
+    Patch Notes v3.0.1:
+    - Adicionado suporte a processamento paralelo com threads separadas
+    - Nova UI com melhor organização e feedback visual
+    - Melhorias na estabilidade da captura de câmera
+    - Suporte a múltiplos modos de visualização
+    - Sistema de debug aprimorado
+    - Correções de memory leaks
+'''
+#=============================================================
+
+from imports import *
+from ui.settingsMenu import settingsMenu
+from ui.viewer import MyViewer, WindowsViewer
+from modules.emulator.emulator import Emulator
+from ui.cards import *
+from modules.control.control import *
+from modules.communication.communication import *
+from modules.VisionSys.components.objects import *
+from ui.windowControl import *
 
 execution = False
 
