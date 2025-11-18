@@ -401,22 +401,61 @@ def predict_position(self, dt=0.05):
     return predicted[:2, 0]  # Retorna [x_pred, y_pred]
 ```
 
-## 🎪 Exemplo de Uso no Sistema
 
-### No Processamento Principal:
+# Filtered Detection
+
+O método `filtered_detection` é responsável por localizar robôs na imagem de forma **otimizada**, utilizando o filtro de Kalman para reduzir a área de busca e aumentar a confiabilidade da detecção.
+
+---
+
+## Como funciona
+
+1. **Predição do Kalman**  
+   Antes de processar a imagem, o filtro de Kalman do robô é utilizado para **predizer a posição** futura `(x, y)` do robô.  
+   Essa posição é usada para definir uma **Região de Interesse (ROI)** ao redor do robô, tipicamente uma janela de tamanho pequeno (ex: 50x50 px), reduzindo a área a ser processada.
+
+2. **Detecção dentro da ROI**  
+   A detecção é aplicada **somente dentro da ROI** para encontrar o robô.  
+   - Se o robô for encontrado:  
+     - A posição medida é utilizada para **atualizar o filtro de Kalman**, refinando a predição futura.  
+   - Se o robô **não for encontrado**:  
+     - A posição predita pelo Kalman é usada como referência, garantindo uma posição plausível até que o robô seja detectado novamente.
+
+3. **Atualização do estado do robô**  
+   Após a detecção ou fallback para a predição:
+   - Atualiza a posição real ou estimada do robô.
+   - Calcula a direção e o ângulo (`theta`) com base no movimento.
+   - Prepara o estado para o próximo frame.
+
+---
+
+## Diagrama de fluxo
+
+![Fluxo de Rastreamento com Filtro de Kalman](src/data/kalmanProcess.png)
+
+
+
+### Benefícios
+
+- **Processamento mais rápido:** A detecção é limitada a pequenas janelas, reduzindo o tempo computacional.
+- **Robustez em oclusões:** Mesmo quando o robô não é detectado, o Kalman mantém uma posição plausível.
+- **Integração simples:** Funciona com qualquer método de detecção já implementado, apenas ajustando a região de busca.
+
+### Exemplo de uso
 
 ```python
-def predictObjects(self, img, tms):
-    # Para cada robô e bola
-    self.predictBall(timestamp)
-    self.predictRobot(ID_Team.TEAM_ALLY, ID_Robots.ROBOT_ALLY_GOAL, timestamp)
+# Para cada robô
+for robot in robots:
+    x_pred, y_pred = robot.kalman_state[:2, 0]  # Predição do Kalman
+    roi = get_roi_around_prediction(img, x_pred, y_pred, size=50)
     
-def predictBall(self, timestamp):
-    if ball.getStatus():
-        ball.predictPosition(timestamp)
-        P1, Dim = ball.getPredictPosition()
-        # Usa posição predita para busca otimizada
-```
+    detected = detect_robot_in_roi(roi)
+    
+    if detected:
+        robot.update_kalman(detected_position, timestamp)
+    else:
+        robot.position = robot.kalman_state[:2, 0]  # fallback para predição
+
 
 ## 📈 Análise das Matrizes de Covariância
 

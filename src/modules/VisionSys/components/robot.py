@@ -223,7 +223,50 @@ class Robot:
         self.kalman_state = self.kalman_state + K @ y_residual
         self.kalman_P = (np.eye(6) - K @ H) @ self.kalman_P
 
-        # --------------------------
+    # Preciso realizar a conversão desses valores para a coordenada da imagem
+    def get_roi(self, image_shape, scale_std=3):
+        """
+        Retorna as dimensões do ROI centrado na previsão do Kalman,
+        baseado nas variâncias do Kalman.
+
+        Parâmetros:
+            image_shape : tuple(int, int)
+                (altura, largura) da imagem
+            scale_std : float
+                Multiplicador da raiz quadrada da variância para definir o ROI
+
+        Retorna:
+            tuple: (x, y, w, h) coordenadas do topo-esquerdo e tamanho do ROI
+        """
+        # --- 1) Posição predita ---
+        pos = self.position_filtered  # [x, y]
+        x_c, y_c = pos
+
+        # --- 2) Calcula desvio padrão das coordenadas x e y ---
+        if self.kalman_initialized:
+            std_x = np.sqrt(self.kalman_P[0, 0])
+            std_y = np.sqrt(self.kalman_P[1, 1])
+        else:
+            std_x = std_y = 20.0  # fallback se Kalman não inicializado
+
+        # --- 3) Define tamanho do ROI ---
+        w_roi = int(scale_std * std_x * 2)  # multiplicado por 2 para pegar ±std
+        h_roi = int(scale_std * std_y * 2)
+
+        # --- 4) Topo-esquerdo ---
+        x = int(x_c - w_roi // 2)
+        y = int(y_c - h_roi // 2)
+
+        # --- 5) Ajusta limites à imagem ---
+        h_img, w_img = image_shape[:2]
+        x = max(0, min(x, w_img - 1))
+        y = max(0, min(y, h_img - 1))
+        w_roi = min(w_roi, w_img - x)
+        h_roi = min(h_roi, h_img - y)
+
+        return x, y, w_roi, h_roi
+
+    # --------------------------
     # Aux
     # --------------------------
     def updateBbox(self):
