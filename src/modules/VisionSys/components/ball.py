@@ -147,6 +147,29 @@ class Ball:
         self.updateBbox()
         self.status = True
 
+    def setPositionNoKalman(self, x, y, r, timestamp=0.0, theta=None):
+        self.radius = float(r)
+
+        self.lastPosition = self.position.copy()
+        self.position = np.array([x, y], dtype=float)
+        self.newPosition = self.position.copy()
+
+        if theta is not None:
+            self.theta = theta   # atualiza direction internamente
+        else:
+            # mantém direção atual
+            pass
+
+        self.oldTimestamp = self.newTimestamp
+        self.newTimestamp = timestamp
+        self.dT = max(self.newTimestamp - self.oldTimestamp, 1e-3)
+
+        self.updateBbox()
+        self.viewBall.updateViewBot(Point2D(x, y))
+
+        # NÃO CHAMA update_kalman
+        self.status = False
+
     # ======================================================================
     # 🔹 Filtro de Kalman (estado completo)
     # ======================================================================
@@ -236,11 +259,16 @@ class Ball:
     # 🔹 Previsão
     # ======================================================================
     def predict(self, timestamp):
-        if not self.kalman_initialized:
+        # Se o Kalman nunca foi inicializado, devolve estado atual sem previsão
+        if not self.kalman_initialized or self.kalman_last_time is None:
             return self.position[0], self.position[1], self.theta
 
         # dt relativo ao último UPDATE real, não altera estado
-        dt = max(timestamp - self.kalman_last_time, 1e-3)
+        dt = timestamp - self.kalman_last_time
+        if dt < 0:
+            dt = 0.0
+        elif dt < 1e-3:
+            dt = 1e-3
 
         F = np.array([
             [1, 0, 0, dt, 0],
@@ -252,10 +280,9 @@ class Ball:
 
         # Predição *sem alterar o filtro*
         x_pred = F @ self.kalman_state
-        # Se quiser, pode computar P também:
-        # P_pred = F @ self.kalman_P @ F.T + self.kalman_Q
 
         return x_pred[0,0], x_pred[1,0], x_pred[2,0]
+
 
 
 

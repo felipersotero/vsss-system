@@ -1788,7 +1788,7 @@ class VisionSystem:
                         bot.updtPositionImg(xi, yi, ri)
                         bot.setStatus(True)
                         bot.setRadius(rcm)
-                        bot.setColor(colorT=self.allyColor, colorP=c1, colorS=c2)
+                        bot.setColor(colorT=self.allyColor, colorP=Color_p, colorS=Color_s)
                         self.draw_player_circle(self.frameResult, bot)
                         self.draw_player_virtual(bot)
                         self.enemiesCount += 1
@@ -2144,11 +2144,27 @@ class VisionSystem:
                                 (ID_Team.TEAM_ENEMY, self.enemyTeam)]:
             for bot in team_list:
                 # safe_call para cada robô individual
-                self._safe_call(
+                status, wnd = self._safe_call(
                     self._process_single_bot,
                     img, img_shape, timestamp, bot, team,
                     name=f"search_bot_{team.name}_{bot.id}"
                 )
+
+                if not bot.getStatus():
+                    state_pred, _ = bot.predict_with_cov(timestamp)
+
+                    # Estados previstos
+                    x_pred = state_pred[0,0]
+                    y_pred = state_pred[1,0]
+                    theta_pred = state_pred[2,0]
+
+                    #Claculo da direção
+                    direc = np.array([np.cos(theta_pred), np.sin(theta_pred)])
+
+                    bot.setPosition(x_pred, y_pred,direc, wnd,time=timestamp)
+                    bot.setStatus(False)
+
+
 
     def _process_single_bot(self, img, img_shape, timestamp, bot, team):
         """
@@ -2158,7 +2174,7 @@ class VisionSystem:
             img_shape=img_shape,
             team=team,
             robot_id=bot.id,
-            timestamp=timestamp
+            t_now=timestamp  # Corrigido para 't_now'
         )
 
         x_roi, y_roi, w_roi, h_roi = roi
@@ -2169,41 +2185,277 @@ class VisionSystem:
         y0 = max(0, min(y_roi, H-1))
         x1 = max(0, min(x_roi + w_roi, W))
         y1 = max(0, min(y_roi + h_roi, H))
-
-        wnd = img[y0:y1, x0:x1]
-
-        # Atualiza filtro do robô
-        self.search_bot(img=wnd, roi=roi, bot=bot.id, timestamp=timestamp, debug=self.debug)
-
-
-    def search_bot(self, img, roi, bot:ID_Robots, timestamp, debug=False):
-        '''
-            Método de busca de um determinado robô numa janela e considerando informações pertinentes.
-
-            Variáveis:
-            - wnd: janela da região de interesse
-            - wnd_extrem: coordenada extrema esquerda da janela, para ser utilizada no processo de salvar 
-             a posição do robô.
-            - timestamp: tempo atual
-
-        '''
         
-        pass 
+        w_roi = x1 - x0
+        h_roi = y1 - y0
 
-    def search_ball(self, wnd, roi, timestamp, debug=False) -> bool:
-        '''
-        Função responsável por procurar pela bola na janela indicada
-        '''
-        # puxo as predições de cada robô
-        img_shape = wnd.shape[:2]
+        # Chamar search_bot com a ROI correta
+        self.search_bot(
+            img=img, 
+            roi=(x0, y0, w_roi, h_roi), 
+            bot_id=bot.id, 
+            timestamp=timestamp, 
+            debug=self.debug
+        )
 
-        # verifico na janela se o robô está presente e puxo as informações dele
+    def search_bot(self, img, roi, bot_id: ID_Robots, timestamp, debug=False) -> bool:
+        """
+        Detecta um robô específico em uma janela (ROI) da imagem.
+        Baseado na lógica de detect_players, mas focada em um robô específico.
+        
+        Parâmetros:
+            img: janela completa do campo (fieldReduce)
+            roi: (x, y, w, h) da região de interesse dentro de img
+            bot_id: identificador do robô a ser detectado
+            timestamp: tempo atual
+            debug: modo de depuração
+        """
+        try:
+            x0, y0, w0, h0 = roi
+            
+            # Verifica se a ROI está dentro dos limites
+            if (x0 < 0 or y0 < 0 or 
+                x0 + w0 > img.shape[1] or 
+                y0 + h0 > img.shape[0] or
+                w0 <= 0 or h0 <= 0):
+                return False, None
 
-        #Se sim atualizo as informações do filtro
+            window = img[y0:y0+h0, x0:x0+w0]
+            
+            if window is None or window.size == 0:
+                return False, None
 
-        pass 
+            # Determinar time do robô
+            if bot_id in [ID_Robots.ROBOT_ALLY_GOAL, ID_Robots.ROBOT_ALLY_1, ID_Robots.ROBOT_ALLY_2]:
+                team = ID_Team.TEAM_ALLY
+                team_list = self.allyTeam
+                color_lower, color_upper = self.ally_lower_bound, self.ally_upper_bound
+            else:
+                team = ID_Team.TEAM_ENEMY
+                team_list = self.enemyTeam
+                color_lower, color_upper = self.enemy_lower_bound, self.enemy_upper_bound
 
+            # Obter o objeto robô
+            bot = team_list[bot_id]
+            
+            # Converter para HSV
+            hsv = cv2.cvtColor(window, cv2.COLOR_BGR2HSV)
+            
+            # Máscaras de cor
+            mask_team = cv2.inRange(hsv, color_lower, color_upper)
+            
+            # Operações morfológicas
+            ellipse5 = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
+            mask_team = cv2.erode(mask_team, ellipse5, iterations=1)
+            mask_team = cv2.morphologyEx(mask_team, cv2.MORPH_CLOSE, ellipse5)
+            
+            # Encontrar contornos
+            contours, _ = cv2.findContours(mask_team, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+            if not contours:
+                return False, None
+
+            # Pegar o maior contorno
+            main_contour = max(contours, key=cv2.contourArea)
+            (x_main, y_main), r_main = cv2.minEnclosingCircle(main_contour)
+            
+            # Verificar tamanho mínimo
+            mainColorRadius = (7.5 / 4) * np.sqrt(5) * self.prop_px_cm
+            if r_main < 0.5 * mainColorRadius:
+                return False, None
+
+            # Coordenadas na imagem completa
+            x_img = int(x_main + x0)
+            y_img = int(y_main + y0)
+            
+            # Para robôs aliados, verificar cores secundárias
+            if team == ID_Team.TEAM_ALLY:
+                # Definir cores baseado no ID do robô
+                if bot_id == ID_Robots.ROBOT_ALLY_GOAL:
+                    color1, color2 = self.goalAllyColor1, self.goalAllyColor2
+                elif bot_id == ID_Robots.ROBOT_ALLY_1:
+                    color1, color2 = self.atk1AllyColor1, self.atk1AllyColor2
+                else:  # ROBOT_ALLY_2
+                    color1, color2 = self.atk2AllyColor1, self.atk2AllyColor2
+                
+                # Verificar se ambas as cores estão presentes
+                if not self.detect_ally_robot(window, color1, color2):
+                    return False, None
+
+            # Calcular direção (simplificado - pode ser aprimorado)
+            direction = np.array([1.0, 0.0])  # Direção padrão
+            
+            # Transformar para coordenadas virtuais
+            xv, yv = self.transformPoint(np.array([x_img, y_img]))
+            xcm, ycm = self.getPointVirtual(np.array([xv, yv]))
+            
+            # Raio do robô em cm
+            rcm = 5.30
+            
+            # Atualizar o robô
+            bot.setPosition(xcm, ycm, direction, window, time=timestamp)
+            bot.updtPositionImg(x_img, y_img, r_main)
+            bot.setStatus(True)
+            bot.setRadius(rcm)
+            
+            # Configurar cores
+            if team == ID_Team.TEAM_ALLY:
+                bot.setColor(colorT=self.allyColor, colorP=color1, colorS=color2)
+            else:
+                bot.setColor(colorT=self.enemyColor, colorP=self.enemyColor, colorS=self.enemyColor)
+
+            # Desenhar na imagem
+            self.draw_player_circle(self.frameResult, bot)
+            self.draw_player_virtual(bot)
+            
+            if debug:
+                print(f"[search_bot] {bot_id.name} detectado em ({xcm:.1f}, {ycm:.1f})")
+
+            return True, window
+
+        except Exception as e:
+            print(f"[search_bot] Erro ao detectar {bot_id}: {e}")
+            return False, None
+            
+    def search_ball(self, img, roi, timestamp, debug=False):
+        """
+        Detecção leve da bola usando ROI predita.
+        img  : região do campo (fieldReduce)
+        roi  : (x, y, w, h) em coordenadas da própria img
+        """
+
+        if img is None:
+            return False
+
+        # --- Extrai ROI ---
+        x0, y0, w0, h0 = roi
+        h_img, w_img = img.shape[:2]
+
+        # Ajuste seguro (clamp)
+        x0 = max(0, min(x0, w_img - 1))
+        y0 = max(0, min(y0, h_img - 1))
+        w0 = max(1, min(w0, w_img - x0))
+        h0 = max(1, min(h0, h_img - y0))
+
+        wnd = img[y0:y0+h0, x0:x0+w0]
+        if wnd.size == 0:
+            return self._predict_ball_fallback(timestamp)
+
+        # HSV
+        hsv = cv2.cvtColor(wnd, cv2.COLOR_BGR2HSV)
+
+        # Segmentação pela cor da bola
+        mask = cv2.inRange(hsv, self.ball_lower_bound, self.ball_upper_bound)
+
+        # Morfologia
+        struct = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
+        mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, struct)
+        mask = cv2.erode(mask, struct, iterations=1)
+
+        # Contornos dentro da ROI
+        contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+        if not contours:
+            return self._predict_ball_fallback(timestamp)
+
+        # Maior contorno → bola
+        c = max(contours, key=cv2.contourArea)
+        (xb_local, yb_local), _ = cv2.minEnclosingCircle(c)
+
+        # Coordenadas globais
+        xb = int(xb_local + x0)
+        yb = int(yb_local + y0)
+
+        # Conversão para virtual
+        xv, yv = self.transformPoint(np.array([xb, yb]))
+        xcm, ycm = self.getPointVirtual(np.array([xv, yv]))
+
+        # Atualização (detecção real → update Kalman)
+        rb = self.ballRadiusP
+        self.ball.updatePosition(xcm, ycm, rb, timestamp)
+        self.ball.setImgPosition(xb, yb, rb)
+
+        # --- Desenho na imagem real ---
+        rb_px = int(rb / self.prop_px_cm)
+        cv2.circle(self.frameResult, (xb, yb), rb_px + 2, (0, 0, 255), 2)
+        cv2.putText(self.frameResult, "B", (xb, yb - rb_px - 10),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.4, (0, 0, 255), 1)
+
+        # --- Desenho na imagem virtual ---
+        xv_int, yv_int = int(xv), int(yv)
+        cv2.circle(self.virtualImg, (xv_int, yv_int), 4, (0, 255, 255), -1)
+
+        return True
     
+
+    def _predict_bot_fallback(self, bot, timestamp, mark_detected=False):
+        """
+        Atualiza o objeto bot usando a predição do Kalman sem alterar o filtro.
+        - bot: instância de Robot
+        - timestamp: tempo atual (mesmo que passou para predict_with_cov)
+        - mark_detected: se True marca bot.detected = True (útil se quiser desenhar)
+        """
+        try:
+            st_pred, P_pred = bot.predict_with_cov(timestamp)  # (6x1), (6x6)
+            x_pred = float(st_pred[0, 0])
+            y_pred = float(st_pred[1, 0])
+            theta_pred = float(st_pred[2, 0])
+
+            # Use a API do Robot para atualizar sem tocar no Kalman
+            # signature: setPositionNoKalman(x, y, theta, timestamp, image=None)
+            bot.setPositionNoKalman(x_pred, y_pred, theta_pred, timestamp, image=None)
+
+            # status: por padrão fallback não é "detectado" (mas escolha sua política)
+            bot.detected = bool(mark_detected)
+
+            # update bbox/view já feito por setPositionNoKalman
+            # opcional: atualizar imagem virtual (ponto) para debug
+            if hasattr(self, "virtualImg"):
+                xi, yi = self.getImageIndice((x_pred, y_pred))
+                bot.updtPositionImg(int(xi), int(yi), int(bot.radius * 3))  # ri visual aproximado
+
+            return True
+        except Exception as e:
+            print(f"[VS][_predict_bot_fallback] erro ao aplicar fallback para bot {getattr(bot,'id', '?')}: {e}")
+            return False
+
+
+    def _predict_ball_fallback(self, timestamp, mark_detected=False):
+        """
+        Predição fallback para a bola usando o Kalman da bola.
+        Usa ball.predict/predict_with_cov e atualiza com setPositionNoKalman da Ball.
+        """
+        try:
+            # ball tem predict_with_cov? seu Ball tem predict(timestamp) (retorna x,y,theta)
+            # se tiver predict_with_cov, prefira-o para obter P_pred; aqui usamos predict_with_cov se existir
+            if hasattr(self.ball, "predict_with_cov"):
+                st_pred, P_pred = self.ball.predict_with_cov(timestamp)
+                x_pred = float(st_pred[0, 0])
+                y_pred = float(st_pred[1, 0])
+                theta_pred = float(st_pred[2, 0])
+            else:
+                x_pred, y_pred, theta_pred = self.ball.predict(timestamp)
+
+            # converter predição virtual para CM já está no estado do filtro (x,y são cm)
+            # usar API da bola que você definiu: setPositionNoKalman(x, y, r, timestamp=0.0, theta=None)
+            rb = getattr(self, "ballRadiusP", self.ball.radius)
+            self.ball.setPositionNoKalman(x_pred, y_pred, rb, timestamp, theta=theta_pred)
+
+            self.ball.detected = bool(mark_detected)
+
+            # debug: atualizar pos em imagem real
+            if hasattr(self, "virtualImg"):
+                xi, yi = self.getImageIndice((x_pred, y_pred))
+                try:
+                    self.ball.setImgPosition(int(xi), int(yi), int(rb / self.prop_px_cm))
+                except Exception:
+                    pass
+
+            return True
+        except Exception as e:
+            print(f"[VS][_predict_ball_fallback] erro: {e}")
+            return False
+
+        
     def filtered_detection(self, img, tms, debug=False):
         """
         Detecção leve de robôs e bola usando predição do Kalman para definir ROI.
@@ -2218,6 +2470,9 @@ class VisionSystem:
         if img is None:
             return
 
+        #Zera a imagem virtual
+        self.virtualImg = self.virtual.copy()
+
         # --- Ajusta limites da janela viewCapture ---
         x_w, y_w, w_w, h_w = self.viewCapture.cooVetor
         h_img, w_img = img.shape[:2]
@@ -2231,11 +2486,13 @@ class VisionSystem:
         self.fieldReduce = img[y_w:y_w+h_w, x_w:x_w+w_w].copy()
         self.frameResult = self.fieldReduce.copy()
 
+        shape = self.fieldReduce.shape[:2]
+
         # --- Detectar a bola (seguro) ---
         self._safe_call(
             self.search_ball,
             img=self.fieldReduce,
-            roi=None,  # você pode calcular ROI se necessário
+            roi=self.predictBall(shape, tms),  # você pode calcular ROI se necessário
             timestamp=tms,
             debug=self.debug,
             name="search_ball"

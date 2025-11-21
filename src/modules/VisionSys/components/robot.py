@@ -166,6 +166,32 @@ class Robot:
 
     def setRadius(self, r):
         self.radius = r
+
+    def setPositionNoKalman(self, x, y, theta, timestamp, image=None):
+        '''
+            Atualizo a posição do robô sem realziar a predição
+        '''
+        self.lastPosition = self.position.copy()
+        self.position = np.array([x, y], float)
+        self.newPosition = self.position.copy()
+
+        self.theta = theta     # atualiza direction automaticamente
+
+        self.lastTimestamp = self.newTimestamp
+        self.newTimestamp = timestamp
+        self.dT = max(self.newTimestamp - self.lastTimestamp, 1e-3)
+
+        if image is not None:
+            self.image = image
+            self.viewRect.setDimension(image.shape[1])
+
+        self.objLimit = Circle(self.radius, Point2D(x, y))
+        self.updateBbox()
+        self.viewRect.updateViewBot(Point2D(x, y))
+
+        # NADA de update do kalman
+        self.detected = False
+
     # --------------------------
     # Kalman update
     # --------------------------
@@ -188,13 +214,13 @@ class Robot:
         dt = max(timestamp - self.kalman_last_time, 1e-3)
         self.kalman_last_time = timestamp
 
-        F = np.array(
+        F = np.array([
             [1, 0, 0, dt, 0,  0],
             [0, 1, 0, 0,  dt, 0],
             [0, 0, 1, 0,  0, dt],
             [0, 0, 0, 1,  0,  0],
             [0, 0, 0, 0,  1,  0],
-            [0, 0, 0, 0,  0,  1], float)  # igual ao seu F
+            [0, 0, 0, 0,  0,  1]], float)  # igual ao seu F
 
         self.kalman_state = F @ self.kalman_state
         self.kalman_P = F @ self.kalman_P @ F.T + self.kalman_Q
@@ -241,8 +267,8 @@ class Robot:
 
         # --- 2) Calcula desvio padrão das coordenadas x e y ---
         if self.kalman_initialized:
-            std_x = np.sqrt(self.kalman_P[0, 0])
-            std_y = np.sqrt(self.kalman_P[1, 1])
+            std_x = np.sqrt(P_pred[0, 0])
+            std_y = np.sqrt(P_pred[1, 1])
         else:
             std_x = std_y = 20.0  # fallback se Kalman não inicializado
 
