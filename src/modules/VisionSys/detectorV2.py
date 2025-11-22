@@ -1,5 +1,5 @@
 # ==========================================================================================
-# MÓDULO DE FUNÇÕES PARA ALGORÍTMO DE DETECÇÃO VSS (version v3.0.40)
+# MÓDULO DE FUNÇÕES PARA ALGORÍTMO DE DETECÇÃO VSS (version v3.2)
 #==========================================================================================
 '''
     @GNOMIO: Sismtea de detecção de objetos VSS (Vision System Soccer) versão 2.2.40    
@@ -9,13 +9,15 @@
     Autor: Saulo (update)
 
     Patch Notes v3.2.2:
-    - Foi atualizaod a função de detecção que utiliza filtro de Kalman
+    - Foi atualizado a função de detecção que utiliza filtro de Kalman
     - Novo gerenciamento de cores dos jogadores
+
+    Obs: Ainda está numa versão BETA, necessário testes para verificar se está
+    corretamente funcionando!!!
 
 '''
 #importando bibliotecas necessárias para o código
 import cv2
-from matplotlib.font_manager import X11FontDirectories
 import numpy as np
 from timer import *
 import threading
@@ -2383,9 +2385,7 @@ class VisionSystem:
                 mainColor = self.enemyColor
                 teamBots = self.enemyTeam
             else:
-                team_type = "uncertain"
-                mainColor = None 
-                teamBots = None
+                continue 
 
             #Coordenadas absolutas:
             xcm, ycm = self.getPointVirtual(self.transformPoint(np.array([xi, yi])))
@@ -2662,29 +2662,32 @@ class VisionSystem:
         #counters
         self.alliesCount = self.enemiesCount = self.playersCount = 0
 
-        #Zera a imagem virtual
-        self.virtualImg = self.virtual.copy()
-
-        #Zero as máscaras de processamento
-        self.binaryBall     = np.zeros(img.shape[:2], dtype=np.uint8)
-        self.binaryAllTeam  = np.zeros(img.shape[:2], dtype=np.uint8)
-        self.binaryPlayers  = np.zeros(img.shape[:2], dtype=np.uint8)
-        self.binaryObjects  = np.zeros(img.shape[:2], dtype=np.uint8)
-
         # --- Ajusta limites da janela viewCapture ---
-        x_w, y_w, w_w, h_w = self.viewCapture.cooVetor
-        h_img, w_img = img.shape[:2]
+        if hasattr(self.viewCapture, 'cooVetor') and self.viewCapture.cooVetor is not None:
+            x_w, y_w, w_w, h_w = self.viewCapture.cooVetor
+            # Garantir que as coordenadas estão dentro dos limites da imagem
+            h_img, w_img = img.shape[:2]
+            x_w = max(0, min(x_w, w_img - 1))
+            y_w = max(0, min(y_w, h_img - 1))
+            w_w = max(1, min(w_w, w_img - x_w))
+            h_w = max(1, min(h_w, h_img - y_w))
+            self.fieldReduce = img[y_w:y_w+h_w, x_w:x_w+w_w]
+        else:
+            # Se não há viewCapture, usar a imagem inteira
+            self.fieldReduce = img
 
-        x_w = max(0, min(int(x_w), w_img - 1))
-        y_w = max(0, min(int(y_w), h_img - 1))
-        w_w = max(1, min(int(w_w), w_img - x_w))
-        h_w = max(1, min(int(h_w), h_img - y_w))
-
-        # --- Recorta ROI da imagem ---
-        self.fieldReduce = img[y_w:y_w+h_w, x_w:x_w+w_w]
-        self.frameResult = self.fieldReduce.copy()
-
+     
         shape = self.fieldReduce.shape[:2]
+        H, W = shape
+
+        self.binaryBall     = np.zeros((H, W), dtype=np.uint8)
+        self.binaryAllTeam  = np.zeros((H, W), dtype=np.uint8)
+        self.binaryPlayers  = np.zeros((H, W), dtype=np.uint8)
+        self.binaryObjects  = np.zeros((H, W), dtype=np.uint8)
+
+
+        self.frameResult = self.fieldReduce.copy()
+        self.virtualImg = self.virtual.copy()
 
         # --- Detectar a bola (seguro) ---
         self._safe_call(

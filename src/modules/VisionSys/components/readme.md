@@ -1,283 +1,149 @@
+# TreeColors
 
-
-# 🚀 **O QUE É A TREECOLORS E POR QUE EXISTE?**
-
-A ideia é simples:
-
-Quando você detecta um robô no frame, você extrai **três cores**:
-
-* **main** – geralmente a cor dominante do time ou a cor maior no topo
-* **primary** – cor de identificação principal do robô
-* **secondary** – cor auxiliar/identificadora
-
-O problema:
-
-* HSV tem ruído (sombras, reflexos, iluminação)
-* HUE é circular (0 é parecido com 179!)
-* Comparar tudo “na mão” é lento e manual
-* O pipeline roda por **ROI**, então você quer uma forma *barata* de testar candidatos
-
-A **TreeColors** resolve isso criando uma estrutura *rápida*, *em memória*, com pré-cálculo de ranges e funções de lookup quase O(1) para descobrir:
-
-👉 “Qual robô tem essa combinação de cores?”
-👉 “Quais são as cores salvas do robô X?”
-👉 “Essas cores batem com os limites permitidos do robô Y?”
-
-Ou seja: **é um dicionário inteligente com bounds + distância circular entre cores**.
+`TreeColors` é uma estrutura de dados em memória projetada para **armazenar, gerenciar e buscar cores de robôs** em sistemas de visão computacional de futebol robótico. Ela permite identificar robôs em uma imagem a partir de suas cores **principais e secundárias** com tolerâncias ajustáveis.
 
 ---
 
-# 🧠 **ESTRUTURA INTERNA**
+## 📌 Motivação
 
-## **1) Dicionário principal `_store`**
+Em cenários de robótica, especialmente em **VSSS (Very Small Size Soccer Simulation)**:
 
-```python
-self._store: Dict[Any, Dict[str, Any]]
-```
+* Cada robô possui cores distintas (ex: corpo principal, detalhes primários e secundários).
+* A detecção visual precisa identificar **qual robô específico** está sendo observado, mesmo quando múltiplos robôs estão presentes na mesma ROI (Região de Interesse).
+* Para isso, precisamos de:
 
-Cada entrada é:
+  * Um cadastro das cores dos robôs.
+  * Filtros rápidos para descartar candidatos que não correspondem.
+  * Métricas de similaridade para escolher o robô mais provável.
 
-```
-robot_id → {
-    team: ...
-    colors: { main: HSV, primary: HSV, secondary: HSV },
-    bounds: { main: (low, high), ... },
-    tolerances: { hue_tol, sat_tol, val_tol }
-}
-```
-
-**Por que isso é top?**
-Porque tudo fica em memória → lookup instantâneo → zero custo de disco.
+`TreeColors` resolve esse problema fornecendo uma **lookup table otimizada por cores** com suporte a tolerâncias e métricas de correspondência.
 
 ---
 
-# 🎯 **2) Pré-cálculo de bounds (faixa HSV permitida)**
+## ⚙ Estrutura de Dados
 
-Cada cor (main/primary/secondary) recebe:
+Cada robô registrado no `TreeColors` possui:
 
-```python
-lower = [h - tolH, s - tolS, v - tolV]
-upper = [h + tolH, s + tolS, v + tolV]
-```
+* **Identificador**: `(team_id, robot_id)`
 
-==> **Mas o HUE é circular**, então usamos módulo 180 para wrap-around.
+  * `team_id`: 0 = aliado, 1 = inimigo
+  * `robot_id`: 0 = goleiro, 1 = atacante1, 2 = atacante2
+* **Cores HSV**:
 
-**Por que bounds?**
-Porque testar se uma cor está dentro de um range é ridiculamente barato:
+  * `main`: cor principal do robô
+  * `primary`: cor secundária principal
+  * `secondary`: cor secundária menor
+* **Bounds pré-calculados**:
 
-```python
-if H está entre H_low e H_high  
-   E S está entre S_low e S_high  
-   E V está entre V_low e V_high:
-          passou!
-```
+  * Faixas de HSV para cada cor considerando tolerâncias (`hue_tol`, `sat_tol`, `val_tol`)
+* **Metadados**:
 
-Esse teste evita você rodar distância circular em cada robô → **ganho enorme de desempenho**.
+  * Tolerâncias de cor
+  * Informações adicionais, se necessário
 
 ---
 
-# 🔄 **3) Função de distância circular no HUE**
+## 🔹 Funcionalidades Principais
 
-```python
-def hue_circ_dist(h1, h2):
-    d = abs(h1 - h2)
-    return min(d, 180 - d)
-```
-
-Por que isso importa?
-
-* Se um robô é vermelho (H = 175) e o outro vermelho (H = 5)
-  → diferença real é 10°, mas diferença linear é 170°
-  → circular = **perfeito**
-
----
-
-# 🏎️ **4) _score_distance()**
-
-A métrica fina usada **só nos candidatos que passaram no bound**.
-
-```python
-score = w_hue*dh + w_sat*ds + w_val*dv
-```
-
-* HUE tem peso maior (é mais confiável)
-* Saturation/Value têm influência pequena (ruído de iluminação)
-
-**Por que isso?**
-Porque HSV tem tolerância diferente por canal:
-
-* Hue carrega a identidade da cor
-* Saturation/Value flutuam mais por sombras/iluminação
-
-Resultado: um número tipo 0..200.
-
-Menor = mais parecido.
-
----
-
-# 🔍 **5) find_by_colors()**
-
-Esse é o coração da classe.
-
-Pipeline interno:
-
-### **(1) Filtragem por bounds — baratíssimo**
-
-Vai para cada robô armazenado e checa:
-
-```
-main dentro do bound?
-primary dentro do bound?
-secondary dentro do bound?
-```
-
-Se sim → entra como candidato.
-
-### **(2) Se nenhum candidato passou**
-
-Relaxamos:
-
-* Aceitar somente main + primary
-* Ou até só main (dependendo da config)
-
-Isso evita perder robôs quando a secondary estiver ruim.
-
-### **(3) Métrica final**
-
-Entre os candidatos restantes, calcula score via `_score_distance`.
-
-### **(4) Pega o menor score**
-
-Se estiver abaixo do threshold (200 por padrão):
-
-```python
-return { robot_id, team, score, colors }
-```
-
-senão:
-
-```python
-return None
-```
-
----
-
-# 📦 **6) get_colors(robot_id)**
-
-Retorna:
-
-```
-array([
-   [H,S,V]  main,
-   [H,S,V]  primary,
-   [H,S,V]  secondary
-])
-```
-
-Sempre na ordem correta, exatamente como você pediu.
-
----
-
-# 🧱 **7) update_robot_colors()**
-
-Permite atualizar cores dos inimigos **durante o jogo**.
-
-Isso é MUITO útil se:
-
-* iluminação muda
-* o sistema começa a convergir para cores reais do frame live
-
-E automaticamente recalcula bounds.
-
----
-
-# 🤝 **8) integrate com seu pipeline**
-
-## No início do jogo:
+### 1. Cadastro de robôs
 
 ```python
 tree = TreeColors()
-tree.add_robot(robot.id, robot.team, main_hsv, pri_hsv, sec_hsv)
+tree.add_robot(team_id, robot_id, main_hsv, primary_hsv, secondary_hsv)
 ```
 
-## Dentro de search_bot() ou no pipeline pós-detecção:
+* Armazena as cores do robô e pré-calcula **intervalos de tolerância** (bounds) para buscas rápidas.
+* Pode atualizar um robô existente usando `replace=True`.
+
+---
+
+### 2. Atualização de cores
 
 ```python
-result = tree.find_by_colors(main, primary, secondary)
-
-if result:
-    rob_id = result['robot_id']
-    # acabou, você encontrou o robô!
+tree.update_robot_colors(team_id, robot_id, main_hsv, primary_hsv, secondary_hsv)
 ```
 
-## Quando quiser salvar as cores do robô detectado:
+* Permite ajustar cores de um robô existente e recalcular os bounds.
+
+---
+
+### 3. Consulta de cores
 
 ```python
-tree.update_robot_colors(robot_id, main, pri, sec)
+colors = tree.get_colors(team_id, robot_id)
+```
+
+* Retorna um array com `[main, primary, secondary]` do robô.
+
+---
+
+### 4. Busca por cores (`matching`)
+
+```python
+match = tree.find_by_colors(main_hsv, primary_hsv, secondary_hsv)
+```
+
+* Recebe um conjunto de cores detectadas de um candidato visual.
+* Filtra rapidamente candidatos usando os **bounds HSV**.
+* Calcula uma métrica de distância de cor (`_score_distance`) considerando:
+
+  * Distância circular do Hue
+  * Diferenças de Saturação e Valor
+* Retorna o robô mais provável (`robot_id`, `team`, `score`, `colors`) ou `None`.
+
+💡 Caso nenhum robô passe no filtro completo, o filtro é relaxado para **apenas main + primary**, evitando falsos negativos.
+
+---
+
+### 5. Gerenciamento
+
+* `remove_robot(team_id, robot_id)` → remove um robô.
+* `list_robots()` → lista todos os robôs cadastrados.
+* `clear()` → limpa a árvore.
+
+---
+
+## 🔹 Considerações Técnicas
+
+1. **Hue circular**
+
+   * Como o Hue em OpenCV varia de 0 a 179, o cálculo considera wrap-around para comparação.
+2. **Eficiência**
+
+   * O filtro por bounds é aplicado antes do cálculo de score para evitar computações desnecessárias.
+3. **Tolerâncias ajustáveis**
+
+   * Permite lidar com variações de iluminação ou pequenas diferenças de cor entre robôs reais e a calibração.
+
+---
+
+## 📌 Exemplo de Uso
+
+```python
+tree = TreeColors()
+
+# Adiciona robôs
+tree.add_robot(0, 0, [60, 200, 200], [50, 180, 180], [40, 150, 150])  # aliado goleiro
+tree.add_robot(1, 0, [0, 200, 200], [10, 180, 180], [20, 150, 150])  # inimigo goleiro
+
+# Detecta cores de um candidato
+candidate_main = [62, 198, 210]
+candidate_primary = [48, 175, 190]
+candidate_secondary = [41, 152, 148]
+
+match = tree.find_by_colors(candidate_main, candidate_primary, candidate_secondary)
+
+if match:
+    print(f"Robô detectado: Team={match['team']}, Robot={match['robot_id']}, Score={match['score']}")
 ```
 
 ---
 
-# 🧠 **DECISÕES DE ALGORITMO — POR QUE FEITO ASSIM?**
+## ✅ Benefícios
 
-## **1) Dicionário ao invés de árvore real**
-
-Porque você trabalha com algo como ~6 robôs.
-Estruturas como *k-d trees*, *quadtrees* ou *BK trees* seriam overhead.
-
-Dicionário → acesso O(1).
-Bounds + filtragem → O(robôs) = 6.
-Score refinado → geralmente 1~3 candidatos.
-
-Ou seja: **máximo performance com mínimo overhead**.
-
----
-
-## **2) Pré-cálculo dos bounds**
-
-Se você calculasse cada bound a cada lookup → ~200 operações por frame → desperdício.
-
-Pré-calcular torna o lookup muito rápido.
-
----
-
-## **3) Bound check antes da distância**
-
-É *crucial*.
-
-Imagine que ROI inclui 4 robôs.
-Você extrai uma cor qualquer.
-
-Bounds filtram 3 robôs imediatamente.
-Só 1 vai pra métrica.
-
-É isso que deixa o pipeline viável em 30/60 FPS.
-
----
-
-## **4) Distância circular apenas quando necessário**
-
-Evita custo desnecessário:
-
-* sem trigonometria
-* sem raiz quadrada
-* sem operações lentas
-
-A fórmula é leve.
-
----
-
-# 🏁 **RESUMO MENTAL**
-
-Quando você extrai cores do robô detectado:
-
-1. **TreeColors.find_by_colors()**
-2. Bound filter → rápido
-3. Score → preciso
-4. Retorna robô correto
-
-Quando detectar corretamente, você salva o contorno global dele, atualiza posição, marca status True.
-
-É exatamente o que você quer para evitar processar a mesma cor repetidamente.
+* Permite **identificação robusta de robôs mesmo com múltiplos na mesma ROI**.
+* Facilita **detecção rápida** sem precisar comparar cada pixel.
+* Reduz **falsos positivos** via bounds e score.
+* Suporte a **atualização dinâmica** de cores.
 
 
