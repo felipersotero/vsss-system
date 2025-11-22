@@ -272,7 +272,7 @@ class App:
         self.emulator.load_vars()
 
     def init_emulate(self):
-        print("[APP] Emulação Iniciada")
+        print("\n[APP] Emulação Iniciada")
         self.emulator.load_vars()
         #self.emulator.show_variables()
         

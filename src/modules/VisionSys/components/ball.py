@@ -43,17 +43,14 @@ class Ball:
         self.kalman_initialized = False
         self.kalman_last_time = None
 
-        self.kalman_state = np.zeros((6, 1))
-        self.kalman_P = np.eye(6) * 500.0
+        self.kalman_state = np.zeros((5, 1))
+        self.kalman_P = np.eye(5) * 500.0
 
-        # Ruído do processo
-        self.kalman_Q = np.eye(6) * 0.05
-
-        # Ruído da medição: x, y, theta (theta tem alta incerteza!)
+        self.kalman_Q = np.eye(5) * 0.05
         self.kalman_R = np.eye(3)
-        self.kalman_R[0, 0] = 3.0
-        self.kalman_R[1, 1] = 3.0
-        self.kalman_R[2, 2] = 200.0  # θ é só derivado da posição
+        self.kalman_R[0, 0] = 3.0     # x
+        self.kalman_R[1, 1] = 3.0     # y
+        self.kalman_R[2, 2] = 300.0   # theta é ruidoso
 
         # Cor da bola (médio HSV)
         self.color = None
@@ -150,6 +147,29 @@ class Ball:
         self.updateBbox()
         self.status = True
 
+    def setPositionNoKalman(self, x, y, r, timestamp=0.0, theta=None):
+        self.radius = float(r)
+
+        self.lastPosition = self.position.copy()
+        self.position = np.array([x, y], dtype=float)
+        self.newPosition = self.position.copy()
+
+        if theta is not None:
+            self.theta = theta   # atualiza direction internamente
+        else:
+            # mantém direção atual
+            pass
+
+        self.oldTimestamp = self.newTimestamp
+        self.newTimestamp = timestamp
+        self.dT = max(self.newTimestamp - self.oldTimestamp, 1e-3)
+
+        self.updateBbox()
+        self.viewBall.updateViewBot(Point2D(x, y))
+
+        # NÃO CHAMA update_kalman
+        self.status = False
+
     # ======================================================================
     # 🔹 Filtro de Kalman (estado completo)
     # ======================================================================
@@ -180,41 +200,39 @@ class Ball:
 
         # Modelo de transição F
         F = np.array([
-            [1, 0, 0, dt, 0, 0],
-            [0, 1, 0, 0, dt, 0],
-            [0, 0, 1, 0, 0, dt],
-            [0, 0, 0, 1, 0, 0],
-            [0, 0, 0, 0, 1, 0],
-            [0, 0, 0, 0, 0, 1],
+            [1, 0, 0, dt, 0],   # x
+            [0, 1, 0, 0, dt],   # y
+            [0, 0, 1, 0, 0],    # theta (constante)
+            [0, 0, 0, 1, 0],    # vx
+            [0, 0, 0, 0, 1],    # vy
+        ])
+
+        # Matriz de observação H
+        H = np.array([
+            [1, 0, 0, 0, 0, 0], #x
+            [0, 1, 0, 0, 0, 0], #y
+            [0, 0, 1, 0, 0, 0] #theta
         ])
 
         # Predição
         self.kalman_state = F @ self.kalman_state
         self.kalman_P = F @ self.kalman_P @ F.T + self.kalman_Q
 
-        # Matriz de observação H
-        H = np.array([
-            [1, 0, 0, 0, 0, 0],
-            [0, 1, 0, 0, 0, 0],
-            [0, 0, 1, 0, 0, 0]
-        ])
-
         # Inovação
         y_res = z - (H @ self.kalman_state)
-
-        # Normaliza erro angular
         y_res[2, 0] = (y_res[2, 0] + np.pi) % (2 * np.pi) - np.pi
 
-        # Cálculo do ganho
+        # Ganho
         S = H @ self.kalman_P @ H.T + self.kalman_R
         K = self.kalman_P @ H.T @ np.linalg.inv(S)
 
         # Atualização
         self.kalman_state += K @ y_res
-        self.kalman_P = (np.eye(6) - K @ H) @ self.kalman_P
+        self.kalman_P = (np.eye(5) - K @ H) @ self.kalman_P
 
-        # sincroniza θ interno com θ filtrado
+        # Atualiza θ interno
         self.theta = float(self.kalman_state[2, 0])
+
 
     # ======================================================================
     # 🔹 Propriedades filtradas
@@ -222,14 +240,10 @@ class Ball:
 
     @property
     def position_filtered(self):
-        if not self.kalman_initialized:
-            return self.position
         return self.kalman_state[0:2, 0]
 
     @property
     def theta_filtered(self):
-        if not self.kalman_initialized:
-            return self.theta
         return self.kalman_state[2, 0]
 
     @property
@@ -239,36 +253,85 @@ class Ball:
 
     @property
     def velocity_filtered(self):
-        if not self.kalman_initialized:
-            return np.array([0.0, 0.0])
         return self.kalman_state[3:5, 0]
-
-    @property
-    def omega_filtered(self):
-        if not self.kalman_initialized:
-            return 0.0
-        return self.kalman_state[5, 0]
 
     # ======================================================================
     # 🔹 Previsão
     # ======================================================================
+    def predict(self, timestamp):
+        # Se o Kalman nunca foi inicializado, devolve estado atual sem previsão
+        if not self.kalman_initialized or self.kalman_last_time is None:
+            return self.position[0], self.position[1], self.theta
 
-    def predict_position(self, dt=0.05):
-        """Prediz próxima posição considerando também theta."""
-        if not self.kalman_initialized:
-            return self.position
+        # dt relativo ao último UPDATE real, não altera estado
+        dt = timestamp - self.kalman_last_time
+        if dt < 0:
+            dt = 0.0
+        elif dt < 1e-3:
+            dt = 1e-3
 
         F = np.array([
-            [1, 0, 0, dt, 0, 0],
-            [0, 1, 0, 0, dt, 0],
-            [0, 0, 1, 0, 0, dt],
-            [0, 0, 0, 1, 0, 0],
-            [0, 0, 0, 0, 1, 0],
-            [0, 0, 0, 0, 0, 1]
+            [1, 0, 0, dt, 0],
+            [0, 1, 0, 0, dt],
+            [0, 0, 1, 0, 0],
+            [0, 0, 0, 1, 0],
+            [0, 0, 0, 0, 1],
         ])
 
-        predicted = F @ self.kalman_state
-        return predicted[:2, 0]
+        # Predição *sem alterar o filtro*
+        x_pred = F @ self.kalman_state
+
+        return x_pred[0,0], x_pred[1,0], x_pred[2,0]
+
+
+
+
+    def get_roi(self, image_shape, t_now, scale_std=3):
+        """
+        Retorna as dimensões do ROI centrado na previsão do Kalman,
+        baseado nas variâncias do Kalman.
+
+        Parâmetros:
+            image_shape : tuple(int, int)
+                (altura, largura) da imagem
+            scale_std : float
+                Multiplicador da raiz quadrada da variância para definir o ROI
+            t_now = timestamp atual para realizar a predição
+        Retorna:
+            tuple: (x, y, w, h) coordenadas do topo-esquerdo e tamanho do ROI
+        """
+        # --- 1) Posição predita ---
+        x_pred, y_pred, _ = self.predict(t_now)
+        x_c, y_c = x_pred, y_pred
+
+        # --- 2) Calcula desvio padrão das coordenadas x e y ---
+        if self.kalman_initialized:
+            std_x = np.sqrt(self.kalman_P[0, 0])
+            std_y = np.sqrt(self.kalman_P[1, 1])
+        else:
+            std_x = std_y = 20.0  # fallback se Kalman não inicializado
+
+        # --- 3) Define tamanho do ROI ---
+        w_roi = int(scale_std * std_x * 2)  # multiplicado por 2 para pegar ±std
+        h_roi = int(scale_std * std_y * 2)
+
+        # Impor valores mínimos para impedir estrangulamento
+        w_roi = max(w_roi, 12)
+        h_roi = max(w_roi, 14)
+        
+        # --- 4) Topo-esquerdo ---
+        x = int(x_c - w_roi // 2)
+        y = int(y_c - h_roi // 2)
+
+        # --- 5) Ajusta limites à imagem ---
+        h_img, w_img = image_shape[:2]
+        x = max(0, min(x, w_img - 1))
+        y = max(0, min(y, h_img - 1))
+        w_roi = min(w_roi, w_img - x)
+        h_roi = min(h_roi, h_img - y)
+
+        return x, y, w_roi, h_roi
+
 
     # ======================================================================
     # 🔹 Utilitários

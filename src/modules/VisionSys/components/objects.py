@@ -1047,7 +1047,6 @@ class CameraCaptureThread(threading.Thread):
         #parando
         self._is_running = False
 
-        
 
 #==================================== CLASSES PARA INTERFACE =========================
 #definindo função para indicar estado do controlador

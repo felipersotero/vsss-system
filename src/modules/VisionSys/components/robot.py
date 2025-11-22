@@ -133,7 +133,7 @@ class Robot:
     # --------------------------
     # Position update
     # --------------------------
-    def setPosition(self, x, y, r, image, time, wheel_velocities=None):
+    def setPosition(self, x, y, direction, image, time, wheel_velocities=None):
         self.lastTimestamp = self.newTimestamp
         self.newTimestamp = time
         self.dT = self.newTimestamp - self.lastTimestamp if self.lastTimestamp != 0 else 0.0
@@ -146,12 +146,8 @@ class Robot:
         # else: ignore noise
 
         self.newPosition = self.position.copy()
-        movement = self.newPosition - self.lastPosition
 
-        if np.linalg.norm(movement) > 0.1:
-            self.direction = movement
-
-        self.radius = float(r)
+        self.direction = direction 
         self.image = image
         if image is not None:
             self.viewRect.setDimension(image.shape[1])
@@ -162,25 +158,55 @@ class Robot:
         self.updateBbox()
 
         # Update Kalman
-        self.update_kalman([x, y, self.theta], time)
+        self.update_kalman([self.position[0], self.position[1], self.theta], time)
 
-    def updatePosition(self, x, y, r, image, time, wheel_velocities=None):
-        self.setPosition(x, y, r, image, time)
+
+    def updatePosition(self, x, y, direction, image, time, wheel_velocities=None):
+        self.setPosition(x, y, direction, image, time)
+
+    def setRadius(self, r):
+        self.radius = r
+
+    def setPositionNoKalman(self, x, y, theta, timestamp, image=None):
+        '''
+            Atualizo a posição do robô sem realziar a predição
+        '''
+        self.lastPosition = self.position.copy()
+        self.position = np.array([x, y], float)
+        self.newPosition = self.position.copy()
+
+        self.theta = theta     # atualiza direction automaticamente
+
+        self.lastTimestamp = self.newTimestamp
+        self.newTimestamp = timestamp
+        self.dT = max(self.newTimestamp - self.lastTimestamp, 1e-3)
+
+        if image is not None:
+            self.image = image
+            self.viewRect.setDimension(image.shape[1])
+
+        self.objLimit = Circle(self.radius, Point2D(x, y))
+        self.updateBbox()
+        self.viewRect.updateViewBot(Point2D(x, y))
+
+        # NADA de update do kalman
+        self.detected = False
 
     # --------------------------
     # Kalman update
     # --------------------------
-    def update_kalman(self, z_list, timestamp):
-        """
-        Kalman completo para estado: [x, y, theta, vx, vy, omega]
-        Medição: [x, y, theta]
-        """
-        x, y, theta_meas = z_list
-        z = np.array([[x], [y], [theta_meas]])
+    @staticmethod
+    def _angle_diff(a, b):
+        d = a - b
+        return (d + np.pi) % (2*np.pi) - np.pi
 
-        # Inicialização
+
+    def update_kalman(self, z_list, timestamp):
+        x, y, theta_meas = z_list
+        z = np.array([[x],[y],[theta_meas]])
+
         if not self.kalman_initialized:
-            self.kalman_state[:3, 0] = [x, y, theta_meas]
+            self.kalman_state[:3,0] = [x, y, theta_meas]
             self.kalman_initialized = True
             self.kalman_last_time = timestamp
             return
@@ -188,11 +214,97 @@ class Robot:
         dt = max(timestamp - self.kalman_last_time, 1e-3)
         self.kalman_last_time = timestamp
 
-        # -----------------------------------------------------------
-        # 1) PREDICTION
-        # -----------------------------------------------------------
+        F = np.array([
+            [1, 0, 0, dt, 0,  0],
+            [0, 1, 0, 0,  dt, 0],
+            [0, 0, 1, 0,  0, dt],
+            [0, 0, 0, 1,  0,  0],
+            [0, 0, 0, 0,  1,  0],
+            [0, 0, 0, 0,  0,  1]], float)  # igual ao seu F
 
-        # Modelo constante-velocidade
+        self.kalman_state = F @ self.kalman_state
+        self.kalman_P = F @ self.kalman_P @ F.T + self.kalman_Q
+
+        H = np.array([
+            [1, 0, 0, 0, 0, 0],   # mede x
+            [0, 1, 0, 0, 0, 0],   # mede y
+            [0, 0, 1, 0, 0, 0],   # mede theta
+        ], float)
+
+
+        pred = H @ self.kalman_state
+        y_residual = z - pred
+        # normaliza theta residual:
+        y_residual[2,0] = self._angle_diff(z[2,0], pred[2,0])
+
+        S = H @ self.kalman_P @ H.T + self.kalman_R
+        K = self.kalman_P @ H.T @ np.linalg.inv(S)
+
+        self.kalman_state = self.kalman_state + K @ y_residual
+        self.kalman_P = (np.eye(6) - K @ H) @ self.kalman_P
+
+
+    # Preciso realizar a conversão desses valores para a coordenada da imagem
+    def get_roi(self, image_shape, t_now, scale_std=3):
+        """
+        Retorna as dimensões do ROI centrado na previsão do Kalman,
+        baseado nas variâncias do Kalman.
+
+        Parâmetros:
+            image_shape : tuple(int, int)
+                (altura, largura) da imagem
+            scale_std : float
+                Multiplicador da raiz quadrada da variância para definir o ROI
+            t_now: timestamp atual para realizar a predição.
+        Retorna:
+            tuple: (x, y, w, h) coordenadas do topo-esquerdo e tamanho do ROI
+        """
+        # --- 1) Posição predita ---
+        st_pred, P_pred = self.predict_with_cov(t_now)
+        x_pred = st_pred[0,0]
+        y_pred = st_pred[1,0]
+
+
+        # --- 2) Calcula desvio padrão das coordenadas x e y ---
+        if self.kalman_initialized:
+            std_x = np.sqrt(P_pred[0, 0])
+            std_y = np.sqrt(P_pred[1, 1])
+        else:
+            std_x = std_y = 20.0  # fallback se Kalman não inicializado
+
+        # --- 3) Define tamanho do ROI ---
+        w_roi = int(scale_std * std_x * 2)  # multiplicado por 2 para pegar ±std
+        h_roi = int(scale_std * std_y * 2)
+
+        # Impor valores mínimos para impedir estrangulamento
+        w_roi = max(w_roi, 12)
+        h_roi = max(w_roi, 14)
+
+        # --- 4) Topo-esquerdo ---
+        x = int(x_pred - w_roi // 2)
+        y = int(y_pred - h_roi // 2)
+
+        # --- 5) Ajusta limites à imagem ---
+        h_img, w_img = image_shape[:2]
+        x = max(0, min(x, w_img - 1))
+        y = max(0, min(y, h_img - 1))
+        w_roi = min(w_roi, w_img - x)
+        h_roi = min(h_roi, h_img - y)
+
+        return x, y, w_roi, h_roi
+
+    # Recuperar predição do filtro de Kalman
+    def predict(self, time):
+        """
+        Prediz o estado futuro usando o timestamp absoluto.
+        Não altera o estado interno do filtro, apenas retorna a predição.
+        """
+
+        # tempo entre a última atualização real e a predição desejada
+        dt = time - self.kalman_last_time
+        if dt < 0:
+            dt = 0  # segurança contra timestamps invertidos
+
         F = np.array([
             [1, 0, 0, dt, 0,  0],
             [0, 1, 0, 0,  dt, 0],
@@ -202,30 +314,42 @@ class Robot:
             [0, 0, 0, 0,  0,  1],
         ], float)
 
-        self.kalman_state = F @ self.kalman_state
-        self.kalman_P = F @ self.kalman_P @ F.T + self.kalman_Q
+        predicted = F @ self.kalman_state
 
-        # -----------------------------------------------------------
-        # 2) UPDATE (measurement)
-        # -----------------------------------------------------------
+        return predicted[0,0], predicted[1,0], predicted[2,0]
 
-        H = np.array([
-            [1, 0, 0, 0, 0, 0],    # x
-            [0, 1, 0, 0, 0, 0],    # y
-            [0, 0, 1, 0, 0, 0],    # theta
-        ])
+    def predict_with_cov(self, time):
+        """
+        Retorna (state_pred, P_pred) sem alterar estado interno.
+        state_pred será um array (6,1).
+        """
+        if not self.kalman_initialized:
+            st = np.zeros((6,1))
+            st[:2,0] = self.position
+            st[2,0] = self.theta
+            P_temp = np.eye(6) * 50.0  # covariância inicial “razoável”
+            return st, P_temp
 
-        y_residual = z - H @ self.kalman_state
-        S = H @ self.kalman_P @ H.T + self.kalman_R
-        K = self.kalman_P @ H.T @ np.linalg.inv(S)
 
-        # Atualiza
-        self.kalman_state = self.kalman_state + K @ y_residual
-        self.kalman_P = (np.eye(6) - K @ H) @ self.kalman_P
-
-        # --------------------------
+        dt = max(time - self.kalman_last_time, 0.0)
+        F = np.array([
+            [1, 0, 0, dt, 0,  0],
+            [0, 1, 0, 0,  dt, 0],
+            [0, 0, 1, 0,  0, dt],
+            [0, 0, 0, 1,  0,  0],
+            [0, 0, 0, 0,  1,  0],
+            [0, 0, 0, 0,  0,  1],
+        ], float)
+        st_pred = F @ self.kalman_state
+        P_pred = F @ self.kalman_P @ F.T + self.kalman_Q
+        # normalize theta
+        st_pred[2,0] = (st_pred[2,0] + np.pi) % (2*np.pi) - np.pi
+        return st_pred, P_pred
+    
+    # --------------------------
     # Aux
     # --------------------------
+
     def updateBbox(self):
         self.objLimit = Circle(Point2D(self.position[0], self.position[1]), self.radius)
         self.bbox.attPosition(self.objLimit)
