@@ -20,9 +20,11 @@ from imports import *
 from ui.settingsMenu import *
 from ui.viewer import MyViewer, WindowsViewer
 from ui.cards import *
+
 from modules.VisionSys.components.objects import *
 from modules.control.control import Control
 from modules.communication.communication import *
+from modules.communication.ui.interface import *
 
 import threading
 import queue
@@ -75,6 +77,9 @@ class Emulator:
         self.btn_run = App.btn_run
         self.btn_stop = App.btn_stop
 
+        # Salvando instância da aplicação original
+        self.app = App
+
     # ==============================================================
     #  2. Variáveis de estado e controle
     # ==============================================================
@@ -95,13 +100,20 @@ class Emulator:
         self.frame = None
         self.errorCode = 0
 
-        self.communication = None  # será instanciada depois
+        # Classe de controle da comunicação
+        self.comm = None
+
+        # Janela de comunicação
+        self.comm_debug_window = None
+        self.should_open_comm_window = False
+
         self.hasCuda = False
         self.CudaDevice = None
         self.CudaDeviceVersion = None
         self.CUDAselected = False
 
-        self.processing_lock = threading.Lock()
+        # Tempo de comunicação
+        self.comm_send_interval = 0.02 #50 FPS
 
     # ==============================================================
     #  2.1 Processamento paralelo
@@ -114,6 +126,7 @@ class Emulator:
         # Filas separadas — independentes para UI e comunicação
         self.ui_queue = queue.Queue(maxsize=1)
         self.comm_queue = queue.Queue(maxsize=1)
+        self.control_queue = queue.Queue(maxsize=1)
 
         # Threads
         self.vision_thread = None
@@ -248,45 +261,43 @@ class Emulator:
         # Loop contínuo (~60 FPS)
         self.viewer.window.after(16, self.updateUI)
 
-    # Thread de comunicação 
     def communicationThread(self):
-        """Thread responsável por enviar dados para os módulos de controle e estratégia."""
-        print("[COMM THREAD] Iniciada.")
-        last_send = time.time()
+        """Thread principal de comunicação bidirecional."""
+        while self.running:
 
-        while self.cameraIsRunning:
+            # ============================
+            # 1) ENVIO DOS COMANDOS
+            # ============================
             try:
-                # --- Tenta obter os dados mais recentes da visão ---
-                if not self.comm_queue.empty():
-                    data = self.comm_queue.queue[-1]  # último pacote de visão
-                else:
-                    time.sleep(0.005)
-                    continue
-
-                t0 = time.time()
-
-                # --- Aqui você implementa o envio real (exemplo) ---
-                # self.controller.send(data)  # módulo de controle
-                # self.strategy.update(data)  # módulo de estratégia
-
-                # Exemplo de cálculo de tempo de envio:
-                t1 = time.time()
-                self.sendTime = (t1 - t0) * 1000.0  # em ms
-
-                # --- Log periódico opcional ---
-                if (t1 - last_send) > 1.0:
-                    print(f"[COMM THREAD] Dados enviados | SendTime: {self.sendTime:.2f} ms")
-                    last_send = t1
-
-                time.sleep(0.002)  # pequena pausa para evitar busy loop
-
+                if not self.commands_queue.empty():
+                    cmd = self.commands_queue.get_nowait()
+                    if self.comm:
+                        self.comm.send_data("espfox/cmd", cmd)
             except Exception as e:
-                print("[COMM THREAD] Erro:", e)
-                traceback.print_exc()
-                time.sleep(0.01)
-                continue
+                print(f"[Emulator] Erro ao enviar: {e}")
 
-        print("[COMM THREAD] Finalizada.")
+            # ============================
+            # 2) RECEPÇÃO DAS RESPOSTAS
+            # ============================
+            try:
+                if self.comm:
+                    responses = self.comm.get_responses()
+                    for resp in responses:
+                        # Aqui você trata o que volta da comunicação
+                        # Pode imprimir, aplicar lógica, reenviar para o controle, etc.
+                        print(f"[Emulator RX] {resp}")
+
+                        # Exemplo: repassa para o controlador real
+                        # if self.control_module:
+                        #     self.control_module.update(resp)
+            except Exception as e:
+                print(f"[Emulator] Erro ao processar RX: {e}")
+
+            # ============================
+            # 3) INTERVALO DE LOOP
+            # ============================
+            time.sleep(self.comm_send_interval if hasattr(self, "comm_send_interval") else 0.02)
+
 
     # ==============================================================
     #  3. Filas, buffers e coleções
@@ -375,7 +386,7 @@ class Emulator:
     # ==============================================================
     def _init_communication(self):
         """Inicializa o objeto de comunicação."""
-        self.communication: Communication = None
+        self.comm =  None
 
     def _init_capture_and_vision(self):
         """Cria a instância de captura e o sistema de visão."""
@@ -477,19 +488,28 @@ class Emulator:
             port_str = self.settingsTree.tree.item('I022', 'value')[0] if 'I022' in self.settingsTree.tree.get_children('') else '1883'
             port = int(port_str) if port_str.isdigit() else 1883
 
-            self.communication = Communication(use_mqtt=True, broker_address=broker, port=port)
+            self.comm = Communication(use_mqtt=True, broker_address=broker, port=port)
             print(f"[EMULADOR] Comunicação configurada via MQTT → {broker}:{port}")
 
         elif com_mode == 'serial':
             port = self.serialPort or '/dev/ttyUSB0'
-            self.communication = Communication(use_mqtt=False, serial_port=port)
+            self.comm = Communication(use_mqtt=False, serial_port=port)
             print(f"[EMULADOR] Comunicação configurada via Serial → {port}")
 
         else:
             # Nenhum modo de comunicação selecionado
             print('[EMULADOR] Comunicação desativada (nenhuma selecionada).')
-            self.communication = None
+            self.comm = None
 
+        self.should_open_comm_window = (
+            self.Mode == MODE_USB_CAM and 
+            com_mode in ['mqtt', 'serial'] and
+            self.comm is not None
+        )
+        
+        if self.should_open_comm_window:
+            print(f"[EMULADOR] Janela de comunicação será aberta - Modo: {com_mode}")
+            
         # -------------------------
         # 🔹 Foco da câmera
         # -------------------------
@@ -542,24 +562,6 @@ class Emulator:
         """.encode('utf-8')
 
         print(msg.decode('utf-8', errors='replace'))
-
-    # Método para enviar os comandos via comunicação
-    def send_data(self, queue):
-        while True:
-            try:
-                if not self.communication or not hasattr(self.communication, 'send_data'):
-                    raise RuntimeError("Comunicação não inicializada")
-                    
-                item = queue.get()
-                result = self.communication.send_data(
-                    client=self.clientMQTT,
-                    topic="vsss-ifal-pin/robots",
-                    message=item
-                )
-                queue.task_done()
-            except Exception as e:
-                print(f"Erro no envio: {e}")
-            time.sleep(0.015)
 
     # Método para inicializar o processo utilizar o sistema de visão os resultados
     def init(self):
@@ -622,6 +624,7 @@ class Emulator:
         if self.Mode == MODE_USB_CAM:
             self._init_usb_mode()
 
+
         elif self.Mode == MODE_IMAGE:
             self._init_image_mode()
 
@@ -673,14 +676,12 @@ class Emulator:
 
         # Inicia loop da UI (Tkinter)
         self.viewer.window.after(0, self.updateUI)
+        
+        # 🔹 ABRE JANELA DE COMUNICAÇÃO (se necessário)
+        if self.should_open_comm_window:
+            # Agenda a abertura para depois da UI estar estável
+            self.viewer.window.after(500, self._open_communication_window)
 
-
-
-        # Se houver comunicação configurada, inicia a thread de envio
-        if self.communication:
-            threading.Thread(
-                target=self.send_data, args=(self.commands_queue,), daemon=True
-            ).start()
 
     def _configure_focus(self):
         """Define o modo de foco de acordo com a configuração."""
@@ -697,6 +698,34 @@ class Emulator:
             else:
                 self.capture.setFocusManual(self.FocusValue)
                 print(f"[EMULADOR] Foco manual ajustado para {self.FocusValue}")
+
+    def _open_communication_window(self):
+        """Abre a janela de comunicação debug de forma assíncrona."""
+        try:
+            # ✅ CORREÇÃO: usar self.comm em vez de self.communication
+            if (self.comm_debug_window is None and 
+                self.comm is not None and  # ← CORRIGIDO
+                self.cameraIsRunning):
+                
+                # Cria a janela de comunicação
+                self.comm_debug_window = CommunicationDebugWindow(
+                    self.app.root,  # Master é a janela principal
+                    comm=self.comm,  # ← CORRIGIDO
+                    on_close_ref_clear=self._on_comm_window_close
+                )
+                
+                print("[EMULADOR] Janela de comunicação aberta com sucesso")
+                
+        except Exception as e:
+            print(f"[EMULADOR] Erro ao abrir janela de comunicação: {e}")
+            import traceback
+            traceback.print_exc()
+
+    def _on_comm_window_close(self, window_ref):
+        """Callback quando a janela de comunicação é fechada."""
+        self.comm_debug_window = None
+        print("[EMULADOR] Janela de comunicação fechada")
+
 
     def _init_image_mode(self):
         print('[EMULADOR] Modo: Imagem estática')
@@ -726,8 +755,8 @@ class Emulator:
         if self.capture:
             self.capture.reset()
 
-        if self.communication:
-            self.communication.reset()
+        if self.comm:
+            self.comm.reset()
 
         self.cameraIsRunning = False
         self._reset_ui_and_stop()
@@ -753,6 +782,15 @@ class Emulator:
         - Temporizador (Timer)
         """
         print("[EMULATOR] Encerrando execução...")
+
+        # --- Fecha janela de comunicação ---
+        if self.comm_debug_window is not None:
+            try:
+                self.comm_debug_window.destroy()
+            except Exception as e:
+                print(f"[EMULATOR] Erro ao fechar janela de comunicação: {e}")
+            finally:
+                self.comm_debug_window = None
 
         # --- sinaliza parada global ---
         self.cameraIsRunning = False
@@ -827,16 +865,17 @@ class Emulator:
     
     def _close_communication(self):
         """Fecha qualquer tipo de comunicação ativa (MQTT/Serial) via classe Communication."""
-        if hasattr(self, "communication") and self.communication:
+        # ✅ CORREÇÃO: usar self.comm em vez de self.communication
+        if hasattr(self, "comm") and self.comm:
             try:
                 print("[EMULATOR] Encerrando comunicação...")
-                self.communication.reset()
+                self.comm.reset()
                 print("[EMULATOR] Comunicação encerrada com sucesso.")
             except Exception as e:
                 print(f"[EMULATOR] Erro ao encerrar comunicação: {e}")
         else:
             print("[EMULATOR] Nenhuma comunicação ativa para encerrar.")
-
+            
     def _reset_ui_by_mode(self):
         """Atualiza botões e estado visual conforme o modo atual."""
         print(f"[EMULADOR] Resetando UI para o modo: {self.Mode}")

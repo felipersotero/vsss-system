@@ -271,38 +271,45 @@ class VisionSystem:
         self.buildField()
     
     # Implementação da lógica de processamento para várias coisas
-    # Esse é o PROC MAIOR
     def proc(self, img, debug: bool, isT: bool = False):
         """
         Pipeline principal de processamento da imagem de visão.
         Executa a detecção do campo, bola e jogadores, e gera a visualização final.
-
-        Parâmetros:
-            img (np.ndarray): imagem de entrada.
-            debug (bool): habilita visualização e marcações de depuração.
-            isT (bool): flag opcional usada em detecção de jogadores.
         """
-        # Reseta estado de execução temporário
+
+        # ===========================
+        # RESET ESTADO E TEMPOS
+        # ===========================
         self.resetExecutionState()
 
-        # marca tempo de início do processamento maior (se não inicializado)
+        # marca tempo de início do processamento maior (primeiro ciclo)
         if not hasattr(self, 'lastMajorTime') or self.lastMajorTime == 0:
             self.lastMajorTime = self.timer.getElapsedTime()
 
         self.currentTime = self.timer.getElapsedTime()
-        # tempo em segundos desde último processamento maior
+
+        # tempo desde o último processamento maior
         self._firstTimeExec = (self.currentTime - self.lastMajorTime) / 1000.0
         self.debug = debug
 
-        # Zera a imagem virtual
+        # Zera imagem virtual
         self.virtualImg = self.virtual.copy()
 
-        # Validação de imagem
+        # ===========================
+        # CASO 1 — IMAGEM INVÁLIDA
+        # ===========================
         if img is None:
             self.drawAllRobots()
+
+            # ---- Atualiza tempos ANTES do retorno ----
+            try:
+                self.lastMajorTime = self.timer.getElapsedTime()
+            except Exception:
+                self.lastMajorTime = self.currentTime
+
             return img
 
-        # Reseta status dos robôs
+        # reseta status robôs
         for bot in self.enemyTeam:
             bot.setStatus(False)
         for bot in self.allyTeam:
@@ -310,42 +317,60 @@ class VisionSystem:
 
         imgP = img.copy()
 
-        # Detecta o campo
+        # ===========================
+        # 1) DETECTAR CAMPO
+        # ===========================
         wbCmField = self.detect_field(imgP, debug)
 
+        campo_valido = (
+            wbCmField != -1
+            and abs(wbCmField - self.fieldWidth) <= 30
+            and self.fieldReduce is not None
+            and self.fieldReduce.shape[1] >= 100
+        )
 
-        # Corrige erro de redução de campo
-        if self.fieldReduce is None or self.fieldReduce.shape[1] < 100:
-            print("[SystemVision][PROC]: FieldReduce é None ou muito pequeno, usando frame original.")
-            self.fieldReduce = self.frameOrigin
+        # ===========================
+        # CASO 2 — CAMPO INVÁLIDO
+        # ===========================
+        if not campo_valido:
+            self.drawAllRobots()
 
-        # === Detecta bola ===
+            # ---- Atualiza tempos ANTES do retorno ----
+            try:
+                self.lastMajorTime = self.timer.getElapsedTime()
+            except Exception:
+                self.lastMajorTime = self.currentTime
+
+            return img
+
+        # ===========================
+        # 2) PROCESSA BOLA E JOGADORES
+        # ===========================
         self._safe_call(self.detect_ball, self.fieldReduce, debug, name="BALL")
-
-        # === Detecta jogadores ===
         self._safe_call(self.detect_players, self.fieldReduce, debug, isT=isT, name="PLAYERS")
 
-        # Só continua se o campo for válido e com tamanho consistente
-        if wbCmField == -1 or abs(wbCmField - self.fieldWidth) > 30:
-            self.drawAllRobots()
-            return img
-            
-        # === Renderização de depuração ===
+        # ===========================
+        # DEPURAÇÃO VISUAL
+        # ===========================
         if debug:
             self._draw_field_debug()
             self.colorTree.print_store()
 
-        # Desenha robôs na imagem final
+        # ===========================
+        # RENDERIZAÇÃO FINAL
+        # ===========================
         self.drawAllRobots()
 
-        # atualiza lastMajorTime ao final do processamento "maior" (importante para decidir próximo tipo de processamento)
+        # ===========================
+        # ATUALIZA TEMPO FINAL (OBRIGATÓRIO)
+        # ===========================
         try:
             self.lastMajorTime = self.timer.getElapsedTime()
         except Exception:
-            # fallback seguro
             self.lastMajorTime = self.currentTime
 
         return self.frameResult
+
 
     # Funções auxiliares
     def _safe_call(self, func, *args, name="", **kwargs):
