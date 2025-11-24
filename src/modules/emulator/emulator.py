@@ -54,7 +54,6 @@ class Emulator:
         self._init_system_info(App)
         self._init_gpu_info()
         self._init_camera_settings()
-        self._init_communication()
         self._init_capture_and_vision()
 
         print("[EMULATOR] Inicialização concluída com sucesso.")
@@ -426,8 +425,49 @@ class Emulator:
     # ==============================================================
     def _init_communication(self):
         """Inicializa o objeto de comunicação."""
-        self.comm =  None
+                # -------------------------
+        # 🔹 Comunicação (via classe Communication)
+        # -------------------------
+        com_mode = self.comMode.lower()
+
+        if com_mode == 'mqtt':
+            broker = self.settingsTree.tree.item('I021', 'value')[0] if 'I021' in self.settingsTree.tree.get_children('') else 'localhost'
+            port_str = self.settingsTree.tree.item('I022', 'value')[0] if 'I022' in self.settingsTree.tree.get_children('') else '1883'
+            port = int(port_str) if port_str.isdigit() else 1883
+
+            self.comm = Communication(use_mqtt=True, broker_address=broker, port=port)
+            print(f"[EMULADOR] Comunicação configurada via MQTT → {broker}:{port}")
+
+        elif com_mode == 'serial':
+            port = self.serialPort or '/dev/ttyUSB0'
+            self.comm = Communication(use_mqtt=False, serial_port=port)
+            print(f"[EMULADOR] Comunicação configurada via Serial → {port}")
+
+        else:
+            # Nenhum modo de comunicação selecionado
+            print('[EMULADOR] Comunicação desativada (nenhuma selecionada).')
+            self.comm = None
+
+        self.should_open_comm_window = (
+            self.Mode == MODE_USB_CAM and 
+            com_mode in ['mqtt', 'serial'] and
+            self.comm is not None
+        )
+        
+        if self.should_open_comm_window:
+            print(f"[EMULADOR] Janela de comunicação será aberta - Modo: {com_mode}")
+            
         self.PFOXcontroler = PFOXController() #API para gerar pacotes no protocolo PFOX 
+
+        
+        # Inicializo a thread de comunicação
+        self.comm_thread = threading.Thread(target=self.communicationThread, daemon=True)
+        self.comm_thread.start()
+
+        # 🔹 ABRE JANELA DE COMUNICAÇÃO (se necessário)
+        if self.should_open_comm_window:
+            # Agenda a abertura para depois da UI estar estável
+            self.viewer.window.after(500, self._open_communication_window)
 
     def _init_capture_and_vision(self):
         """Cria a instância de captura e o sistema de visão."""
@@ -519,38 +559,11 @@ class Emulator:
         # -------------------------
         self.CUDAselected = "Don't have cuda"
 
-        # -------------------------
         # 🔹 Comunicação (via classe Communication)
         # -------------------------
         com_mode = self.comMode.lower()
 
-        if com_mode == 'mqtt':
-            broker = self.settingsTree.tree.item('I021', 'value')[0] if 'I021' in self.settingsTree.tree.get_children('') else 'localhost'
-            port_str = self.settingsTree.tree.item('I022', 'value')[0] if 'I022' in self.settingsTree.tree.get_children('') else '1883'
-            port = int(port_str) if port_str.isdigit() else 1883
 
-            self.comm = Communication(use_mqtt=True, broker_address=broker, port=port)
-            print(f"[EMULADOR] Comunicação configurada via MQTT → {broker}:{port}")
-
-        elif com_mode == 'serial':
-            port = self.serialPort or '/dev/ttyUSB0'
-            self.comm = Communication(use_mqtt=False, serial_port=port)
-            print(f"[EMULADOR] Comunicação configurada via Serial → {port}")
-
-        else:
-            # Nenhum modo de comunicação selecionado
-            print('[EMULADOR] Comunicação desativada (nenhuma selecionada).')
-            self.comm = None
-
-        self.should_open_comm_window = (
-            self.Mode == MODE_USB_CAM and 
-            com_mode in ['mqtt', 'serial'] and
-            self.comm is not None
-        )
-        
-        if self.should_open_comm_window:
-            print(f"[EMULADOR] Janela de comunicação será aberta - Modo: {com_mode}")
-            
         # -------------------------
         # 🔹 Foco da câmera
         # -------------------------
@@ -711,17 +724,11 @@ class Emulator:
         self.vision_thread = threading.Thread(target=self.visionThread, daemon=True)
         self.vision_thread.start()
 
-        # Inicia thread de comunicação (paralela e leve)
-        self.comm_thread = threading.Thread(target=self.communicationThread, daemon=True)
-        self.comm_thread.start()
-
+        self._init_communication()
+        
         # Inicia loop da UI (Tkinter)
         self.viewer.window.after(0, self.updateUI)
-        
-        # 🔹 ABRE JANELA DE COMUNICAÇÃO (se necessário)
-        if self.should_open_comm_window:
-            # Agenda a abertura para depois da UI estar estável
-            self.viewer.window.after(500, self._open_communication_window)
+    
 
 
     def _configure_focus(self):

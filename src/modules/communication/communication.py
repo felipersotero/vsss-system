@@ -77,26 +77,22 @@ class MQTTClient:
     def port(self) -> int:
         """Retorna a porta para a interface."""
         return getattr(self, '_port', 1883)
-    
+
     def _on_message(self, cliente, userdata, msg):
         try:
-            payload = msg.payload
-
-            if isinstance(payload, bytes):
-                payload_str = payload.hex(" ").upper()
-            else:
-                payload_str = str(payload)
-
-            self._rx_queue.put(f"{msg.topic}: {payload_str}")
+            # CORREÇÃO CRÍTICA: Coloca apenas o payload (em bytes) na fila.
+            # O parser principal em Communication._process_incoming_data espera bytes.
+            self._rx_queue.put(msg.payload) 
 
         except Exception:
             pass
 
 
-    def read_mqtt_data(self) -> Optional[str]:
-        """Lê dados MQTT recebidos."""
+    def read_mqtt_data(self) -> Optional[bytes]:
+        """Lê dados MQTT recebidos, retornando o payload em BYTES."""
         try:
             if not self._rx_queue.empty():
+                # O item na fila agora é bytes, conforme corrigido em _on_message
                 return self._rx_queue.get_nowait()
             return None
         except Exception:
@@ -164,21 +160,20 @@ class SerialConnection:
             self.status.error_message = str(e)
 
     def send_serial_data(self, data: Union[str, bytes]):
+        if not self.com or not self.com.is_open:
+            return False, "Serial port not connected"
+
         if isinstance(data, str):
             data = data.encode("utf-8")
+        
         self.com.write(data)
         return True, "OK"
 
-    def read_serial_data(self) -> Optional[str]:
-        """Read data from serial connection."""
-        if not self.status.is_connected:
-            return None
-        try:
-            if self.com.in_waiting > 0:
-                return self.com.readline().decode("utf-8").strip()
-            return None
-        except Exception:
-            return None
+    def read_serial_data(self) -> Optional[bytes]:
+        # Retorna BYTES, não STRING. Não usa decode().
+        if self.com.in_waiting > 0:
+            return self.com.read(self.com.in_waiting)
+        return None
 
     def __del__(self):
         """Cleanup resources on object destruction."""
@@ -224,6 +219,11 @@ class Communication:
         self._stats_lock = threading.Lock()
         self._connection_start_time = time.time()
 
+        # flags de utilização da comunicação
+        self._paused = False           # True se o monitoramento estiver pausado
+        self._loop_running = False     # True se o loop de monitoramento estiver ativo
+        self._pause_condition = threading.Condition()
+
         # sistema de logs
         self._log_queue: queue.Queue[str] = queue.Queue()
         self.log_listeners: List[Callable[[str], None]] = []
@@ -234,14 +234,21 @@ class Communication:
 
         # estado dos robôs
         self.robot_status = {1: "FAIL", 2: "FAIL", 3: "FAIL"}
-
+        
         self._robot_status_lock = threading.Lock()
+
+        # buffer de dados que vem
+        self._incoming_buffer: bytearray = bytearray()
+
+        # Informação sobre os estados dos robôs
+        self.robot_last_seen: Dict[int, float] = {1: 0.0, 2: 0.0, 3: 0.0}
+
+        self.ROBOT_TIMEOUT = 3.0  # segundos
 
         # monitoramento em background
         self._monitoring = False
         self._monitor_thread: Optional[threading.Thread] = None
 
-        self._setup_connection()
 
     # ============================================================
     # SISTEMA DE LOG
@@ -365,77 +372,239 @@ class Communication:
         self._emit_log("Monitoramento iniciado")
 
     def _stop_monitoring(self):
-        """Para thread de monitoramento."""
         self._monitoring = False
+        with self._pause_condition:
+            self._paused = False
+            self._pause_condition.notify_all()  # libera qualquer thread em espera
         if self._monitor_thread:
             self._monitor_thread.join(timeout=2.0)
 
+
     def _monitor_loop(self):
-        """Loop principal de monitoramento."""
-        last_robot_update = 0
+        """Loop principal que lê bytes e alimenta o parser."""
+        self._loop_running = True
+        last_robot_check = 0
+
         while self._monitoring:
+            with self._pause_condition:
+                while self._paused:
+                    self._pause_condition.wait()  # espera até resume() ser chamado
+
             try:
-                current_time = time.time()
-                
-                # === SERIAL RX ===
-                if not self.use_mqtt and self.client:
-                    data = self.client.read_serial_data()
-                    if data:
-                        self.stats.total_received += 1
-                        self._emit_log(f"[RX] {data}")
-                        self._rx_queue.put(data)
+                data = None
 
-
-                        for cb in self.rx_listeners:
-                            try:
-                                cb(data)
-                            except Exception:
-                                pass
-
-                # === MQTT RX ===
-                elif self.use_mqtt and self.client:
+                if self.use_mqtt and self.client:
                     data = self.client.read_mqtt_data()
-                    if data:
-                        self.stats.total_received += 1
-                        self._emit_log(f"[RX] {data}")
-                        self._rx_queue.put(data)
+                elif not self.use_mqtt and self.client:
+                    data = self.client.read_serial_data()
 
+                if data:
+                    self.stats.total_received += 1
+                    self._process_incoming_data(data)
 
-                        for cb in self.rx_listeners:
-                            try:
-                                cb(data)
-                            except Exception:
-                                pass
-
-                
-                # Atualiza status dos robôs periodicamente (simulado)
-                if current_time - last_robot_update > 2.0:  # A cada 2 segundos
+                current_time = time.time()
+                if current_time - last_robot_check > 1.0:
                     self._update_robot_status()
-                    last_robot_update = current_time
-                
-                time.sleep(0.1)  # 100ms
-                
+                    last_robot_check = current_time
+
+                time.sleep(0.01)
+
             except Exception as e:
-                logger.error(f"Erro no loop de monitoramento: {e}")
+                logger.error(f"Erro no monitoramento: {e}")
                 time.sleep(1.0)
 
-    def _update_robot_status(self):
-        """Atualiza status dos robôs (simulado - substituir por lógica real)."""
-        with self._robot_status_lock:
-            for robot_id in self.robot_status:
-                # Simula mudanças ocasionais de status
-                if self.stats.total_sent > 0 and self.stats.success_rate < 95:
-                    # Chance maior de falha se taxa de sucesso baixa
-                    if hash(f"{robot_id}{time.time():.0f}") % 100 < 15:
-                        self.robot_status[robot_id] = "FAIL"
-                    else:
-                        self.robot_status[robot_id] = "OK"
+        self._loop_running = False
+
+
+    # ============================================================
+    # ⬇️ ADICIONE ESTE MÉTODO NOVO AQUI ⬇️
+    # ============================================================
+    def _process_incoming_data(self, new_bytes: bytes):
+        """
+        Parser Inteligente:
+        - Detecta Texto (Logs do HUB começados com '[')
+        - Detecta Pacotes PFOX (Começados com 0xF0)
+        - Atualiza status dos robôs baseado no SRC do pacote
+        """
+        self._incoming_buffer.extend(new_bytes)
+        
+        # Limita o número máximo de bytes processados por iteração para evitar CPU alta
+        max_bytes_per_loop = 1024
+        bytes_processed = 0
+
+        while len(self._incoming_buffer) > 0 and bytes_processed < max_bytes_per_loop:
+            bytes_processed += 1
+
+            # ---------------------------------------------------
+            # CASO A: LOG DE TEXTO (Inicia com '[')
+            # ---------------------------------------------------
+            if self._incoming_buffer[0] == ord('['): 
+                # Procura final de linha ou final do log
+                newline_idx = -1
+                if b'\n' in self._incoming_buffer:
+                    newline_idx = self._incoming_buffer.find(b'\n')
+                
+                if newline_idx != -1:
+                    # Extrai a linha de log e decodifica apenas ela
+                    log_line = self._incoming_buffer[:newline_idx+1].decode('utf-8', errors='ignore').strip()
+                    self._emit_log(f"[RX HUB] {log_line}")
+                    
+                    # Consome do buffer
+                    del self._incoming_buffer[:newline_idx+1]
+                    continue
                 else:
-                    # Normalmente OK
-                    if hash(f"{robot_id}{time.time():.0f}") % 100 < 5:
-                        self.robot_status[robot_id] = "FAIL"
+                    # Log incompleto, espera mais dados
+                    break
+
+            # ---------------------------------------------------
+            # CASO B: PACOTE PFOX (Inicia com 0xF0)
+            # ---------------------------------------------------
+            elif self._incoming_buffer[0] == 0xF0:
+                # Tamanho mínimo do header é 7 bytes
+                if len(self._incoming_buffer) < 7:
+                    break # Espera mais dados
+                
+                # Byte 6 é o comprimento do payload (LEN)
+                payload_len = self._incoming_buffer[6]
+                total_packet_len = 7 + payload_len + 2 # Header + Payload + CRC
+                
+                if len(self._incoming_buffer) < total_packet_len:
+                    break # Espera pacote completo chegar
+                
+                # Temos um pacote completo! Extrai
+                packet_data = self._incoming_buffer[:total_packet_len]
+                
+                # --- LÓGICA DE STATUS DO ROBÔ ---
+                # Byte 2 é SRC (Origem). Se for 1, 2 ou 3, é um robô vivo.
+                try:
+                    src_addr = packet_data[2]
+                    if src_addr in [1, 2, 3]: # IDs dos Robôs
+                        with self._robot_status_lock:
+                            self.robot_last_seen[src_addr] = time.time()
+                except IndexError:
+                    pass
+                
+                # --- LÓGICA DE LOGGING RX PFOX (NOVO!) ---
+                try:
+                    decoded_pkt = PFOXPacket.decode(packet_data)
+                    # Loga o conteúdo decodificado em formato legível
+                    self._emit_log(f"[RX PFOX] {decoded_pkt}")
+                except ValueError as crc_error:
+                    # Loga erro de CRC, que é fundamental para depuração
+                    self._emit_log(f"⚠️ [RX PFOX ERROR] CRC inválido ou Decodificação falhou: {crc_error}. Bytes: {packet_data.hex(' ')}")
+                except Exception as e:
+                    self._emit_log(f"❌ [RX PFOX ERROR] Erro inesperado ao decodificar: {e}. Bytes: {packet_data.hex(' ')}")
+                
+                # Consome do buffer
+                del self._incoming_buffer[:total_packet_len]
+                continue
+
+            # ---------------------------------------------------
+            # CASO C: LIXO / ERRO DE SINCRONIA
+            # ---------------------------------------------------
+            else:
+                # 💡 CORREÇÃO: Registra o descarte de bytes para debug.
+                # Captura o byte para log, remove do buffer e tenta sincronizar.
+                invalid_byte = self._incoming_buffer[0]
+                self._emit_log(f"⚠️ [RX ERROR] Descartando byte inválido (0x{invalid_byte:02X}). Sincronizando...")
+                del self._incoming_buffer[0]
+
+
+    def send_simulated_ack(self, seq_id: int) -> None:
+        """
+        Simula o Hub/ESPMAIN enviando um ACK (0x20) de volta para o PC.
+        Isso força o fluxo RX a processar um pacote PFOX válido.
+        """
+        try:
+            # 1. Cria o pacote ACK (0x20) do ESPMAIN (0xFE) para o PC (0x00)
+            ack_packet = self.pfox_controller.create_packet(
+                src=Address.ESPMAIN, 
+                dst=Address.PC, 
+                msg_type=MsgType.ACK, 
+                payload=[],
+                seq=seq_id # Usa o ID de sequência do pacote que foi enviado
+            )
+            ack_bytes = ack_packet.to_bytes()
+            
+            # 2. Publica o pacote diretamente no tópico 'raw'
+            if self.client and hasattr(self.client, "publish"):
+                self._emit_log(f"Simulando RX → Publicando ACK PFOX (ID {seq_id})")
+                
+                # A chave aqui é que publish aceita 'bytes' e garante o formato binário.
+                self.client.publish("raw", ack_bytes) 
+            else:
+                self._emit_log("Falha ao simular ACK: Cliente não está conectado ou é Serial.")
+                
+        except Exception as e:
+            self._emit_log(f"Erro na simulação do ACK: {e}")
+
+    def _update_robot_status(self):
+            """Atualiza status 'OK'/'FAIL' baseado no tempo da última mensagem."""
+            current_time = time.time()
+            
+            with self._robot_status_lock:
+                for robot_id in [1, 2, 3]:
+                    # Pega o tempo da última vez que vimos este robô (padrão 0.0)
+                    last_seen = self.robot_last_seen.get(robot_id, 0.0)
+                    
+                    # Se recebemos algo nos últimos 3 segundos (ROBOT_TIMEOUT), está OK
+                    if (current_time - last_seen) < getattr(self, 'ROBOT_TIMEOUT', 3.0):
+                        if self.robot_status[robot_id] != "OK":
+                            self.robot_status[robot_id] = "OK"
+                            self._emit_log(f"✅ Robô {robot_id} Online")
                     else:
-                        self.robot_status[robot_id] = "OK"
+                        # Timeout
+                        if self.robot_status[robot_id] != "FAIL":
+                            self.robot_status[robot_id] = "FAIL"
+                            # Só loga falha se já tivemos conexão alguma vez (evita spam na inicialização)
+                            if last_seen > 0:
+                                self._emit_log(f"⚠️ Robô {robot_id} Offline (Timeout)")
+
+    # ============================================================
+    # CONTROLE EXTERNO DO LOOP DE COMUNICAÇÃO
+    # ============================================================
+
+    def start(self):
+        """Inicia ou reinicia a comunicação e monitoramento."""
+        self._paused = False
+        self._setup_connection()
+        self._start_monitoring()
+
+    def pause(self):
+        """Pausa o loop de monitoramento sem fechar a conexão."""
+        with self._pause_condition:
+            self._paused = True
+            self._emit_log("Monitoramento pausado")
+
+    def resume(self):
+        """Retoma o loop de monitoramento pausado."""
+        with self._pause_condition:
+            self._paused = False
+            self._pause_condition.notify_all()
+            self._emit_log("Monitoramento retomado")
+
+    def stop(self):
+        """Para completamente o monitoramento e fecha a comunicação."""
+        self._paused = False
+        self._stop_monitoring()
+        self.close()
+
+    # ============================================================
+    # MÉTODOS DE CONSULTA DE ESTADO
+    # ============================================================
+
+    def is_monitoring(self) -> bool:
+        """Retorna True se o monitoramento está ativo."""
+        return self._monitoring
+
+    def is_paused(self) -> bool:
+        """Retorna True se o monitoramento está pausado."""
+        return self._paused
+
+    def is_loop_running(self) -> bool:
+        """Retorna True se o loop de monitoramento está rodando."""
+        return self._loop_running
+
 
     # ============================================================
     # COMUNICAÇÃO PRINCIPAL
@@ -580,70 +749,69 @@ class Communication:
 
     def run_test(self) -> Tuple[int, int]:
         """
-        Executa um teste completo de comunicação (compatível com a interface).
-        O teste:
-        - Envia uma sequência de mensagens
-        - Mede latência real
-        - Conta envios bem-sucedidos
-        - Funciona em MQTT ou Serial
+        Executa um teste de comunicação enviando vários pacotes PFOX e simulando
+        o recebimento de um ACK para confirmar o RX/parser.
+        Retorna (total_sent, total_ok).
         """
-        self._emit_log("=== Iniciando teste de comunicação ===")
+        # Inicializa o controlador PFOX se necessário
+        if not hasattr(self, 'pfox_controller'):
+            try:
+                self.pfox_controller = PFOXController()
+            except NameError:
+                self._emit_log("❌ ERRO: PFOXController não definido. Verifique o import de protocolHeader.")
+                return 0, 0
 
-        if not self.client or not self.client.status.is_connected:
-            self._emit_log("❌ Nenhuma conexão ativa — teste abortado.")
-            return (0, 0)
-
-        # Pacotes que serão enviados
-        test_messages = [
-            ("TEST_PING",        "Ping de latência"),
-            ("TEST_DATA",        "Teste de payload"),
-            ("TEST_ACK",         "Teste de confirmação"),
-            ("TEST_SPEED",       "Teste de velocidade"),
-            ("TEST_RELIABILITY", "Teste de estabilidade"),
+        total_sent = 0
+        total_ok = 0
+        
+        # O PFOXController precisa ser inicializado antes de ser usado
+        pfox_ctrl = self.pfox_controller
+        
+        # =================================================================
+        # SEQUÊNCIA DE TESTES PFOX (Seus cenários)
+        # =================================================================
+        test_scenarios = [
+            {"name": "HEARTBEAT p/ ESPMAIN", "packet_func": lambda: pfox_ctrl.create_packet(dst=Address.ESPMAIN, msg_type=MsgType.HEARTBEAT, payload=[]).to_bytes()},
+            {"name": "CMD_FLOW_CTRL (RUN) p/ ROBOT1", "packet_func": lambda: pfox_ctrl.send_flow_control(dst=Address.ROBOT1, value=0x01).to_bytes()},
+            {"name": "CMD_SET_SPEED p/ ROBOT2", "packet_func": lambda: pfox_ctrl.send_speed_command(robot_id=Address.ROBOT2, left_speed_real=100, left_speed_desired=150, right_speed_real=90, right_speed_desired=140).to_bytes()},
+            {"name": "HEARTBEAT BROADCAST", "packet_func": lambda: pfox_ctrl.create_packet(dst=Address.BROADCAST, msg_type=MsgType.HEARTBEAT, payload=[]).to_bytes()}
         ]
 
-        sent = 0
-        success = 0
-
-        # Marca início do teste
-        test_start = time.time()
-
-        for idx, (msg, description) in enumerate(test_messages):
-            topic = f"test/topic/{idx}"
-            sent += 1
-
+        # =================================================================
+        # EXECUÇÃO DO TESTE
+        # =================================================================
+        for scenario in test_scenarios:
             try:
-                self._emit_log(f"📡 Enviando {description}: {msg}")
+                # 1. Prepara o envio e obtem o ID ANTES da criação do pacote
+                total_sent += 1
+                
+                # Gera o pacote PFOX em BYTES (A criação do pacote deve atualizar o ID interno)
+                packet_bytes = scenario["packet_func"]()
+                
+                # Pega o ID de sequência que foi usado no pacote (assumindo que o counter foi atualizado)
+                # NOTA: Assumimos que 'seq_id_counter' contém o ID do último pacote criado.
+                sent_id = pfox_ctrl.seq_id_counter
+                
+                # 2. Envia o pacote (TX)
+                self.send(packet_bytes)
+                self._emit_log(f"✨ [TEST TX] Enviado: {scenario['name']}")
+                
+                # Pequena pausa para garantir que o TX foi processado pelo Broker
+                time.sleep(0.15) 
+                
+                # 3. 💡 SIMULAÇÃO: Publica o ACK de volta para si mesmo (RX)
+                self.send_simulated_ack(sent_id) 
+                
+                # Espera o ACK simulado voltar pelo tópico 'raw' e ser processado pelo RX parser
+                time.sleep(0.15) 
 
-                # Envio
-                if self.use_mqtt:
-                    ok, result = self.send_data(topic, msg)
-                else:
-                    ok, result = self.send_data(msg)
-
-                # Resultado
-                if ok:
-                    success += 1
-                    self._emit_log(f"  ✔ Sucesso: {result}")
-                else:
-                    self._emit_log(f"  ❌ Falha: {result}")
-
-                # Pequena pausa controlada
-                time.sleep(0.08)
+                total_ok += 1 
 
             except Exception as e:
-                self._emit_log(f"❌ Erro fatal ao enviar pacote {idx}: {e}")
-
-        total_time = (time.time() - test_start) * 1000  # ms
-
-        # Finalização
-        self._emit_log("=== Teste Finalizado ===")
-        self._emit_log(f"Resumo: {success}/{sent} pacotes OK")
-        self._emit_log(f"Duração total: {total_time:.1f} ms")
-
-        return sent, success
-
-
+                self._emit_log(f"❌ Erro durante o envio de teste PFOX ({scenario['name']}): {e}")
+                
+        return total_sent, total_ok
+        
     def start_monitoring(self) -> None:
         """Inicia monitoramento (para interface)."""
         self._start_monitoring()
@@ -661,12 +829,18 @@ class Communication:
     # CONTROLE DE ESTADO E LIMPEZA
     # ============================================================
 
+    # Ajuste sugerido para Communication.reset_connection()
     def reset_connection(self) -> None:
-        """Reinicia a conexão atual."""
-        self._emit_log("Reiniciando comunicação...")
-        self._stop_monitoring()
+        """Reinicia a conexão atual e reseta estatísticas."""
+        self._emit_log("Reiniciando comunicação e resetando estatísticas...")
+        
+        # 1. Reset total (fecha conexão, limpa stats, define robôs como FAIL)
+        self.reset()
+        
+        # 2. Configura e inicia a nova conexão
         self._setup_connection()
 
+# Correção sugerida para Communication.reset()
     def reset(self) -> None:
         """Reset completo do módulo."""
         self._emit_log("Reset total do módulo de comunicação")
@@ -677,7 +851,8 @@ class Communication:
             self._connection_start_time = time.time()
         
         with self._robot_status_lock:
-            self.robot_status = {1: "OK", 2: "OK", 3: "OK"}
+            # CORREÇÃO: Status inicial é FAIL (ou UNKNOWN) após um reset completo.
+            self.robot_status = {1: "FAIL", 2: "FAIL", 3: "FAIL"}
 
     def close(self) -> None:
         """Fecha conexões de forma segura."""

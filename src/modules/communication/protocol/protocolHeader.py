@@ -41,66 +41,85 @@ class MsgType(IntEnum):
 # Nome para debug/log
 MSG_TYPE_NAMES = {t.value: t.name for t in MsgType}
 
+# No arquivo protocolHeader.py (substituir a classe PFOXPacket)
+
 # =========================
-# Pacote PFOX
+# Estrutura do Pacote PFOX
 # =========================
 class PFOXPacket:
-    PREAMBLE = 0xF0
-    VERSION = 0x01
-
-    def __init__(self, src: Address, dst: Address, msg_type: MsgType, seq: int, payload: List[int]):
-        self.preamble = PFOXPacket.PREAMBLE
-        self.version = PFOXPacket.VERSION
+    # 💡 CORREÇÃO CRÍTICA: Trocando 'id_pkt' por 'seq' para compatibilidade com PFOXController
+    def __init__(self, src: Address, dst: Address, msg_type: MsgType, 
+                 payload: List[int], seq: int = 0): 
+        self.start = 0xF0
         self.src = src
         self.dst = dst
         self.type = msg_type
-        self.seq = seq
-        self.len = len(payload)
-        self.payload = payload
-        self.crc16 = 0  # Calculado ao codificar
+        self.id = seq # O número de sequência/ID do pacote
+        self.payload = bytes(payload)
+        self.len = len(self.payload)
+        self.crc = 0 # Inicialmente 0, será calculado na serialização
+        
+    def __repr__(self) -> str:
+        """Representação amigável para debug (usada no log RX)"""
+        msg_name = MSG_TYPE_NAMES.get(self.type.value, f"0x{self.type.value:02X}")
+        return (f"PKT(SRC={self.src.name}, DST={self.dst.name}, TYPE={msg_name}, "
+                f"ID={self.id}, LEN={self.len}, PAYLOAD={self.payload.hex()})")
 
-    def encode(self) -> bytes:
-        """Codifica o pacote em bytes e calcula CRC16."""
-        header = struct.pack(
-            '>BBBBBBB',
-            self.preamble,
-            self.version,
-            self.src.value,
-            self.dst.value,
-            self.type.value,
-            self.seq,
+    # =================================================================
+    # Método para Serializar o Pacote (TX)
+    # =================================================================
+    def to_bytes(self) -> bytes:
+        """Serializa o objeto PFOXPacket em uma sequência de bytes com CRC16."""
+        # O cabeçalho é: START(0xF0), SRC, DST, TYPE, ID, LEN
+        header = struct.pack('!BBBBBB', 
+            self.start, 
+            self.src.value, 
+            self.dst.value, 
+            self.type.value, 
+            self.id, 
             self.len
         )
-        payload_bytes = bytes(self.payload)
-        crc = crc16_ccitt(header + payload_bytes)
-        self.crc16 = crc
-        packet = header + payload_bytes + struct.pack('>H', crc)
-        return packet
+        
+        packet_without_crc = header + self.payload
+        crc_value = crc16_ccitt(packet_without_crc)
+        crc_bytes = struct.pack('!H', crc_value)
+        
+        return packet_without_crc + crc_bytes
 
     @classmethod
-    def decode(cls, data: bytes):
-        """Decodifica bytes em um objeto PFOXPacket. Lança ValueError se CRC inválido."""
-        if len(data) < 9:
-            raise ValueError("Pacote muito curto")
+    def decode(cls, data: bytes) -> 'PFOXPacket':
+        """Decodifica bytes brutos em um objeto PFOXPacket e verifica o CRC."""
+        if len(data) < 9 or data[0] != 0xF0:
+            raise ValueError("Pacote PFOX incompleto ou inválido.")
 
-        preamble, version, src, dst, msg_type, seq, length = struct.unpack('>BBBBBBB', data[:7])
-        payload = list(data[7:7+length])
-        crc_received = struct.unpack('>H', data[7+length:9+length])[0]
+        header_len = 6
+        # Desempacota Header: START(B), SRC(B), DST(B), TYPE(B), ID(B), LEN(B)
+        start, src_val, dst_val, type_val, id_pkt, payload_len = struct.unpack('!BBBBBB', data[:header_len])
+        
+        total_len = header_len + payload_len + 2 # Header + Payload + CRC
+        
+        if len(data) != total_len:
+            raise ValueError(f"Tamanho do pacote ({len(data)}) não corresponde ao LEN reportado ({total_len}).")
 
-        # Valida CRC
-        crc_calc = crc16_ccitt(data[:7+length])
-        if crc_calc != crc_received:
-            raise ValueError(f"CRC inválido: recebido {crc_received:04X}, calculado {crc_calc:04X}")
+        # Verifica CRC
+        received_crc = struct.unpack('!H', data[-2:])[0]
+        calculated_crc = crc16_ccitt(data[:-2])
+        
+        if received_crc != calculated_crc:
+            raise ValueError(f"Falha na verificação CRC. Recebido: 0x{received_crc:04X}, Calculado: 0x{calculated_crc:04X}.")
 
-        packet = cls(Address(src), Address(dst), MsgType(msg_type), seq, payload)
-        packet.crc16 = crc_received
-        return packet
-
-    def __repr__(self):
-        return (f"PFOXPacket(src={self.src.name}, dst={self.dst.name}, type={self.type.name}, "
-                f"seq={self.seq}, len={self.len}, payload={self.payload}, crc=0x{self.crc16:04X})")
-
-
+        # Extrai Payload
+        payload = list(data[header_len:-2]) # Converte para List[int] para compatibilidade
+        
+        # Cria e retorna o objeto. Usamos 'seq=id_pkt' para manter o novo nome do parâmetro.
+        return cls(
+            src=Address(src_val), 
+            dst=Address(dst_val), 
+            msg_type=MsgType(type_val), 
+            payload=payload, 
+            seq=id_pkt 
+        )
+    
 # =========================
 # Controlador de Pacotes
 # =========================

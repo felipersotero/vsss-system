@@ -31,13 +31,14 @@ class CommunicationDebugWindow(tk.Toplevel):
         comm: Any,
         on_close_ref_clear: Optional[Callable[[Optional["CommunicationDebugWindow"]], None]] = None,
         *,
-        width: int = 850, # Ligeiramente mais largo para caber logs HEX
-        height: int = 600,
+        width: int = 1000, # Ligeiramente mais largo para caber logs HEX
+        height: int = 700,
     ):
         if hasattr(self, "_initialized") and self._initialized:
             return
 
         super().__init__(master)
+        self.iconbitmap("src/data/icon.ico")
         self._initialized = True
 
         self.on_close_ref_clear = on_close_ref_clear
@@ -162,12 +163,28 @@ class CommunicationDebugWindow(tk.Toplevel):
         btn_conn_frame = ttk.Frame(conn_frame)
         btn_conn_frame.pack(fill="x", padx=5, pady=5)
         
-        # Botão Start/Reset unificado para economizar espaço ou separar se preferir
-        self.btn_comm_reset = ttk.Button(btn_conn_frame, text="🔄 Conectar/Reset", 
-                                       command=self._reset_communication, style="Custom.TButton")
-        self.btn_comm_reset.pack(fill="x", pady=2)
+        # NOVO: Botão Iniciar/Conectar
+        self.btn_comm_start = ttk.Button(btn_conn_frame, text="▶ Iniciar/Conectar", 
+                                       command=self._start_communication, style="Custom.TButton")
+        self.btn_comm_start.pack(fill="x", pady=2)
         
-        self.btn_comm_stop = ttk.Button(btn_conn_frame, text="⏹ Desconectar", 
+        # NOVO: Botão Pausar Monitor
+        self.btn_comm_pause = ttk.Button(btn_conn_frame, text="⏸ Pausar Monitor", 
+                                       command=self._pause_communication, style="Custom.TButton")
+        self.btn_comm_pause.pack(fill="x", pady=2)
+
+        # NOVO: Botão Continuar Monitor
+        self.btn_comm_resume = ttk.Button(btn_conn_frame, text="⏯ Continuar Monitor", 
+                                       command=self._resume_communication, style="Custom.TButton")
+        self.btn_comm_resume.pack(fill="x", pady=2)
+
+        # NOVO: Botão Resetar Conexão
+        self.btn_comm_reset_conn = ttk.Button(btn_conn_frame, text="🔄 Resetar Conexão", 
+                                      command=self._reset_connection_and_stats, style="Custom.TButton")
+        self.btn_comm_reset_conn.pack(fill="x", pady=2)
+
+        # Botão Parar/Encerrar (Stop)
+        self.btn_comm_stop = ttk.Button(btn_conn_frame, text="⏹ Parar e Encerrar", 
                                       command=self._stop_communication, style="Custom.TButton")
         self.btn_comm_stop.pack(fill="x", pady=2)
 
@@ -237,7 +254,6 @@ class CommunicationDebugWindow(tk.Toplevel):
         self.entry_send.bind("<Return>", lambda e: self._on_send_debug())
         
         ttk.Button(bottom, text="Enviar", command=self._on_send_debug).pack(side="right")
-
     # ===================== LÓGICA DE CONTROLE =====================
     def start(self) -> None:
         """Inicia loop de atualização da UI."""
@@ -331,26 +347,58 @@ class CommunicationDebugWindow(tk.Toplevel):
         self.log_box.config(state="disabled")
 
     # ===================== AÇÕES =====================
+# ===================== CONTROLE DE COMUNICAÇÃO =====================
     def _start_communication(self):
-        # OBSOLETO: O botão reset faz o trabalho de conectar/reconectar
-        self._reset_communication()
+        """Inicia comunicação e monitoramento."""
+        try:
+            if hasattr(self.comm, 'start'):
+                self.comm.start()
+                self.print_message("Comunicação iniciada.")
+            else:
+                self.print_message("Método start() não encontrado no backend.")
+        except Exception as e:
+            self.print_message(f"Erro ao iniciar comunicação: {e}")
+
+    def _pause_communication(self):
+        """Pausa monitoramento sem fechar conexão."""
+        try:
+            if hasattr(self.comm, 'pause'):
+                self.comm.pause()
+                self.print_message("Monitoramento pausado.")
+        except Exception as e:
+            self.print_message(f"Erro ao pausar monitoramento: {e}")
+
+    def _resume_communication(self):
+        """Retoma monitoramento pausado."""
+        try:
+            if hasattr(self.comm, 'resume'):
+                self.comm.resume()
+                self.print_message("Monitoramento retomado.")
+        except Exception as e:
+            self.print_message(f"Erro ao retomar monitoramento: {e}")
 
     def _stop_communication(self):
-        self.comm.close()
-        self.print_message("Comunicação encerrada pelo usuário.")
+        """Para monitoramento e encerra comunicação."""
+        try:
+            if hasattr(self.comm, 'stop'):
+                self.comm.stop()
+                self.print_message("Comunicação encerrada.")
+            else:
+                self.print_message("Método stop() não encontrado no backend.")
+        except Exception as e:
+            self.print_message(f"Erro ao encerrar comunicação: {e}")
 
-    def _reset_communication(self):
-        # Usa o método público correto do novo communication.py
-        if hasattr(self.comm, 'reset_connection'):
-            self.comm.reset_connection()
-        elif hasattr(self.comm, 'reset'):
-             self.comm.reset()
-        else:
-            # Fallback
-            self.comm.close()
-            self.comm._setup_connection()
-            
-        self.print_message("Solicitado reset de conexão.")
+    def _reset_connection_and_stats(self):
+        """Reinicia a conexão e limpa estatísticas (substituindo _reset_communication)."""
+        try:
+            if hasattr(self.comm, 'reset_connection'):
+                self.comm.reset_connection()
+                # Não é necessário resetar as estatísticas separadamente, pois reset_connection faz isso internamente
+                self.print_message("Conexão resetada e estatísticas zeradas.")
+            else:
+                self.print_message("Método reset_connection() não encontrado no backend.")
+        except Exception as e:
+            self.print_message(f"Erro ao resetar conexão: {e}")
 
     def _on_send_debug(self):
         text = self.entry_send.get().strip()
@@ -361,15 +409,23 @@ class CommunicationDebugWindow(tk.Toplevel):
         self.entry_send.delete(0, "end")
 
     def _on_run_test(self):
+        # 1. VERIFICA CONEXÃO ANTES DE INICIAR O TESTE
+        if not hasattr(self.comm, 'is_connected') or not self.comm.is_connected():
+            self.print_message("⚠️ ERRO: O teste de comunicação requer uma conexão SERIAL ou MQTT ativa.")
+            return
+
         self.test_result_var.set("Rodando...")
+        # 2. Inicia o teste em uma thread separada
         threading.Thread(target=self._run_test_thread, daemon=True).start()
 
     def _run_test_thread(self):
         try:
+            # Assumindo que self.comm.run_test() envia pacotes PFOX e espera respostas
             s, k = self.comm.run_test()
             self.test_result_var.set(f"Fim: {k}/{s} OK")
         except Exception as e:
             self.test_result_var.set("Erro Teste")
+            self.print_message(f"❌ Erro durante a execução do teste: {e}")
 
     def print_message(self, msg):
         ts = datetime.now().strftime("%H:%M:%S")
