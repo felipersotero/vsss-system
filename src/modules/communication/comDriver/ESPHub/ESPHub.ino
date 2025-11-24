@@ -4,7 +4,8 @@ ESPHub hub;
 
 void setup() {
     Serial.begin(115200);
-    hub.logToPC("ESP HUB iniciado");
+    delay(300);
+    hub.begin();
 }
 
 void loop() {

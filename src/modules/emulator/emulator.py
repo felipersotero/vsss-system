@@ -26,6 +26,9 @@ from modules.control.control import Control
 from modules.communication.communication import *
 from modules.communication.ui.interface import *
 
+# Protocolo PFOX
+from modules.communication.protocol.protocolHeader import *
+
 import threading
 import queue
 import time
@@ -154,6 +157,7 @@ class Emulator:
                 t_proc_start = time.time()
                 result = self.vs.processImg(frame, self.DEBUGA)
                 objects = self.vs.getObjects()
+                virtual = self.vs.virtualImg
                 t_proc_end = time.time()
 
                 # --- Atualiza tempos ---
@@ -161,7 +165,8 @@ class Emulator:
                 self.totalTime = (time.time() - loop_start) * 1000.0   # visão total
                 self.realTime = self.Timer.getElapsedTime()/1000.0           # desde init
                 #print("[EMULADOR]: Tempo total em segundos ", self.realTime)
-                self.FPStime = int(1000 / self.totalTime) if self.totalTime > 0 else 0
+          
+                self.fill_deques_time()
 
                 # --- Atualiza objetos detectados ---
                 self.field = objects.get(ID_Objects.FIELD, self.field)
@@ -173,6 +178,7 @@ class Emulator:
                 data = {
                     'frame': frame,
                     'result': result,
+                    'virtual': virtual,
                     'field': self.field,
                     'ball': self.ball,
                     'allies': self.allies,
@@ -220,6 +226,7 @@ class Emulator:
             data = self.ui_queue.get_nowait()
             frame = data['frame']
             result = data['result']
+            virtual = data['virtual']
             self.field = data['field']
             self.ball = data['ball']
             self.allies = data['allies']
@@ -234,6 +241,10 @@ class Emulator:
                 self.viewer.show(frame)
             if result is not None:
                 self.resultViewer.show(result)
+            virtual = data.get('virtual', None)
+            if virtual is not None:
+                self.virtualResult.show(virtual)
+
 
             # Atualiza debug
             if self.DEBUGA:
@@ -245,10 +256,14 @@ class Emulator:
                     pass
 
             # --- Atualiza UI (info cards e controle) ---
+            avg_proc = self.avg(self.deque_proc)
+            self.FPStime = int(1000/avg_proc) if avg_proc > 0 else 0
+
             self.infoCards.updateInfo("FPS:", self.FPStime)
-            self.infoCards.updateInfo("Vision. (ms):", f"{self.totalTime:.2f}")
-            self.infoCards.updateInfo("Proc. (ms):", f"{self.frameTime:.2f}")
-            self.infoCards.updateInfo("Envio (ms):", f"{self.sendTime:.2f}")
+            self.infoCards.updateInfo("Vision. (ms):", f"{avg_proc:.2f}")
+            self.infoCards.updateInfo("Proc. (ms):", f"{self.avg(self.deque_proc):.2f}")
+            self.infoCards.updateInfo("Envio (ms):", f"{self.avg(self.deque_send):.2f}")
+
             self.infoCards.updateInfo("Timer (s):", f"{self.realTime / 1000:.2f}")
             self.infoCards.updateInfo("Error Code:", self.errorCode)
             self.infoCards.update()
@@ -263,7 +278,7 @@ class Emulator:
 
     def communicationThread(self):
         """Thread principal de comunicação bidirecional."""
-        while self.running:
+        while self.cameraIsRunning:
 
             # ============================
             # 1) ENVIO DOS COMANDOS
@@ -311,12 +326,26 @@ class Emulator:
         self.maxDeque = 4
         self.capture_deque = deque(maxlen=self.maxDeque)
 
+        self.avg_window = 40 #quantidade de samples para média 
+
+        # Criando deques para salvar os tempos
+        self.deque_vision = deque(maxlen=self.avg_window)
+        self.deque_proc = deque(maxlen=self.avg_window)
+        self.deque_send = deque(maxlen=self.avg_window)
+        self.deque_fps  = deque(maxlen=self.avg_window)
+
+
         # Entidades controladas
         self.field = None
         self.ball = None
         self.allies = [None, None, None]
         self.enemies = [None, None, None]
 
+    def avg(self, dq):
+        if len(dq) == 0:
+            return 0
+        return sum(dq)/len(dq)
+    
     # ==============================================================
     #  4. Inicialização dos viewers
     # ==============================================================
@@ -354,6 +383,17 @@ class Emulator:
         self.realTime = 0.0
         self.totalTime = 0.0
 
+    def fill_deques_time(self):
+        self.deque_vision.append(self.totalTime)
+        self.deque_proc.append(self.frameTime)
+        self.deque_send.append(self.sendTime)
+
+    def erase_deques_times(self):
+        self.deque_vision.clear()
+        self.deque_proc.clear()
+        self.deque_send.clear()
+
+
     # ==============================================================
     #  7. Informações do sistema operacional
     # ==============================================================
@@ -387,6 +427,7 @@ class Emulator:
     def _init_communication(self):
         """Inicializa o objeto de comunicação."""
         self.comm =  None
+        self.PFOXcontroler = PFOXController() #API para gerar pacotes no protocolo PFOX 
 
     def _init_capture_and_vision(self):
         """Cria a instância de captura e o sistema de visão."""
@@ -835,6 +876,8 @@ class Emulator:
         self.FPStime = 0
         self.errorCode = 0
 
+        self.erase_deques_times()
+
         print("[EMULATOR] Execução finalizada com sucesso.")
 
 
@@ -935,6 +978,7 @@ class Emulator:
         self.vs._resetVs()
 
         self.totalTime = (St2i - St1i)                       #tempo em mili 
+        self.frameTime = self.totalTime
         #segundos
         
         self.realTime = self.Timer.getElapsedTime() / 1000
@@ -942,7 +986,9 @@ class Emulator:
         self.FPStime = int(1000/self.totalTime)
 
         #atualizo informações na interface
+        self.fill_deques_time()
         self.infoCards.update()
+        self.erase_deques_times()
     
     
 

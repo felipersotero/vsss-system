@@ -192,13 +192,25 @@ class CardInfos:
         
     #Atualiza contínuamente as informações acessando o objeto emulador
     def update(self):
-        self.updateInfo("FPS:", self.emulator.FPStime)
-        self.updateInfo("Vision. (ms):",self.emulator.totalTime)
-        self.updateInfo("Proc. (ms):",self.emulator.frameTime)
-        self.updateInfo("Envio (ms):",self.emulator.sendTime)
-        self.updateInfo("Timer (s):",self.emulator.realTime)
-        self.updateInfo("Error Code:",self.emulator.errorCode)
-        self.updateInfo("Modo:",self.conversionMode(self.emulator.Mode))
+        # Média do tempo total (ms)
+        avg_total = self.emulator.avg(self.emulator.deque_vision)
+
+        # Cálculo correto do FPS real
+        fps = 1000 / avg_total if avg_total > 0 else 0
+
+        # Atualiza FPS usando o valor calculado
+        self.updateInfo("FPS:", fps)
+
+        # Atualiza restantes com suas médias
+        self.updateInfo("Vision. (ms):", self.emulator.avg(self.emulator.deque_vision))
+        self.updateInfo("Proc. (ms):", self.emulator.avg(self.emulator.deque_proc))
+        self.updateInfo("Envio (ms):", self.emulator.avg(self.emulator.deque_send))
+
+        # Valores diretos
+        self.updateInfo("Timer (s):", self.emulator.realTime)
+        self.updateInfo("Error Code:", self.emulator.errorCode)
+        self.updateInfo("Modo:", self.conversionMode(self.emulator.Mode))
+
         
     #atualizando funcionalidades utilizadas para a emulação
     def updateFunc(self, variable, value):

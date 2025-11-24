@@ -22,6 +22,8 @@ import threading
 from datetime import datetime
 import statistics
 
+from modules.communication.protocol.protocolHeader import * #Protocolo PFOX
+
 
 # Configuração do logging
 logging.basicConfig(level=logging.INFO)
@@ -56,25 +58,14 @@ class CommunicationStats:
     last_activity: float = 0.0
 
 class MQTTClient:
-    """Singleton class for MQTT communication."""
-    _instance = None
-
-    def __new__(cls, *args, **kwargs):
-        if cls._instance is None:
-            cls._instance = super().__new__(cls)
-        return cls._instance
-
     def __init__(self, broker_address: str, port: int):
-        if not hasattr(self, 'client'):
-            self.client = mqtt.Client()
-            self.client.on_connect = self._on_connect
-            self.client.on_publish = self._on_publish
-
-            self.client.on_message = self._on_message
-            self._rx_queue: queue.Queue[str] = queue.Queue()
-
-            self.status = ConnectionStatus()
-            self._connect(broker_address, port)
+        self.client = mqtt.Client()
+        self.client.on_connect = self._on_connect
+        self.client.on_publish = self._on_publish
+        self.client.on_message  = self._on_message
+        self._rx_queue = queue.Queue()
+        self.status = ConnectionStatus()
+        self._connect(broker_address, port)
 
 
     @property
@@ -88,12 +79,19 @@ class MQTTClient:
         return getattr(self, '_port', 1883)
     
     def _on_message(self, cliente, userdata, msg):
-        """Callback MQTT para mensagens recebidas."""
         try:
-            payload = msg.payload.decode("utf-8").strip()
-            self._rx_queue.put(f"{msg.topic}: {payload}")
+            payload = msg.payload
+
+            if isinstance(payload, bytes):
+                payload_str = payload.hex(" ").upper()
+            else:
+                payload_str = str(payload)
+
+            self._rx_queue.put(f"{msg.topic}: {payload_str}")
+
         except Exception:
             pass
+
 
     def read_mqtt_data(self) -> Optional[str]:
         """Lê dados MQTT recebidos."""
@@ -128,19 +126,22 @@ class MQTTClient:
         except Exception as e:
             self.status.error_message = str(e)
 
-    def publish_mqtt_data(self, topic: str, message: str) -> Tuple[bool, str]:
-        """Publish message to MQTT topic."""
+    def publish_mqtt_data(self, topic: str, payload: Union[str, bytes]):
         try:
-            result = self.client.publish(topic, message)
-            if result.rc == mqtt.MQTT_ERR_SUCCESS:
-                return True, "Message published successfully"
-            return False, f"Failed to publish message: {result.rc}"
+            if isinstance(payload, str):
+                payload = payload.encode("utf-8")
+
+            result = self.client.publish(topic, payload)
+            result.wait_for_publish()
+            return True, "Published"
+
         except Exception as e:
             return False, str(e)
+
     
     def disconnect(self):
         try:
-            self.client.loop_stop()
+            self.client.loop_stop(force=True)
             self.client.disconnect()
         except Exception:
             pass
@@ -162,17 +163,11 @@ class SerialConnection:
         except Exception as e:
             self.status.error_message = str(e)
 
-    def send_serial_data(self, message: str) -> Tuple[bool, str]:
-        """Send data through serial connection."""
-        if not self.status.is_connected:
-            return False, "Serial connection not established"
-        
-        try:
-            data_bytes = message.encode('utf-8')
-            written = self.com.write(data_bytes)
-            return written > 0, f"Data sent successfully ({written} bytes)"
-        except Exception as e:
-            return False, str(e)
+    def send_serial_data(self, data: Union[str, bytes]):
+        if isinstance(data, str):
+            data = data.encode("utf-8")
+        self.com.write(data)
+        return True, "OK"
 
     def read_serial_data(self) -> Optional[str]:
         """Read data from serial connection."""
@@ -235,6 +230,7 @@ class Communication:
 
         # listeners para interceptar mensagens recebidas (emulator, controladores, etc.)
         self.rx_listeners: List[Callable[[str], None]] = []
+        self._rx_queue: queue.Queue[str] = queue.Queue()
 
         # estado dos robôs
         self.robot_status = {1: "FAIL", 2: "FAIL", 3: "FAIL"}
@@ -285,6 +281,19 @@ class Communication:
     # ============================================================
     # CONEXÃO E CONFIGURAÇÃO
     # ============================================================
+    def get_responses(self) -> List[str]:
+        """
+        Retorna todas as mensagens recebidas desde a última chamada.
+        Usado pela thread de comunicação bidirecional.
+        """
+        responses = []
+        while not self._rx_queue.empty():
+            try:
+                responses.append(self._rx_queue.get_nowait())
+            except queue.Empty:
+                break
+        return responses
+
 
     def _setup_connection(self) -> None:
         """Initialize the selected communication method."""
@@ -374,6 +383,8 @@ class Communication:
                     if data:
                         self.stats.total_received += 1
                         self._emit_log(f"[RX] {data}")
+                        self._rx_queue.put(data)
+
 
                         for cb in self.rx_listeners:
                             try:
@@ -387,6 +398,8 @@ class Communication:
                     if data:
                         self.stats.total_received += 1
                         self._emit_log(f"[RX] {data}")
+                        self._rx_queue.put(data)
+
 
                         for cb in self.rx_listeners:
                             try:
@@ -427,7 +440,7 @@ class Communication:
     # ============================================================
     # COMUNICAÇÃO PRINCIPAL
     # ============================================================
-    def send_data(self, topic_or_message: str, message: Optional[str] = None) -> Tuple[bool, str]:
+    def send_data(self, topic_or_message: str, message: Optional[Union[bytes,str]] = None) -> Tuple[bool, str]:
         """
         Envia dados usando o cliente ativo (MQTT ou Serial).
         Gera logs completos:
@@ -451,26 +464,40 @@ class Communication:
             # ================================================================
             if self.use_mqtt:
                 if message is None:
-                    self._emit_log("❌ MQTT requer topic + message")
-                    return False, "MQTT requires both topic and message"
+                    return False, "MQTT requires payload"
 
-                # Log pré-envio
-                self._emit_log(f"[TX MQTT] topic='{topic_or_message}' payload='{message}'")
+                is_bytes = isinstance(message, bytes)
+
+                # Log bonito
+                payload_log = message.hex(" ").upper() if is_bytes else message
+                self._emit_log(f"[TX MQTT] topic='{topic_or_message}' payload='{payload_log}'")
 
                 success, result_msg = self.client.publish_mqtt_data(topic_or_message, message)
+
                 latency = (time.time() - start_time) * 1000 if success else None
 
             # ================================================================
             # ENVIO SERIAL
             # ================================================================
             else:
-                full_message = f"{topic_or_message} {message}" if message else topic_or_message
+                # Em Serial o "topic_or_message" é sempre o PAYLOAD se message=None
+                if isinstance(topic_or_message, bytes):
+                    full_msg = topic_or_message
+                elif isinstance(message, bytes):
+                    full_msg = message
+                elif message is None:
+                    # Só string -> vira bytes
+                    full_msg = topic_or_message.encode("utf-8")
+                else:
+                    # Caso queira string + string concatenada (sem bytes)
+                    full_msg = (str(topic_or_message) + str(message)).encode("utf-8")
 
-                # Log pré-envio
-                self._emit_log(f"[TX SERIAL] '{full_message}'")
+                payload_log = full_msg.hex(" ").upper()
+                self._emit_log(f"[TX SERIAL] bytes={payload_log}")
 
-                success, result_msg = self.client.send_serial_data(full_message)
+                success, result_msg = self.client.send_serial_data(full_msg)
                 latency = (time.time() - start_time) * 1000 if success else None
+
 
             # ================================================================
             # ATUALIZA ESTATÍSTICAS DO SISTEMA
@@ -481,17 +508,26 @@ class Communication:
             # LOG FINAL DO ENVIO
             # ================================================================
             if success:
+                if isinstance(message, bytes):
+                    payload_info = f"payload(bytes)={message.hex(' ').upper()}"
+                else:
+                    payload_info = f"payload={message}" if message else ""
+
                 self._emit_log(
-                    f"✔ Enviado com sucesso | Conteúdo='{topic_or_message}' "
-                    f"{'payload=' + message if message else ''} "
+                    f"✔ Enviado com sucesso | Conteúdo='{topic_or_message}' {payload_info} "
                     f"| Latência={latency:.1f}ms"
                 )
+
             else:
+                if isinstance(message, bytes):
+                    payload_info = f"payload(bytes)={message.hex(' ').upper()}"
+                else:
+                    payload_info = f"payload={message}" if message else ""
+
                 self._emit_log(
-                    f"❌ Falha ao enviar '{topic_or_message}' "
-                    f"{'(payload: ' + message + ')' if message else ''} "
-                    f"| Motivo: {result_msg}"
+                    f"❌ Falha ao enviar '{topic_or_message}' {payload_info} | Motivo: {result_msg}"
                 )
+
 
             return success, result_msg
 
@@ -501,17 +537,19 @@ class Communication:
             self._emit_log(f"❌ Erro crítico no envio: {e}")
             return False, str(e)
 
-    def send(self, data: bytes) -> None:
-        """Interface compatível com a interface.py - envia dados brutos."""
+    def send(self, data: Union[str, bytes], topic: str = "raw") -> None:
         try:
-            message = data.decode('utf-8', errors='replace')
             if self.use_mqtt:
-                # Para MQTT, assume que a mensagem é o tópico e não há payload adicional
-                self.send_data("debug", message)
+                self.send_data(topic, data)
             else:
-                self.send_data(message)
+                self.send_data(data, None)
+
         except Exception as e:
-            self._emit_log(f"Erro no envio de dados brutos: {e}")
+            self._emit_log(f"Erro no envio: {e}")
+
+
+
+
 
     # ============================================================
     # ESTATÍSTICAS E STATUS (PARA INTERFACE)

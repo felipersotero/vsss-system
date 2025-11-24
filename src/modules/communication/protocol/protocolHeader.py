@@ -112,12 +112,77 @@ class PFOXController:
         self.seq_counter = (self.seq_counter + 1) % 256
         return self.seq_counter
 
+    # ============================================================
+    # 🔹 MÉTODO GENÉRICO (BASE) – cria QUALQUER pacote PFOX
+    # ============================================================
+    def create_packet(self, dst: Address, msg_type: MsgType, payload: List[int]) -> PFOXPacket:
+        packet = PFOXPacket(
+            src=Address.PC,      # PC sempre é a origem
+            dst=dst,
+            msg_type=msg_type,
+            seq=self.next_seq(),
+            payload=payload
+        )
+        return packet
+
+    # ============================================================
+    # 🔹 ENVIO GENÉRICO — qualquer destino, qualquer payload
+    # ============================================================
+    def send_custom(self, dst: Address, msg_type: MsgType, payload: List[int]) -> PFOXPacket:
+        """
+        Cria qualquer tipo de mensagem com payload arbitrário.
+        Ex: send_custom(Address.ROBOT1, MsgType.STATUS, [10,20,30])
+        """
+        return self.create_packet(dst, msg_type, payload)
+
+    # ============================================================
+    # 🔹 BROADCAST – qualquer mensagem para todos os robôs
+    # ============================================================
+    def send_broadcast(self, msg_type: MsgType, payload: List[int]) -> PFOXPacket:
+        """
+        Envia para todos os dispositivos no barramento.
+        """
+        return self.create_packet(Address.BROADCAST, msg_type, payload)
+
+    # ============================================================
+    # 🔹 ACK – resposta comum
+    # ============================================================
+    def send_ack(self, dst: Address, ack_code: int = 0x00) -> PFOXPacket:
+        """
+        ack_code é um código opcional de confirmação.
+        """
+        return self.create_packet(dst, MsgType.ACK, [ack_code & 0xFF])
+
+    # ============================================================
+    # 🔹 HEARTBEAT (ping)
+    # ============================================================
+    def send_heartbeat(self, dst: Address = Address.BROADCAST) -> PFOXPacket:
+        """
+        Heartbeat pode ser enviado para um robô específico ou broadcast.
+        """
+        return self.create_packet(dst, MsgType.HEARTBEAT, [])
+
+    # ============================================================
+    # 🔹 ERROR – envia código de erro
+    # ============================================================
+    def send_error(self, dst: Address, error_code: int) -> PFOXPacket:
+        return self.create_packet(dst, MsgType.ERROR, [error_code & 0xFF])
+
+    # ============================================================
+    # 🔹 FLOW CONTROL (ex: iniciar/pausar motor)
+    # ============================================================
+    def send_flow_control(self, dst: Address, value: int) -> PFOXPacket:
+        """
+        value pode ser: 0x00 = STOP, 0x01 = RUN, etc.
+        """
+        return self.create_packet(dst, MsgType.CMD_FLOW_CTRL, [value & 0xFF])
+
+    # ============================================================
+    # 🔹 SEU PACOTE ORIGINAL: SET SPEED
+    # ============================================================
     def send_speed_command(self, robot_id: Address, left_speed_real: int, left_speed_desired: int,
                            right_speed_real: int, right_speed_desired: int) -> PFOXPacket:
-        """
-        Cria um pacote CMD_SET_SPEED com velocidades reais e desejadas para cada roda.
-        Payload: [robot_id, left_real, left_desired, right_real, right_desired]
-        """
+
         payload = [
             robot_id.value,
             left_speed_real & 0xFF,
@@ -125,14 +190,9 @@ class PFOXController:
             right_speed_real & 0xFF,
             right_speed_desired & 0xFF
         ]
-        packet = PFOXPacket(
-            src=Address.PC,
-            dst=robot_id,
-            msg_type=MsgType.CMD_SET_SPEED,
-            seq=self.next_seq(),
-            payload=payload
-        )
-        return packet
+
+        return self.create_packet(robot_id, MsgType.CMD_SET_SPEED, payload)
+
 
 
 # =========================
