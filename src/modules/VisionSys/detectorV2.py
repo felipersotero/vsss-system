@@ -2684,7 +2684,9 @@ class VisionSystem:
 
         x_w, y_w, w_w, h_w = self.viewCapture.cooVetor
         # Verifica se a ROI é grande o suficiente
-        if w_w < 50 or h_w < 50:  # ajuste mínimo que faça sentido
+        w_r = w_w / self.prop_px_cm
+        h_r = h_w /  self.prop_px_cm
+        if w_r < 100 or h_r < 100:  # ajuste mínimo que faça sentido
             return self.proc(img, debug)
 
         # --- Campo previamente detectado, ROI válida ---
