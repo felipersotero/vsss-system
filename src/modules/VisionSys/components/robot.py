@@ -10,7 +10,6 @@ class Robot:
                  image=cv2.imread('src/images/dark_screen.png'),
                  colorTeam=None, colorCar1=None, colorCar2=None,
                  differential_filter=False):
-
         # Identifiers
         self.id = id
         self.team = team
@@ -24,12 +23,16 @@ class Robot:
         self._direction = np.array([1.0, 0.0])
         self._theta = 0.0
 
+    
         # Geometry
         self.radius = float(r)
         self.objLimit = Circle(self.radius, Point2D(x, y))
         self.bbox = BorderBox(GeometryType.CIRCLE, self.objLimit)
         self.ObjType = ObjTypeMove.MOVING
         self.objTypeSystem = ObjTypeVision.ROBOT
+
+        # Variáveis internas do robô
+        self.axle_length = 2*self.radius #cm
 
         # Status
         self.detected = False
@@ -64,12 +67,13 @@ class Robot:
     # Kalman init
     # --------------------------
     def _init_kalman(self):
-        # State: [x, y, theta, vx, vy, omega]
+        # ESTADO NOVO: [x, y, theta, v_esquerda (vL), v_direita (vR), omega]
         self.kalman_state = np.zeros((6, 1), float)
 
         # Covariances
         self.kalman_P = np.eye(6) * 400.0
 
+        # Processo (Q): [pos, pos, ang, vL_noise, vR_noise, omega_noise]
         # Processo (acelerações pequenas)
         self.kalman_Q = np.diag([0.01, 0.01, 0.01, 5.0, 5.0, 1.0])
 
@@ -200,6 +204,65 @@ class Robot:
         d = a - b
         return (d + np.pi) % (2*np.pi) - np.pi
 
+    # ------------------------
+    # EKF: Funções de predição (Novas)
+    # ------------------------
+    def _non_linear_motion_model(self, state, dt):
+        """
+        Função de transição não-linear f(x, dt) para o modelo Differential Drive.
+        Assume que w_esquerda = w_direita = 0 (sem entrada de comando).
+        """
+        x, y, theta, vL, vR, omega = state[:, 0]
+        
+        # Velocidade Linear (v) e Angular (omega)
+        v = (vL + vR) / 2.0
+        # O estado omega (x[5]) já representa a velocidade angular filtrada.
+        # omega = (vR - vL) / self.axle_length # Se usássemos vL e vR para a predição de omega
+
+        # Aproximação de Euler (simplificada para pequenos dt)
+        x_new = x + v * dt * np.cos(theta)
+        y_new = y + v * dt * np.sin(theta)
+        theta_new = theta + omega * dt # Predição de theta usando o estado omega
+        
+        # Velocidades são assumidas como Constantes (CV)
+        vL_new = vL
+        vR_new = vR
+        omega_new = omega
+
+        # Normaliza theta
+        theta_new = (theta_new + np.pi) % (2 * np.pi) - np.pi
+        
+        return np.array([[x_new], [y_new], [theta_new], [vL_new], [vR_new], [omega_new]])
+
+    def _jacobian_motion_model(self, state, dt):
+        """
+        Matriz Jacobiana A (ou F) do modelo de movimento não-linear f(x, dt).
+        """
+        x, y, theta, vL, vR, omega = state[:, 0]
+        v = (vL + vR) / 2.0
+        
+        # Derivadas parciais para x, y, theta
+        dx_dtheta = -v * dt * np.sin(theta)
+        dy_dtheta = v * dt * np.cos(theta)
+        
+        dx_dvL = 0.5 * dt * np.cos(theta) # d(x_new)/d(vL) = d(v)/d(vL) * dt * cos(theta)
+        dy_dvL = 0.5 * dt * np.sin(theta) # d(y_new)/d(vL)
+        
+        dx_dvR = 0.5 * dt * np.cos(theta) # d(x_new)/d(vR)
+        dy_dvR = 0.5 * dt * np.sin(theta) # d(y_new)/d(vR)
+        
+        # Matriz Jacobiana 6x6 (A)
+        A = np.array([
+            # x   y   theta       vL          vR          omega
+            [1, 0, dx_dtheta,   dx_dvL,     dx_dvR,     0],
+            [0, 1, dy_dtheta,   dy_dvL,     dy_dvR,     0],
+            [0, 0, 1,           0,          0,          dt],
+            [0, 0, 0,           1,          0,          0],
+            [0, 0, 0,           0,          1,          0],
+            [0, 0, 0,           0,          0,          1]
+        ], float)
+        
+        return A
 
     def update_kalman(self, z_list, timestamp):
         x, y, theta_meas = z_list
@@ -214,27 +277,26 @@ class Robot:
         dt = max(timestamp - self.kalman_last_time, 1e-3)
         self.kalman_last_time = timestamp
 
-        F = np.array([
-            [1, 0, 0, dt, 0,  0],
-            [0, 1, 0, 0,  dt, 0],
-            [0, 0, 1, 0,  0, dt],
-            [0, 0, 0, 1,  0,  0],
-            [0, 0, 0, 0,  1,  0],
-            [0, 0, 0, 0,  0,  1]], float)  # igual ao seu F
+        # ---- Predição EKF (Fase 1) ---
 
-        self.kalman_state = F @ self.kalman_state
-        self.kalman_P = F @ self.kalman_P @ F.T + self.kalman_Q
+        # 1. Predição do Estado (função não-linear F)
+        self.kalman_state = self._non_linear_motion_model(self.kalman_state, dt)
 
+        # 2. Predição da Covariância (usando o Jacobiano A)
+        A = self._jacobian_motion_model(self.kalman_state, dt)
+        self.kalman_P = A @ self.kalman_P @A.T + self.kalman_Q
+
+        # --- CORREÇÃO EKF (Fase 2) ---
         H = np.array([
             [1, 0, 0, 0, 0, 0],   # mede x
             [0, 1, 0, 0, 0, 0],   # mede y
             [0, 0, 1, 0, 0, 0],   # mede theta
         ], float)
 
-
-        pred = H @ self.kalman_state
-        y_residual = z - pred
-        # normaliza theta residual:
+        # H é linear, por isso usamos H @ x_predito
+        pred = H @ self.kalman_state 
+        y_residual = z-pred 
+        # normalize theta residual
         y_residual[2,0] = self._angle_diff(z[2,0], pred[2,0])
 
         S = H @ self.kalman_P @ H.T + self.kalman_R
@@ -242,7 +304,6 @@ class Robot:
 
         self.kalman_state = self.kalman_state + K @ y_residual
         self.kalman_P = (np.eye(6) - K @ H) @ self.kalman_P
-
 
     # Preciso realizar a conversão desses valores para a coordenada da imagem
     def get_roi(self, image_shape, t_now, scale_std=3):
@@ -276,9 +337,11 @@ class Robot:
         w_roi = int(scale_std * std_x * 2)  # multiplicado por 2 para pegar ±std
         h_roi = int(scale_std * std_y * 2)
 
+        min_dimension = int(2.5*self.radius)
+
         # Impor valores mínimos para impedir estrangulamento
-        w_roi = max(w_roi, 12)
-        h_roi = max(w_roi, 14)
+        w_roi = max(w_roi, min_dimension)
+        h_roi = max(h_roi, min_dimension)
 
         # --- 4) Topo-esquerdo ---
         x = int(x_pred - w_roi // 2)
@@ -294,55 +357,48 @@ class Robot:
         return x, y, w_roi, h_roi
 
     # Recuperar predição do filtro de Kalman
+    # Recuperar predição do filtro de Kalman
     def predict(self, time):
         """
-        Prediz o estado futuro usando o timestamp absoluto.
+        Prediz o estado futuro usando o timestamp absoluto (AGORA USANDO O MODELO EKF NÃO-LINEAR).
         Não altera o estado interno do filtro, apenas retorna a predição.
         """
+        if not self.kalman_initialized:
+            # Retorna o estado cru se o filtro não foi inicializado
+            return self.position[0], self.position[1], self.theta
 
         # tempo entre a última atualização real e a predição desejada
-        dt = time - self.kalman_last_time
-        if dt < 0:
-            dt = 0  # segurança contra timestamps invertidos
+        dt = max(time - self.kalman_last_time, 0.0)
 
-        F = np.array([
-            [1, 0, 0, dt, 0,  0],
-            [0, 1, 0, 0,  dt, 0],
-            [0, 0, 1, 0,  0, dt],
-            [0, 0, 0, 1,  0,  0],
-            [0, 0, 0, 0,  1,  0],
-            [0, 0, 0, 0,  0,  1],
-        ], float)
+        # UTILIZA O MODELO DE MOVIMENTO NÃO-LINEAR (EKF)
+        # st_predicted é um vetor (6, 1) com [x, y, theta, vL, vR, omega]
+        st_predicted = self._non_linear_motion_model(self.kalman_state, dt)
 
-        predicted = F @ self.kalman_state
-
-        return predicted[0,0], predicted[1,0], predicted[2,0]
+        # Retorna apenas as coordenadas de posição (x, y, theta)
+        return st_predicted[0,0], st_predicted[1,0], st_predicted[2,0]
 
     def predict_with_cov(self, time):
         """
         Retorna (state_pred, P_pred) sem alterar estado interno.
-        state_pred será um array (6,1).
+        AGORA USA O MODELO NÃO-LINEAR E O JACOBIANO.
         """
         if not self.kalman_initialized:
             st = np.zeros((6,1))
-            st[:2,0] = self.position
-            st[2,0] = self.theta
-            P_temp = np.eye(6) * 50.0  # covariância inicial “razoável”
+            st[:3,0] = [self.position[0], self.position[1], self.theta]
+            P_temp = np.eye(6) * 50.0  
             return st, P_temp
 
 
         dt = max(time - self.kalman_last_time, 0.0)
-        F = np.array([
-            [1, 0, 0, dt, 0,  0],
-            [0, 1, 0, 0,  dt, 0],
-            [0, 0, 1, 0,  0, dt],
-            [0, 0, 0, 1,  0,  0],
-            [0, 0, 0, 0,  1,  0],
-            [0, 0, 0, 0,  0,  1],
-        ], float)
-        st_pred = F @ self.kalman_state
-        P_pred = F @ self.kalman_P @ F.T + self.kalman_Q
-        # normalize theta
+        
+        # Predição de estado
+        st_pred = self._non_linear_motion_model(self.kalman_state, dt)
+        
+        # Predição de covariância
+        A = self._jacobian_motion_model(st_pred, dt) # Usa o estado predito para o jacobiano (comum em EKF)
+        P_pred = A @ self.kalman_P @ A.T + self.kalman_Q
+
+        # normalize theta (já feito em _non_linear_motion_model, mas seguro repetir)
         st_pred[2,0] = (st_pred[2,0] + np.pi) % (2*np.pi) - np.pi
         return st_pred, P_pred
     
