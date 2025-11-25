@@ -115,7 +115,7 @@ class Emulator:
         self.CUDAselected = False
 
         # Tempo de comunicação
-        self.comm_send_interval = 0.02 #50 FPS
+        self.comm_send_interval = 0.016 #60 FPS
 
     # ==============================================================
     #  2.1 Processamento paralelo
@@ -147,8 +147,9 @@ class Emulator:
 
             try:
                 # --- Captura ---
-                frame = self.capture.getImage()
+                frame = self.capture.getImage() #A câmera tem um FPS de 30, então fica travado a 30 FPS o sistema.
                 if frame is None:
+                    # Meu FPS é limitado pela velocidade de aquisição de dados da câmera.
                     time.sleep(0.002)
                     continue
 
@@ -208,7 +209,7 @@ class Emulator:
             except Exception as e:
                 print("[VISION THREAD] Erro:", e)
                 traceback.print_exc()
-                time.sleep(0.01)
+                time.sleep(0.003)
                 continue
 
         print("[VISION THREAD] Finalizada.")
@@ -276,41 +277,58 @@ class Emulator:
         self.viewer.window.after(16, self.updateUI)
 
     def communicationThread(self):
-        """Thread principal de comunicação bidirecional."""
+        """
+        Thread principal de comunicação bidirecional.
+        Envia comandos pendentes e processa respostas recebidas
+        somente quando a comunicação está ativa.
+        """
+
+        send_interval = getattr(self, "comm_send_interval", 0.02)
+
         while self.cameraIsRunning:
 
-            # ============================
-            # 1) ENVIO DOS COMANDOS
-            # ============================
+            # ------------------------------------------
+            # 0) Verificar se comunicação existe e está ativa
+            # ------------------------------------------
+            if not self.comm or not self.comm.is_connected():
+                # Comunicação OFF → não tenta enviar nem receber
+                time.sleep(0.1)
+                continue
+
+            # ------------------------------------------
+            # 1) ENVIO DE COMANDOS
+            # ------------------------------------------
             try:
-                if not self.commands_queue.empty():
+                while not self.commands_queue.empty():
                     cmd = self.commands_queue.get_nowait()
-                    if self.comm:
-                        self.comm.send_data("espfox/cmd", cmd)
+                    self.comm.send_data("espfox/cmd", cmd)
+
             except Exception as e:
                 print(f"[Emulator] Erro ao enviar: {e}")
 
-            # ============================
-            # 2) RECEPÇÃO DAS RESPOSTAS
-            # ============================
+            # ------------------------------------------
+            # 2) RECEPÇÃO DE PACOTES
+            # ------------------------------------------
             try:
-                if self.comm:
-                    responses = self.comm.get_responses()
-                    for resp in responses:
-                        # Aqui você trata o que volta da comunicação
-                        # Pode imprimir, aplicar lógica, reenviar para o controle, etc.
-                        print(f"[Emulator RX] {resp}")
+                responses = self.comm.get_responses()
+                for resp in responses:
+                    print(f"[Emulator RX] {resp}")
 
-                        # Exemplo: repassa para o controlador real
-                        # if self.control_module:
-                        #     self.control_module.update(resp)
+                    # repassar p/ módulo de controle se existir
+                    if hasattr(self, "control_module") and self.control_module:
+                        try:
+                            self.control_module.update(resp)
+                        except Exception as e2:
+                            print(f"[ControlModule] Erro no update: {e2}")
+
             except Exception as e:
                 print(f"[Emulator] Erro ao processar RX: {e}")
 
-            # ============================
-            # 3) INTERVALO DE LOOP
-            # ============================
-            time.sleep(self.comm_send_interval if hasattr(self, "comm_send_interval") else 0.02)
+            # ------------------------------------------
+            # 3) INTERVALO DO LOOP
+            # ------------------------------------------
+            time.sleep(send_interval)
+
 
 
     # ==============================================================

@@ -47,85 +47,75 @@ MSG_TYPE_NAMES = {t.value: t.name for t in MsgType}
 # Estrutura do Pacote PFOX
 # =========================
 class PFOXPacket:
-    # 💡 CORREÇÃO CRÍTICA: Trocando 'id_pkt' por 'seq' para compatibilidade com PFOXController
-    def __init__(self, src: Address, dst: Address, msg_type: MsgType, 
-                 payload: List[int], seq: int = 0): 
+    def __init__(self, src: Address, dst: Address, msg_type: MsgType, payload: List[int],
+                 seq: int = 0, version: int = 0x01):
         self.start = 0xF0
+        self.version = version
         self.src = src
         self.dst = dst
-        self.type = msg_type
-        self.id = seq # O número de sequência/ID do pacote
+        self.msg_type = msg_type
+        self.id = seq
         self.payload = bytes(payload)
         self.len = len(self.payload)
-        self.crc = 0 # Inicialmente 0, será calculado na serialização
-        
+        self.crc = 0
+
     def __repr__(self) -> str:
-        """Representação amigável para debug (usada no log RX)"""
-        msg_name = MSG_TYPE_NAMES.get(self.type.value, f"0x{self.type.value:02X}")
+        msg_name = MSG_TYPE_NAMES.get(self.msg_type.value, f"0x{self.msg_type.value:02X}")
         return (f"PKT(SRC={self.src.name}, DST={self.dst.name}, TYPE={msg_name}, "
                 f"ID={self.id}, LEN={self.len}, PAYLOAD={self.payload.hex()})")
 
-    # =================================================================
-    # Método para Serializar o Pacote (TX)
-    # =================================================================
     def to_bytes(self) -> bytes:
-        """Serializa o objeto PFOXPacket em uma sequência de bytes com CRC16."""
-        # O cabeçalho é: START(0xF0), SRC, DST, TYPE, ID, LEN
-        header = struct.pack('!BBBBBB', 
-            self.start, 
-            self.src.value, 
-            self.dst.value, 
-            self.type.value, 
-            self.id, 
+        """Serializa o pacote incluindo Version e CRC16."""
+        header = struct.pack(
+            '!BBBBBBB',  # 7 bytes de header
+            self.start,
+            self.version,
+            self.src.value,
+            self.dst.value,
+            self.msg_type.value,
+            self.id,
             self.len
         )
-        
         packet_without_crc = header + self.payload
         crc_value = crc16_ccitt(packet_without_crc)
         crc_bytes = struct.pack('!H', crc_value)
-        
         return packet_without_crc + crc_bytes
 
     @classmethod
     def decode(cls, data: bytes) -> 'PFOXPacket':
-        """Decodifica bytes brutos em um objeto PFOXPacket e verifica o CRC."""
-        if len(data) < 9 or data[0] != 0xF0:
+        if len(data) < 9 or data[0] != 0xF0:  # 7 header + 2 CRC = 9 mínimo
             raise ValueError("Pacote PFOX incompleto ou inválido.")
-
-        header_len = 6
-        # Desempacota Header: START(B), SRC(B), DST(B), TYPE(B), ID(B), LEN(B)
-        start, src_val, dst_val, type_val, id_pkt, payload_len = struct.unpack('!BBBBBB', data[:header_len])
         
-        total_len = header_len + payload_len + 2 # Header + Payload + CRC
-        
-        if len(data) != total_len:
-            raise ValueError(f"Tamanho do pacote ({len(data)}) não corresponde ao LEN reportado ({total_len}).")
-
-        # Verifica CRC
-        received_crc = struct.unpack('!H', data[-2:])[0]
-        calculated_crc = crc16_ccitt(data[:-2])
-        
-        if received_crc != calculated_crc:
-            raise ValueError(f"Falha na verificação CRC. Recebido: 0x{received_crc:04X}, Calculado: 0x{calculated_crc:04X}.")
-
-        # Extrai Payload
-        payload = list(data[header_len:-2]) # Converte para List[int] para compatibilidade
-        
-        # Cria e retorna o objeto. Usamos 'seq=id_pkt' para manter o novo nome do parâmetro.
-        return cls(
-            src=Address(src_val), 
-            dst=Address(dst_val), 
-            msg_type=MsgType(type_val), 
-            payload=payload, 
-            seq=id_pkt 
+        header_len = 7
+        start, version, src_val, dst_val, type_val, seq, payload_len = struct.unpack(
+            '!BBBBBBB', data[:header_len]
         )
-    
+        total_len = header_len + payload_len + 2
+        if len(data) != total_len:
+            raise ValueError("Tamanho do pacote não confere.")
+        
+        payload = data[header_len:header_len+payload_len]
+        crc_received = struct.unpack('!H', data[header_len+payload_len:])[0]
+        crc_calc = crc16_ccitt(data[:header_len+payload_len])
+        if crc_received != crc_calc:
+            raise ValueError("CRC inválido.")
+        
+        return cls(
+            src=Address(src_val),
+            dst=Address(dst_val),
+            msg_type=MsgType(type_val),
+            payload=list(payload),
+            seq=seq,
+            version=version
+        )
+
 # =========================
 # Controlador de Pacotes
 # =========================
 class PFOXController:
-    def __init__(self):
+    def __init__(self, version: int = 0x01):
         self.seq_counter = 0
+        self.version = version  # Versão do protocolo
 
     def next_seq(self) -> int:
         self.seq_counter = (self.seq_counter + 1) % 256
@@ -135,12 +125,16 @@ class PFOXController:
     # 🔹 MÉTODO GENÉRICO (BASE) – cria QUALQUER pacote PFOX
     # ============================================================
     def create_packet(self, dst: Address, msg_type: MsgType, payload: List[int]) -> PFOXPacket:
+        seq_to_use = self.next_seq()
+        self.last_seq_used = seq_to_use  # Salva o último ID usado
+
         packet = PFOXPacket(
-            src=Address.PC,      # PC sempre é a origem
+            src=Address.PC,  # PC sempre é a origem
             dst=dst,
             msg_type=msg_type,
-            seq=self.next_seq(),
-            payload=payload
+            seq=seq_to_use,
+            payload=payload,
+            version=self.version  # ⚡ Propaga a versão
         )
         return packet
 
@@ -148,37 +142,24 @@ class PFOXController:
     # 🔹 ENVIO GENÉRICO — qualquer destino, qualquer payload
     # ============================================================
     def send_custom(self, dst: Address, msg_type: MsgType, payload: List[int]) -> PFOXPacket:
-        """
-        Cria qualquer tipo de mensagem com payload arbitrário.
-        Ex: send_custom(Address.ROBOT1, MsgType.STATUS, [10,20,30])
-        """
         return self.create_packet(dst, msg_type, payload)
 
     # ============================================================
     # 🔹 BROADCAST – qualquer mensagem para todos os robôs
     # ============================================================
     def send_broadcast(self, msg_type: MsgType, payload: List[int]) -> PFOXPacket:
-        """
-        Envia para todos os dispositivos no barramento.
-        """
         return self.create_packet(Address.BROADCAST, msg_type, payload)
 
     # ============================================================
     # 🔹 ACK – resposta comum
     # ============================================================
     def send_ack(self, dst: Address, ack_code: int = 0x00) -> PFOXPacket:
-        """
-        ack_code é um código opcional de confirmação.
-        """
         return self.create_packet(dst, MsgType.ACK, [ack_code & 0xFF])
 
     # ============================================================
     # 🔹 HEARTBEAT (ping)
     # ============================================================
     def send_heartbeat(self, dst: Address = Address.BROADCAST) -> PFOXPacket:
-        """
-        Heartbeat pode ser enviado para um robô específico ou broadcast.
-        """
         return self.create_packet(dst, MsgType.HEARTBEAT, [])
 
     # ============================================================
@@ -191,16 +172,19 @@ class PFOXController:
     # 🔹 FLOW CONTROL (ex: iniciar/pausar motor)
     # ============================================================
     def send_flow_control(self, dst: Address, value: int) -> PFOXPacket:
-        """
-        value pode ser: 0x00 = STOP, 0x01 = RUN, etc.
-        """
         return self.create_packet(dst, MsgType.CMD_FLOW_CTRL, [value & 0xFF])
 
     # ============================================================
-    # 🔹 SEU PACOTE ORIGINAL: SET SPEED
+    # 🔹 SET SPEED
     # ============================================================
-    def send_speed_command(self, robot_id: Address, left_speed_real: int, left_speed_desired: int,
-                           right_speed_real: int, right_speed_desired: int) -> PFOXPacket:
+    def send_speed_command(
+        self,
+        robot_id: Address,
+        left_speed_real: int,
+        left_speed_desired: int,
+        right_speed_real: int,
+        right_speed_desired: int
+    ) -> PFOXPacket:
 
         payload = [
             robot_id.value,
@@ -211,8 +195,6 @@ class PFOXController:
         ]
 
         return self.create_packet(robot_id, MsgType.CMD_SET_SPEED, payload)
-
-
 
 # =========================
 # Exemplo de uso
@@ -229,8 +211,16 @@ if __name__ == "__main__":
         right_speed_desired=150
     )
 
-    raw = pkt.encode()
+    raw = pkt.to_bytes()
     print(f"Pacote codificado: {raw.hex()}")
 
     decoded = PFOXPacket.decode(raw)
     print(f"Pacote decodificado: {decoded}")
+
+    # Teste com HEARTBEAT (payload zero)
+    hb_pkt = controller.send_heartbeat(Address.ROBOT2)
+    raw_hb = hb_pkt.to_bytes()
+    print(f"HEARTBEAT codificado: {raw_hb.hex()}")
+    decoded_hb = PFOXPacket.decode(raw_hb)
+    print(f"HEARTBEAT decodificado: {decoded_hb}")
+

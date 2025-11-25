@@ -530,7 +530,7 @@ class VisionSystem:
                     
                     Isso garante uma detecção contínua do robô
                 '''
-                self.proc(img, debug)
+                self.filtered_detection(img, debug)
 
         # --- Caso 2: processamento completo periódico ---
         else:
@@ -2672,72 +2672,62 @@ class VisionSystem:
     def filtered_detection(self, img, tms, debug=False):
         """
         Detecção leve de robôs e bola usando predição do Kalman para definir ROI.
-        Protegida com _safe_call para não travar o loop em caso de exceção.
-
-        Parâmetros:
-            img : np.ndarray
-                Frame completo da câmera.
-            tms : float
-                Timestamp atual do frame.
+        Só roda se viewCapture tiver coordenadas válidas. Caso contrário, retorna proc().
         """
-
         if img is None:
-            return
+            return self.proc(img, debug)
 
-        #counters
-        self.alliesCount = self.enemiesCount = self.playersCount = 0
+        # Verifica se a viewCapture existe e tem uma ROI válida
+        if not hasattr(self.viewCapture, 'cooVetor') or self.viewCapture.cooVetor is None:
+            # Sem campo detectado previamente, roda pipeline completo
+            return self.proc(img, debug)
 
-        # --- Ajusta limites da janela viewCapture ---
-        if hasattr(self.viewCapture, 'cooVetor') and self.viewCapture.cooVetor is not None:
-            x_w, y_w, w_w, h_w = self.viewCapture.cooVetor
-            # Garantir que as coordenadas estão dentro dos limites da imagem
-            h_img, w_img = img.shape[:2]
-            x_w = max(0, min(x_w, w_img - 1))
-            y_w = max(0, min(y_w, h_img - 1))
-            w_w = max(1, min(w_w, w_img - x_w))
-            h_w = max(1, min(h_w, h_img - y_w))
-            self.fieldReduce = img[y_w:y_w+h_w, x_w:x_w+w_w]
-        else:
-            # Se não há viewCapture, usar a imagem inteira
-            self.fieldReduce = img
+        x_w, y_w, w_w, h_w = self.viewCapture.cooVetor
+        # Verifica se a ROI é grande o suficiente
+        if w_w < 50 or h_w < 50:  # ajuste mínimo que faça sentido
+            return self.proc(img, debug)
 
-     
-        shape = self.fieldReduce.shape[:2]
-        H, W = shape
+        # --- Campo previamente detectado, ROI válida ---
+        h_img, w_img = img.shape[:2]
+        x_w = max(0, min(x_w, w_img - 1))
+        y_w = max(0, min(y_w, h_img - 1))
+        w_w = max(1, min(w_w, w_img - x_w))
+        h_w = max(1, min(h_w, h_img - y_w))
+        self.fieldReduce = img[y_w:y_w+h_w, x_w:x_w+w_w]
 
+        H, W = self.fieldReduce.shape[:2]
+
+        # Inicializa máscaras
         self.binaryBall     = np.zeros((H, W), dtype=np.uint8)
         self.binaryAllTeam  = np.zeros((H, W), dtype=np.uint8)
         self.binaryPlayers  = np.zeros((H, W), dtype=np.uint8)
         self.binaryObjects  = np.zeros((H, W), dtype=np.uint8)
 
-
         self.frameResult = self.fieldReduce.copy()
         self.virtualImg = self.virtual.copy()
 
-        # --- Detectar a bola (seguro) ---
+        # Detecta bola e robôs com predição do Kalman
         self._safe_call(
             self.search_ball,
             img=self.fieldReduce,
-            roi=self.predictBall(shape, tms),  # você pode calcular ROI se necessário
+            roi=self.predictBall((H, W), tms),
             timestamp=tms,
-            debug=self.debug,
+            debug=debug,
             name="search_ball"
         )
 
-        # --- Detectar robôs (seguro) ---
         self._safe_call(
             self.search_bots,
             img=self.fieldReduce,
             timestamp=tms,
-            debug=self.debug,
+            debug=debug,
             name="search_bots"
         )
 
-        # --- Desenhar todos os robôs (seguro) ---
-        self._safe_call(
-            self.drawAllRobots,
-            name="drawAllRobots"
-        )
+        self._safe_call(self.drawAllRobots, name="drawAllRobots")
+
+        return self.frameResult
+
 
     # =================== Delete | Liberação de recursos =================
 
