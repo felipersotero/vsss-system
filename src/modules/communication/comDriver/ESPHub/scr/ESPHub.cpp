@@ -198,8 +198,7 @@ void ESPHub::logToPC(const String& msg) {
     Serial.println(msg);
 }
 
-// ESPHub.cpp
-
+// ... dentro de ESPHub.cpp
 void ESPHub::loop() {
     // 1. Recebe bytes disponíveis da Serial
     receiveSerial();
@@ -213,11 +212,20 @@ void ESPHub::loop() {
     PFOXPacket pkt;
     // 4. Processa todos os pacotes bufferizados na fila 'incoming'
     while (incoming.pop(pkt)) {
+        
+        // NOVO LOG DE PROCESSAMENTO DE PACOTE (Atende ao pedido do usuário)
+        String log_msg = "PKT PROCESSADO: SRC=" + String(static_cast<uint8_t>(pkt.src)) + 
+                         " DST=" + String(static_cast<uint8_t>(pkt.dst)) + 
+                         " TIPO=" + String(static_cast<uint8_t>(pkt.type)) + 
+                         " SEQ=" + String(pkt.seq);
+        logToPC(log_msg);
 
         // se veio do PC (0x00), envia para o robô
         if (pkt.src == PFOXAddress::PC) {
+            // O pacote é enviado via ESP-NOW para o robô.
             sendToRobot(pkt);
-            sendAckToPC(pkt); // ACK de recebimento Serial para o PC
+            // ACK de recebimento Serial para o PC (confirma que o Hub pegou o pacote)
+            sendAckToPC(pkt); 
             continue;
         }
 
@@ -253,7 +261,6 @@ void ESPHub::loop() {
         }
     }
 }
-
 // 🚨 IMPORTANTE: SUBSTITUA ESTES ENDEREÇOS MAC PELOS ENDEREÇOS REAIS DOS SEUS ROBÔS!
 // Os IDs (0x01, 0x02, 0x03) devem corresponder à ordem na tabela.
 static const uint8_t ROBOT_MACS[][6] = {

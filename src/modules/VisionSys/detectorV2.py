@@ -124,6 +124,8 @@ class VisionSystem:
 
         #tamanho do campo para utilizar
         self.modDpCm     = 0        
+        self.fieldDetectedFlag = False 
+
         #coordenadas dos pontos importantes na imagem virtual
         #Essas coordenadas são em pixels, para passar para o sistema de coordenadas O'
         #Necessário utilizar a função getVirtualPoint()
@@ -324,10 +326,12 @@ class VisionSystem:
 
         campo_valido = (
             wbCmField != -1
-            and abs(wbCmField - self.fieldWidth) <= 30
+            and abs(wbCmField - self.fieldWidth) <= 10
             and self.fieldReduce is not None
             and self.fieldReduce.shape[1] >= 100
         )
+
+        self.fieldDetectedFlag = campo_valido 
 
         # ===========================
         # CASO 2 — CAMPO INVÁLIDO
@@ -2677,6 +2681,9 @@ class VisionSystem:
         if img is None:
             return self.proc(img, debug)
 
+        if not self.fieldDetectedFlag:
+            return self.proc(img, debug)
+        
         # Verifica se a viewCapture existe e tem uma ROI válida
         if not hasattr(self.viewCapture, 'cooVetor') or self.viewCapture.cooVetor is None:
             # Sem campo detectado previamente, roda pipeline completo
