@@ -265,7 +265,7 @@ class Communication:
         timestamp = datetime.now().strftime("%H:%M:%S.%f")[:-3]
         formatted = f"[{timestamp}] {msg}"
 
-        logger.info(formatted)
+        #logger.info(formatted)
         
         # Adiciona à fila interna
         self._log_queue.put(formatted)
@@ -401,7 +401,6 @@ class Communication:
                     data = self.client.read_serial_data()
 
                 if data:
-                    self.stats.total_received += 1
                     self._process_incoming_data(data)
 
                 current_time = time.time()
@@ -422,7 +421,8 @@ class Communication:
     # ⬇️ ADICIONE ESTE MÉTODO NOVO AQUI ⬇️
     # ============================================================
     def _process_incoming_data(self, new_bytes: bytes):
-        """Processa bytes recebidos, decodifica pacotes PFOX ou logs."""
+        """Processa bytes recebidos, decodifica pacotes PFOX ou logs (texto)."""
+
         self._incoming_buffer.extend(new_bytes)
 
         max_bytes_per_loop = 1024
@@ -431,105 +431,156 @@ class Communication:
         while len(self._incoming_buffer) > 0 and bytes_processed < max_bytes_per_loop:
             bytes_processed += 1
 
-            # ─── Log de console/hub ───
-            if self._incoming_buffer[0] == ord('['):
+            first = self._incoming_buffer[0]
+
+            # ============================================================
+            # 1️⃣ LOG DO HUB COMEÇANDO POR '['
+            # ============================================================
+            if first == ord('['):
                 try:
                     newline_idx = self._incoming_buffer.index(b'\n')
-                    log_line = self._incoming_buffer[:newline_idx+1].decode('utf-8', errors='ignore').strip()
-                    self._emit_log(f"[RX HUB] {log_line}")
+                    log_line = self._incoming_buffer[:newline_idx+1].decode(
+                        'utf-8', errors='ignore'
+                    ).strip()
+
+                    self._emit_log(f"🧾 [RX:LOG] HUB → PC | {log_line}")
+
                     del self._incoming_buffer[:newline_idx+1]
                     continue
                 except ValueError:
-                    break  # log incompleto
+                    break  # linha incompleta
 
-            # ─── Pacote PFOX ───
-            elif self._incoming_buffer[0] == 0xF0:
-                # Espera pelo mínimo de bytes para decodificar
-                if len(self._incoming_buffer) < 8:
-                    break
+            # ============================================================
+            # 2️⃣ PACOTE PFOX (0xF0)
+            # ============================================================
+            if first == 0xF0:
+                if len(self._incoming_buffer) < 9:
+                    break  # pacote incompleto
 
                 try:
-                    # Tenta decodificar diretamente com PFOXPacket
-                    decoded_pkt = PFOXPacket.decode(self._incoming_buffer)
-                    total_packet_len = len(decoded_pkt.to_bytes())  # tamanho real do pacote
+                    decoded_pkt, used_len = PFOXPacket.decode(self._incoming_buffer)
 
-                    # Atualiza status dos robôs
-                    src_addr = decoded_pkt.src.value
-                    if src_addr in [Address.ROBOT1.value, Address.ROBOT2.value, Address.ROBOT3.value, Address.ESPMAIN.value]:
-                        with self._robot_status_lock:
-                            self.robot_last_seen[src_addr] = time.time()
+                    # Só chegamos aqui se o pacote está INTEIRO e o CRC está CORRETO.
+                    if hasattr(self, 'stats'):
+                        self.stats.total_received += 1
 
-                    # Log do pacote
-                    self._log_pfox_packet(decoded_pkt, self._incoming_buffer[:total_packet_len])
+                    # Log do pacote decodificado
+                    self._log_pfox_packet(decoded_pkt, self._incoming_buffer[:used_len])
 
-                    # Coloca na fila de RX
+                    # Enfileira para a aplicação
                     self._rx_queue.put(decoded_pkt)
 
-                    # Remove do buffer
-                    del self._incoming_buffer[:total_packet_len]
+                    # Remove exatamente o tamanho consumido
+                    del self._incoming_buffer[:used_len]
+                    continue
 
                 except ValueError as crc_error:
-                    self.robot_status_error_count += 1
-                    self._emit_log(f"⚠️ [RX PFOX ERROR] CRC inválido: {crc_error}. Bytes: {self._incoming_buffer.hex(' ')}")
-                    # Remove o primeiro byte inválido para continuar processando
+                    self.stats.total_errors += 1
+                    self.robot_status_error_count += 1  # opcional
+
+                    self._emit_log(
+                        f"❌ [RX:ERR] HUB → PC | PFOX CRC inválido ({crc_error})"
+                    )
+
                     del self._incoming_buffer[0]
+                    continue
 
                 except Exception as e:
                     self.robot_status_error_count += 1
-                    self._emit_log(f"❌ [RX PFOX ERROR] Erro inesperado: {e}. Bytes: {self._incoming_buffer.hex(' ')}")
+                    self._emit_log(
+                        f"❌ [RX PFOX ERROR] Erro inesperado: {e}. "
+                        f"Bytes: {self._incoming_buffer.hex(' ')}"
+                    )
                     del self._incoming_buffer[0]
+                    continue
 
+            # 3️⃣ TEXTO comum recebido (HUB → PC)
+            if 32 <= first <= 126 or first in (9, 10, 13):
+                newline_pos = None
+                for i, b in enumerate(self._incoming_buffer):
+                    if b in (10, 13):
+                        newline_pos = i
+                        break
+
+                if newline_pos is None:
+                    break  # ainda não chegou a linha inteira
+
+                text = self._incoming_buffer[:newline_pos+1].decode(
+                    'utf-8', errors='ignore'
+                ).strip()
+
+                self._emit_log(f"📄 [RX:TEXT] HUB → PC | {text}")
+
+                del self._incoming_buffer[:newline_pos+1]
                 continue
 
-            # ─── Byte inválido ───
+
+            # ============================================================
+            # 4️⃣ BYTE NÃO PFOX E NÃO ASCII → DESCARTAR
+            # ============================================================
+            invalid = self._incoming_buffer[0]
+            self._emit_log(f"❌ [RX:ERR] HUB → PC | Byte inválido 0x{invalid:02X}")
+            del self._incoming_buffer[0]
+
+
+    def _log_pfox_packet(self, pkt, raw_bytes):
+            """Log simplificado para pacotes recebidos (RX)."""
+            
+            # Se for ACK, mostra apenas o necessário
+            if pkt.msg_type == MsgType.ACK:
+                self._emit_log(f"[RX:LOG] {pkt.src.name} ack {pkt.seq24}")
+                return
+
+            # Para outros pacotes (Texto, Erro, Status)
+            payload_info = f" | Pay={pkt.payload.hex().upper()}" if pkt.len > 0 else ""
+            self._emit_log(f"[RX:PFOX] {pkt.src.name} -> PC | {pkt.msg_type.name}{payload_info}")
+
+    def _log_tx_packet(self, pkt: PFOXPacket):
+            """
+            Gera log formatado para envio (TX).
+            Mostra velocidades reais em cm/s para CMD_SET_SPEED.
+            """
+            # Define o destino (HUB, ROBOT, etc)
+            dest_name = pkt.dst.name if hasattr(pkt.dst, 'name') else f"0x{pkt.dst:02X}"
+            if dest_name.startswith("ROBOT"):
+                target_str = f"p/ {dest_name}"
+            elif pkt.dst == Address.BROADCAST:
+                target_str = "p/ BROADCAST"
             else:
-                invalid_byte = self._incoming_buffer[0]
-                self._emit_log(f"⚠️ [RX ERROR] Descartando byte inválido (0x{invalid_byte:02X})")
-                del self._incoming_buffer[0]
+                target_str = f"p/ {dest_name}"
 
-    def _log_pfox_packet(self, pkt: 'PFOXPacket', raw_data: bytes):
-        """Gera um log detalhado do pacote PFOX recebido em formato legível."""
+            # Lógica específica por tipo de mensagem
+            details = ""
 
-        try:
-            payload_hex = ' '.join(f'{b:02X}' for b in pkt.payload)
-            log_msg = (
-                f"✅ [RX PFOX] Decodificado: "
-                f"Src={pkt.src.name} (0x{pkt.src.value:02X}) | "
-                f"Dst={pkt.dst.name} (0x{pkt.dst.value:02X}) | "
-                f"Type={pkt.msg_type.name} (0x{pkt.msg_type.value:02X}) | "
-                f"ID={pkt.id:02X} | "
-                f"LEN={len(pkt.payload):02X} | "
-                f"Payload=[{payload_hex}]"
+            if pkt.msg_type == MsgType.CMD_SET_SPEED:
+                # Payload esperado: [ID_ROBO, L_REAL_H, L_REAL_L, L_DES_H, L_DES_L, R_REAL_H, R_REAL_L, R_DES_H, R_DES_L]
+                # Total 9 bytes. O Byte 0 é o ID repetido, dados começam no Byte 1.
+                if len(pkt.payload) >= 9:
+                    try:
+                        # Converter bytes de volta para inteiro com sinal (signed=True)
+                        l_real = int.from_bytes(pkt.payload[1:3], 'big', signed=True)
+                        l_des  = int.from_bytes(pkt.payload[3:5], 'big', signed=True)
+                        r_real = int.from_bytes(pkt.payload[5:7], 'big', signed=True)
+                        r_des  = int.from_bytes(pkt.payload[7:9], 'big', signed=True)
+                        
+                        details = f" | Vel: L(Real={l_real}, Des={l_des}) R(Real={r_real}, Des={r_des})"
+                    except Exception:
+                        details = " | Erro decodificando velocidades"
+                else:
+                    details = f" | Payload Speed Inválido ({len(pkt.payload)} bytes)"
+
+            elif pkt.msg_type == MsgType.CMD_FLOW_CTRL:
+                status = "RUN" if (len(pkt.payload) > 0 and pkt.payload[0] == 1) else "STOP"
+                details = f" | Flow: {status}"
+
+            elif pkt.msg_type == MsgType.HEARTBEAT:
+                details = " | (Ping)"
+                
+            # Log Final Formatado
+            # Ex: [TX] PC -> HUB | Seq=12 | CMD_SET_SPEED p/ ROBOT1 | Vel: L(...) R(...)
+            self._emit_log(
+                f"[TX] PC -> HUB | Seq={pkt.seq24} | {pkt.msg_type.name} {target_str}{details}"
             )
-        except AttributeError:
-            log_msg = f"⚠️ [RX PFOX] Pacote decodificado inválido: {raw_data.hex(' ').upper()}"
-
-        self._emit_log(log_msg)
-        self._emit_log(f"   RAW HEX: {raw_data.hex(' ').upper()}")
-
-
-    def send_simulated_ack(self, seq_id: int) -> None:
-        """
-        Simula ACK do ESPMAIN diretamente no parser, sem passar pelo broker/serial.
-        Isso evita problemas de bytes concatenados ou CRC inválido.
-        """
-        try:
-            ack_packet = PFOXPacket(
-                src=Address.ESPMAIN,
-                dst=Address.PC,
-                msg_type=MsgType.ACK,
-                seq=seq_id,
-                payload=[]
-            )
-            ack_bytes = ack_packet.to_bytes()
-
-            self._emit_log(f"Simulando RX → Processando ACK PFOX (ID {seq_id})")
-
-            # Processa diretamente no buffer de RX
-            self._process_incoming_data(ack_bytes)
-
-        except Exception as e:
-            self._emit_log(f"Erro na simulação do ACK: {e}")
 
     def _update_robot_status(self):
             """Atualiza status 'OK'/'FAIL' baseado no tempo da última mensagem."""
@@ -603,87 +654,72 @@ class Communication:
     # COMUNICAÇÃO PRINCIPAL
     # ============================================================
     def send_data(self, topic_or_message: str, message: Optional[Union[bytes,str]] = None) -> Tuple[bool, str]:
-        """
-        Envia dados usando o cliente ativo (MQTT ou Serial).
-        Garante envio em BYTES puros e logs detalhados.
-        """
-        if not self.client:
-            self._emit_log("❌ Falha ao enviar: cliente não inicializado")
-            return False, "No communication client initialized"
+            """
+            Envia dados (MQTT ou Serial) com logs humanizados e limpos.
+            """
+            if not self.client:
+                self._emit_log("❌ [TX:ERR] Cliente não inicializado")
+                return False, "Client not initialized"
 
-        start_time = time.time()
-        self.stats.last_send_timestamp = start_time
+            start_time = time.time()
+            self.stats.last_send_timestamp = start_time
 
-        try:
-            # ================================================================
-            # ENVIO MQTT
-            # ================================================================
-            if self.use_mqtt:
-                if message is None:
-                    self._emit_log("❌ Falha: MQTT precisa de payload")
-                    return False, "MQTT requires payload"
+            try:
+                # 1. Preparação Unificada do Payload (Bytes)
+                payload_bytes = None
+                mqtt_topic = topic_or_message
 
-                # Garante que payload é bytes
-                if isinstance(message, str):
-                    payload_bytes = message.encode("utf-8")
+                if self.use_mqtt:
+                    if message is None: return False, "No payload for MQTT"
+                    payload_bytes = message.encode("utf-8") if isinstance(message, str) else message
                 else:
-                    payload_bytes = message
+                    # Serial: se message for None, o dado está em topic_or_message
+                    raw_data = message if message is not None else topic_or_message
+                    payload_bytes = raw_data.encode("utf-8") if isinstance(raw_data, str) else raw_data
 
-                payload_log = payload_bytes.hex(" ").upper()
-                self._emit_log(f"[TX MQTT] topic='{topic_or_message}' payload='{payload_log}'")
-
-                success, result_msg = self.client.publish_mqtt_data(topic_or_message, payload_bytes)
-                latency = (time.time() - start_time) * 1000 if success else None
-
-            # ================================================================
-            # ENVIO SERIAL
-            # ================================================================
-            else:
-                # No Serial, qualquer string ou bytes é convertido para bytes puros
-                if message is None:
-                    if isinstance(topic_or_message, bytes):
-                        payload_bytes = topic_or_message
-                    else:
-                        payload_bytes = str(topic_or_message).encode("utf-8")
+                # 2. LOG INTELIGENTE (Antes de enviar)
+                # Verifica se parece um pacote PFOX (Começa com 0xF0 e tem tamanho mínimo)
+                is_pfox = (len(payload_bytes) >= 6 and payload_bytes[0] == 0xF0)
+                
+                if is_pfox:
+                    try:
+                        # Tenta decodificar apenas para gerar o log bonito com velocidades
+                        pkt_preview,_ = PFOXPacket.decode(payload_bytes)
+                        self._log_tx_packet(pkt_preview)
+                    except:
+                        # Se falhar o decode (ex: pacote incompleto), loga o Hex bruto
+                        self._emit_log(f"[TX] Raw PFOX: {payload_bytes.hex(' ').upper()}")
                 else:
-                    if isinstance(message, bytes):
-                        payload_bytes = message
-                    else:
-                        payload_bytes = str(message).encode("utf-8")
+                    # Se não for PFOX (texto puro ou comando simples)
+                    try:
+                        text_msg = payload_bytes.decode('utf-8')
+                        self._emit_log(f"[TX] Msg: {text_msg}")
+                    except:
+                        self._emit_log(f"[TX] Bytes: {payload_bytes.hex(' ').upper()}")
 
-                payload_log = payload_bytes.hex(" ").upper()
-                self._emit_log(f"[TX SERIAL] bytes={payload_log}")
+                # 3. ENVIO REAL
+                success = False
+                result_msg = ""
 
-                success, result_msg = self.client.send_serial_data(payload_bytes)
+                if self.use_mqtt:
+                    success, result_msg = self.client.publish_mqtt_data(mqtt_topic, payload_bytes)
+                else:
+                    success, result_msg = self.client.send_serial_data(payload_bytes)
+
+                # 4. PÓS-ENVIO (Apenas erro ou atualização de stats)
                 latency = (time.time() - start_time) * 1000 if success else None
+                self._update_stats(success, latency)
 
-            # ================================================================
-            # ATUALIZA ESTATÍSTICAS
-            # ================================================================
-            self._update_stats(success, latency)
+                if not success:
+                    self._emit_log(f"❌ [TX:ERR] Falha: {result_msg}")
 
-            # ================================================================
-            # LOG FINAL
-            # ================================================================
-            if success:
-                self._emit_log(
-                    f"✔ Enviado com sucesso | Conteúdo='{topic_or_message}' "
-                    f"payload(bytes)={payload_bytes.hex(' ').upper()} | Latência={latency:.1f}ms"
-                )
-            else:
-                self._emit_log(
-                    f"❌ Falha ao enviar '{topic_or_message}' "
-                    f"payload(bytes)={payload_bytes.hex(' ').upper()} | Motivo: {result_msg}"
-                )
+                # Removido propositalmente o log de "Sucesso" para limpar o terminal.
+                return success, result_msg
 
-            return success, result_msg
-
-        except Exception as e:
-            self._update_stats(False)
-            self._emit_log(f"❌ Erro crítico no envio: {e}")
-            return False, str(e)
-
-
+            except Exception as e:
+                self._emit_log(f"❌ [TX:CRIT] {e}")
+                return False, str(e)
+            
     def send(self, data: Union[bytes,str], topic: str = "raw") -> None:
         """
         Envia dados de forma simplificada. 
@@ -728,74 +764,61 @@ class Communication:
     # ============================================================
 
     def run_test(self) -> Tuple[int, int]:
-        """
-        Executa um teste de comunicação enviando pacotes PFOX e processando ACKs diretamente.
-        Retorna (total_sent, total_ok).
-        """
-        # Inicializa o controlador PFOX se necessário
-        if not hasattr(self, 'pfox_controller'):
-            try:
-                self.pfox_controller = PFOXController()
-            except NameError:
-                self._emit_log("❌ ERRO: PFOXController não definido. Verifique o import de protocolHeader.")
-                return 0, 0
+            """
+            Executa bateria de testes PFOX.
+            Limpo: Delega toda a geração de logs para o send_data.
+            """
+            # Garante que o controlador existe
+            if not hasattr(self, 'pfox_controller'):
+                try:
+                    self.pfox_controller = PFOXController()
+                except NameError:
+                    self._emit_log("❌ ERRO: PFOXController não disponível.")
+                    return 0, 0
 
-        total_sent = 0
-        total_ok = 0
-        pfox_ctrl = self.pfox_controller
+            self._emit_log("--- 🟢 Iniciando Bateria de Testes ---")
 
-        # =================================================================
-        # Cenários de teste PFOX
-        # =================================================================
-        test_scenarios = [
-            {"name": "HEARTBEAT p/ ESPMAIN", 
-            "packet_func": lambda: pfox_ctrl.create_packet(dst=Address.ESPMAIN, msg_type=MsgType.HEARTBEAT, payload=[]).to_bytes()},
+            pfox = self.pfox_controller
             
-            {"name": "CMD_FLOW_CTRL (RUN) p/ ROBOT1", 
-            "packet_func": lambda: pfox_ctrl.send_flow_control(dst=Address.ROBOT1, value=0x01).to_bytes()},
-            
-            {"name": "CMD_SET_SPEED p/ ROBOT2", 
-            "packet_func": lambda: pfox_ctrl.send_speed_command(
-                robot_id=Address.ROBOT2, 
-                left_speed_real=100, left_speed_desired=150, 
-                right_speed_real=90, right_speed_desired=140
-            ).to_bytes()},
-            
-            {"name": "HEARTBEAT BROADCAST", 
-            "packet_func": lambda: pfox_ctrl.create_packet(dst=Address.BROADCAST, msg_type=MsgType.HEARTBEAT, payload=[]).to_bytes()}
-        ]
+            # Lista simples de comandos para gerar (Lambdas)
+            # Não precisamos de nomes/descrições, o send_data já vai ler o pacote e dizer o que é!
+            scenarios = [
+                # 1. Heartbeat
+                lambda: pfox.create_packet(Address.ESPMAIN, MsgType.HEARTBEAT, []).to_bytes(),
+                
+                # 2. Flow Control (Start Robot 1)
+                lambda: pfox.send_flow_control(Address.ROBOT1, 0x01).to_bytes(),
+                
+                # 3. Set Speed (Robot 2 - Testa a visualização do vetor de velocidade)
+                lambda: pfox.send_speed_command(Address.ROBOT2, 100, 150, 90, 140).to_bytes(),
+                
+                # 4. Broadcast
+                lambda: pfox.create_packet(Address.BROADCAST, MsgType.HEARTBEAT, []).to_bytes()
+            ]
 
-        # =================================================================
-        # Loop de execução dos testes
-        # =================================================================
-        for scenario in test_scenarios:
-            try:
-                total_sent += 1
+            total_sent = 0
+            total_ok = 0
 
-                # Gera pacote PFOX em bytes (incrementa seq_counter internamente)
-                packet_bytes = scenario["packet_func"]()
-                sent_seq_id = pfox_ctrl.seq_counter  # ID do pacote enviado
+            for create_bytes in scenarios:
+                try:
+                    packet_bytes = create_bytes()
+                    
+                    # Chama send_data passando um tópico genérico "TEST" (usado só se for MQTT)
+                    # O send_data vai detectar que é PFOX e gerar o log bonito automaticamente.
+                    success, _ = self.send_data("TEST", packet_bytes)
+                    
+                    total_sent += 1
+                    if success:
+                        total_ok += 1
+                    
+                    # Pequena pausa visual entre comandos
+                    time.sleep(0.15)
 
-                # 1️⃣ Envia o pacote
-                self.send(packet_bytes)
-                self._emit_log(f"✨ [TEST TX] Enviado: {scenario['name']}")
+                except Exception as e:
+                    self._emit_log(f"❌ Erro crítico no loop de teste: {e}")
 
-                # 2️⃣ Pausa curta para garantir processamento
-                time.sleep(0.15)
-
-                # 3️⃣ Simula ACK diretamente no parser
-                self.send_simulated_ack(sent_seq_id)
-
-                # 4️⃣ Pausa curta para parser processar ACK
-                time.sleep(0.15)
-
-                total_ok += 1
-
-            except Exception as e:
-                self._emit_log(f"❌ Erro durante o envio de teste PFOX ({scenario['name']}): {e}")
-
-        return total_sent, total_ok
-
+            self._emit_log(f"--- 🏁 Teste Finalizado: {total_ok}/{total_sent} sucessos ---")
+            return total_sent, total_ok
 
     def start_monitoring(self) -> None:
         """Inicia monitoramento (para interface)."""

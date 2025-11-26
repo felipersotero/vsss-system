@@ -33,12 +33,14 @@ struct PFOXPacket {
     PFOXAddress src;
     PFOXAddress dst;
     PFOXMsgType type;
-    uint8_t seq;
+
+    uint8_t seq24; //agora usa uma SEQ de 3 bytes (24 bits)
+
     uint8_t len;
     std::vector<uint8_t> payload;
     uint16_t crc16;
 
-    PFOXPacket() : preamble(PREAMBLE), version(VERSION), seq(0), len(0), crc16(0) {}
+    PFOXPacket() : preamble(PREAMBLE), version(VERSION), seq24(0), len(0), crc16(0) {}
 
     // Construtor a partir de dados recebidos
     PFOXPacket(const uint8_t* data, size_t size);

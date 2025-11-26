@@ -16,36 +16,59 @@ uint16_t crc16_ccitt(const uint8_t* data, size_t length, uint16_t crc) {
 
 // Construtor de decodificação
 PFOXPacket::PFOXPacket(const uint8_t* data, size_t size) {
-    if (size < 9) throw std::runtime_error("Pacote muito curto");
+
+    if (size < 11)
+        throw std::runtime_error("Pacote muito curto");
 
     preamble = data[0];
+    if (preamble != PREAMBLE)
+        throw std::runtime_error("Preambulo inválido");
+
     version = data[1];
-    src = static_cast<PFOXAddress>(data[2]);
-    dst = static_cast<PFOXAddress>(data[3]);
+
+    src  = static_cast<PFOXAddress>(data[2]);
+    dst  = static_cast<PFOXAddress>(data[3]);
     type = static_cast<PFOXMsgType>(data[4]);
-    seq = data[5];
-    len = data[6];
 
-    if (size < 7 + len + 2) throw std::runtime_error("Pacote incompleto");
+    // 3 bytes de sequência (24 bits)
+    seq24 = (uint32_t(data[5]) << 16) |
+            (uint32_t(data[6]) << 8)  |
+            (uint32_t(data[7]));
 
-    payload.assign(data + 7, data + 7 + len);
+    len = data[8];
 
-    crc16 = (data[7 + len] << 8) | data[7 + len + 1];
+    if (size < 9 + len + 2)
+        throw std::runtime_error("Pacote incompleto");
 
-    uint16_t calc_crc = crc16_ccitt(data, 7 + len);
-    if (calc_crc != crc16) throw std::runtime_error("CRC inválido");
+    payload.assign(data + 9, data + 9 + len);
+
+    // CRC
+    crc16 = (data[9 + len] << 8) | data[9 + len + 1];
+
+    uint16_t calc_crc = crc16_ccitt(data, 9 + len);
+    if (calc_crc != crc16)
+        throw std::runtime_error("CRC inválido");
 }
 
 // Codifica pacote em bytes
 std::vector<uint8_t> PFOXPacket::encode() const {
+
     std::vector<uint8_t> buf;
+
     buf.push_back(preamble);
     buf.push_back(version);
     buf.push_back(static_cast<uint8_t>(src));
     buf.push_back(static_cast<uint8_t>(dst));
     buf.push_back(static_cast<uint8_t>(type));
-    buf.push_back(seq);
+
+    // SEQ em 3 bytes
+    buf.push_back((seq24 >> 16) & 0xFF);
+    buf.push_back((seq24 >> 8)  & 0xFF);
+    buf.push_back(seq24 & 0xFF);
+
     buf.push_back(len);
+
+    // payload
     buf.insert(buf.end(), payload.begin(), payload.end());
 
     uint16_t crc = crc16_ccitt(buf.data(), buf.size());

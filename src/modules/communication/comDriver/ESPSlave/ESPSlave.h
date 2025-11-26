@@ -1,11 +1,14 @@
 #pragma once
 #include "PacketQueue.h"
+#include "PFOXPacket.h" // Adicionado para garantir o PFOXAddress/MsgType
 #include <Arduino.h>
 #include <esp_now.h>
 #include <WiFi.h>
+#include <vector>
 
-class ESPHub {
+class ESPSlave {
 private:
+    static ESPSlave* instance;
     PacketQueue incoming;
     PacketQueue outgoing;
 
@@ -20,27 +23,25 @@ private:
 
     std::vector<PendingAck> pendingAcks;
 
-    static void onESPNOWSent(const uint8_t *mac, esp_now_send_status_t status);
-    static void onESPNOWRecv(const uint8_t *mac, const uint8_t *data, int len);
+    // Métodos estáticos (Callbacks)
+    static void onESPNOWSent(const wifi_tx_info_t* info, esp_now_send_status_t status);
+    static void onESPNOWRecv(const esp_now_recv_info_t* info, const uint8_t* data, int len);
 
+    // Métodos de processamento
     void processSerialBytes();
-    void sendToRobot(const PFOXPacket& pkt);
-    void sendAckToPC(const PFOXPacket& pkt);
-    void forwardToPC(const PFOXPacket& pkt);
+    void sendAckToHUB(const PFOXPacket& pkt);
+    void forwardToHUB(const PFOXPacket& pkt);
 
     void processOutgoing();
     void processTimeouts();
 
-    bool getRobotMac(PFOXAddress robot_id, uint8_t mac[6]);
-    
-    void logToPC(const String& msg);
 
 public:
-    ESPHub();
+    ESPSlave();
     void begin();
     void loop();
     void receiveSerial();
 
     // usado pelos callbacks estáticos
-    static ESPHub* instance;
+    static ESPSlave* getInstance() { return instance; }
 };

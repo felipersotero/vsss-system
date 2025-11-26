@@ -115,7 +115,7 @@ class Emulator:
         self.CUDAselected = False
 
         # Tempo de comunicação
-        self.comm_send_interval = 0.016 #60 FPS
+        self.comm_send_interval = 0.02 #150 FPS
 
     # ==============================================================
     #  2.1 Processamento paralelo
@@ -286,7 +286,8 @@ class Emulator:
         send_interval = getattr(self, "comm_send_interval", 0.02)
 
         while self.cameraIsRunning:
-
+            
+            t1 = self.Timer.getElapsedTime()
             # ------------------------------------------
             # 0) Verificar se comunicação existe e está ativa
             # ------------------------------------------
@@ -303,6 +304,11 @@ class Emulator:
                     cmd = self.commands_queue.get_nowait()
                     self.comm.send_data("espfox/cmd", cmd)
 
+                
+                # Teste de envio de um comando qualquer.
+                cmd = self.PFOXcontroler.create_packet(Address.ESPMAIN, MsgType.HEARTBEAT,[]).to_bytes()
+                self.comm.send_data("TEST", cmd)
+
             except Exception as e:
                 print(f"[Emulator] Erro ao enviar: {e}")
 
@@ -312,7 +318,7 @@ class Emulator:
             try:
                 responses = self.comm.get_responses()
                 for resp in responses:
-                    print(f"[Emulator RX] {resp}")
+                    if self.DEBUGA: print(f"[Emulator RX] {resp}")
 
                     # repassar p/ módulo de controle se existir
                     if hasattr(self, "control_module") and self.control_module:
@@ -327,7 +333,12 @@ class Emulator:
             # ------------------------------------------
             # 3) INTERVALO DO LOOP
             # ------------------------------------------
+
             time.sleep(send_interval)
+            t2 = self.Timer.getElapsedTime()
+            dif = (t2-t1)
+
+            self.deque_send.append(dif) #COntabilizando tempo de envio.
 
 
 
