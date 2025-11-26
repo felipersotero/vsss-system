@@ -26,9 +26,6 @@ from modules.control.control import Control
 from modules.communication.communication import *
 from modules.communication.ui.interface import *
 
-# Protocolo PFOX
-from modules.communication.protocol.protocolHeader import *
-
 import threading
 import queue
 import time
@@ -115,7 +112,7 @@ class Emulator:
         self.CUDAselected = False
 
         # Tempo de comunicação
-        self.comm_send_interval = 0.02 #150 FPS
+        self.comm_send_interval = 0.01667 #60 FPS
 
     # ==============================================================
     #  2.1 Processamento paralelo
@@ -278,69 +275,81 @@ class Emulator:
 
     def communicationThread(self):
         """
-        Thread principal de comunicação bidirecional.
-        Envia comandos pendentes e processa respostas recebidas
-        somente quando a comunicação está ativa.
+        Thread de comunicação do Emulador.
+        Envia comandos, solicita status periódico e processa respostas.
         """
 
-        send_interval = getattr(self, "comm_send_interval", 0.02)
+        STATUS_INTERVAL = getattr(self, "comm_status_interval", 3)
+
+        last_status_request = self.Timer.getElapsedTime()
+
+        print("[Emulator] 🟢 Communication Thread iniciada")
 
         while self.cameraIsRunning:
-            
-            t1 = self.Timer.getElapsedTime()
-            # ------------------------------------------
-            # 0) Verificar se comunicação existe e está ativa
-            # ------------------------------------------
+
+            loop_start = self.Timer.getElapsedTime()
+
+            # ---------------------------------------------------------
+            # 0) Checar comunicação
+            # ---------------------------------------------------------
             if not self.comm or not self.comm.is_connected():
-                # Comunicação OFF → não tenta enviar nem receber
-                time.sleep(0.1)
+                time.sleep(0.2)
                 continue
 
-            # ------------------------------------------
-            # 1) ENVIO DE COMANDOS
-            # ------------------------------------------
+            # ---------------------------------------------------------
+            # 1) Enviar comandos pendentes
+            # ---------------------------------------------------------
             try:
                 while not self.commands_queue.empty():
                     cmd = self.commands_queue.get_nowait()
                     self.comm.send_data("espfox/cmd", cmd)
 
-                
-                # Teste de envio de um comando qualquer.
-                cmd = self.PFOXcontroler.create_packet(Address.ESPMAIN, MsgType.HEARTBEAT,[]).to_bytes()
-                self.comm.send_data("TEST", cmd)
+
+                #Aqui faço o envio dos comandos para testar.
+
 
             except Exception as e:
-                print(f"[Emulator] Erro ao enviar: {e}")
+                print(f"[Emulator] ❌ Erro ao enviar comando: {e}")
 
-            # ------------------------------------------
-            # 2) RECEPÇÃO DE PACOTES
-            # ------------------------------------------
+            # ---------------------------------------------------------
+            # 2) Envio periódico de request_robot_status()
+            # ---------------------------------------------------------
+            try:
+                now = self.Timer.getElapsedTime()
+                if now - last_status_request >= STATUS_INTERVAL:
+                    self.comm.request_robot_status()
+                    last_status_request = now
+
+            except Exception as e:
+                print(f"[Emulator] ❌ Erro ao solicitar status: {e}")
+
+            # ---------------------------------------------------------
+            # 3) Processar RX
+            # ---------------------------------------------------------
             try:
                 responses = self.comm.get_responses()
                 for resp in responses:
-                    if self.DEBUGA: print(f"[Emulator RX] {resp}")
+                    if self.DEBUGA:
+                        print(f"[Emulator RX] {resp}")
 
-                    # repassar p/ módulo de controle se existir
                     if hasattr(self, "control_module") and self.control_module:
                         try:
                             self.control_module.update(resp)
                         except Exception as e2:
-                            print(f"[ControlModule] Erro no update: {e2}")
+                            print(f"[ControlModule] ❌ Erro no update(): {e2}")
 
             except Exception as e:
-                print(f"[Emulator] Erro ao processar RX: {e}")
+                print(f"[Emulator] ❌ Erro ao processar RX: {e}")
 
-            # ------------------------------------------
-            # 3) INTERVALO DO LOOP
-            # ------------------------------------------
+            # ---------------------------------------------------------
+            # 4) Fechamento do loop
+            # ---------------------------------------------------------
+            time.sleep(self.sendTime)
 
-            time.sleep(send_interval)
-            t2 = self.Timer.getElapsedTime()
-            dif = (t2-t1)
+            loop_end = self.Timer.getTimelapse()
+            self.deque_send.append(loop_end - loop_start)
 
-            self.deque_send.append(dif) #COntabilizando tempo de envio.
-
-
+        print("[Emulator] 🔴 Communication Thread finalizada")
 
     # ==============================================================
     #  3. Filas, buffers e coleções
@@ -486,9 +495,6 @@ class Emulator:
         if self.should_open_comm_window:
             print(f"[EMULADOR] Janela de comunicação será aberta - Modo: {com_mode}")
             
-        self.PFOXcontroler = PFOXController() #API para gerar pacotes no protocolo PFOX 
-
-        
         # Inicializo a thread de comunicação
         self.comm_thread = threading.Thread(target=self.communicationThread, daemon=True)
         self.comm_thread.start()

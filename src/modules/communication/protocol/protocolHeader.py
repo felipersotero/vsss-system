@@ -40,6 +40,10 @@ class MsgType(IntEnum):
     HEARTBEAT = 0x40
     ERROR = 0x50
 
+class FlowType(IntEnum):
+    STOP = 0x20
+    RUN = 0x10
+    PAUSE = 0x30
 
 # Nome amigável
 MSG_TYPE_NAMES = {t.value: t.name for t in MsgType}
@@ -185,6 +189,9 @@ class PFOXController:
     def send_flow_control(self, dst: Address, value: int):
         return self.create_packet(dst, MsgType.CMD_FLOW_CTRL, [value & 0xFF])
 
+    def request_status(self, dst: Address):
+        return self.create_packet(dst,MsgType.STATUS,[])
+    
     # =========================================
     # SPEED COMMAND (USO CORRETO DO PAYLOAD)
     # =========================================

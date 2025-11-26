@@ -170,10 +170,17 @@ class SerialConnection:
         return True, "OK"
 
     def read_serial_data(self) -> Optional[bytes]:
-        # Retorna BYTES, não STRING. Não usa decode().
-        if self.com.in_waiting > 0:
-            return self.com.read(self.com.in_waiting)
-        return None
+        # Se não há conexão ATIVA → retorna None sem tentar acessar in_waiting
+        if not self.com or not self.com.is_open:
+            return None
+
+        try:
+            if self.com.in_waiting > 0:
+                return self.com.read(self.com.in_waiting)
+            return None
+        except Exception:
+            return None
+
 
     def __del__(self):
         """Cleanup resources on object destruction."""
@@ -234,6 +241,7 @@ class Communication:
 
         # estado dos robôs
         self.robot_status = {1: "FAIL", 2: "FAIL", 3: "FAIL"}
+
         
         self._robot_status_lock = threading.Lock()
 
@@ -242,14 +250,17 @@ class Communication:
 
         # Informação sobre os estados dos robôs
         self.robot_last_seen: Dict[int, float] = {1: 0.0, 2: 0.0, 3: 0.0}
-
-        self.ROBOT_TIMEOUT = 3.0  # segundos
+        
+        self.ROBOT_TIMEOUT = 3.0  # segundos // Tempo máximo para indicar que o robô está fora.
         
         self.robot_status_error_count = 0
 
         # monitoramento em background
         self._monitoring = False
         self._monitor_thread: Optional[threading.Thread] = None
+
+        # Instancia o Gerador de Pacotes (Gerencia Sequence ID e Estrutura)
+        self.pfox_controller = PFOXController()
 
 
     # ============================================================
@@ -768,13 +779,6 @@ class Communication:
             Executa bateria de testes PFOX.
             Limpo: Delega toda a geração de logs para o send_data.
             """
-            # Garante que o controlador existe
-            if not hasattr(self, 'pfox_controller'):
-                try:
-                    self.pfox_controller = PFOXController()
-                except NameError:
-                    self._emit_log("❌ ERRO: PFOXController não disponível.")
-                    return 0, 0
 
             self._emit_log("--- 🟢 Iniciando Bateria de Testes ---")
 
@@ -831,6 +835,7 @@ class Communication:
     def is_connected(self)-> bool:
         """Retorna o status da conexão atual."""
         if not self.client:
+
             return False
         return self.client.status.is_connected
     # ============================================================
@@ -877,3 +882,57 @@ class Communication:
             finally:
                 self.client = None
                 self._emit_log("Comunicação encerrada")
+
+    # ==========================================================================================
+    # API DE CONTROLE DE ROBÔS (High-Level)
+    # ==========================================================================================
+
+    def send_robot_velocity(self, robot: Address, vl_a: int, vl_d: int, vr_a: int, vr_d: int) -> None:
+        """
+        Envia comando de velocidade para um robô específico.
+        """
+        try:
+            # Gera pacote correto
+            pkg = self.pfox_controller.send_speed_command(robot, vl_a, vl_d, vr_a, vr_d).to_bytes()
+            
+            # Envia
+            self.send_data("VELOCITY", pkg)
+
+        except Exception as e:
+            self._emit_log(f"❌ Erro ao enviar velocidade: {e}")
+
+    def request_robot_status(self, robot: Address = Address.BROADCAST) -> None:
+        """
+        Solicita que 1 robô (ou todos) enviem status (bateria, sensores, etc.).
+        """
+        try:
+            pkg = self.pfox_controller.request_status(robot).to_bytes()
+            self.send_data("STATUS", pkg)
+        except Exception as e:
+            self._emit_log(f"❌ Erro ao pedir status: {e}")
+
+
+    def send_heartbeat(self) -> None:
+        """
+        Envia heartbeat (ping) para o Hub/Robôs – evita acionamento do watchdog.
+        """
+        try:
+            pkg = self.pfox_controller.send_heartbeat()
+            self.send_data("HEARTBEAT", pkg)
+        except Exception as e:
+            self._emit_log(f"❌ Erro ao enviar heartbeat: {e}")
+
+
+    def set_match_state(self, running: bool) -> None:
+        """
+        Controla início/fim da partida (flow control global).
+
+        running = True  → START
+        running = False → STOP
+        """
+        try:
+            flag = FlowType.RUN if running else FlowType.STOP
+            pkg = self.pfox_controller.send_flow_control(Address.BROADCAST, flag).to_bytes()
+            self.send_data("MATCH_STATE", pkg)
+        except Exception as e:
+            self._emit_log(f"❌ Erro ao enviar estado da partida: {e}")

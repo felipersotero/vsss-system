@@ -83,6 +83,7 @@ class CommunicationDebugWindow(tk.Toplevel):
                 connection_status = "Conectado"
                 style_status = "RobotOK.TLabel" # Reutilizando estilo verde
             else:
+                connection_status = "Desconectado"
                 style_status = "RobotFAIL.TLabel" # Reutilizando estilo vermelho
 
             if hasattr(self.comm, 'use_mqtt'):
@@ -354,6 +355,8 @@ class CommunicationDebugWindow(tk.Toplevel):
             if hasattr(self.comm, 'start'):
                 self.comm.start()
                 self.print_message("Comunicação iniciada.")
+                if not self.comm.client:
+                    self.print_message("Cliente não disponível. Tente novamente.")
             else:
                 self.print_message("Método start() não encontrado no backend.")
         except Exception as e:

@@ -24,6 +24,12 @@ enum class PFOXMsgType : uint8_t {
     ERROR = 0x50
 };
 
+enum class PFOXFlowType : uint8_t{
+    RUN = 0x10
+    STOP = 0x20
+    PAUSE = 0x30
+}
+
 struct PFOXPacket {
     static constexpr uint8_t PREAMBLE = 0xF0;
     static constexpr uint8_t VERSION = 0x01;
