@@ -242,8 +242,8 @@ class App:
 
 
         FieldSize=self.menu.add_node(SysVision,'fieldDimensions','Dimensões do campo (cm)', value='')
-        self.menu.add_node(FieldSize,'fieldWidth','Largura (menor)', value='130')
-        self.menu.add_node(FieldSize,'fieldHeight','Comprimento (maior)', value='150')
+        self.menu.add_node(FieldSize,'fieldWidth','Largura (eixo x)', value='150')
+        self.menu.add_node(FieldSize,'fieldHeight','Comprimento (eixo y)', value='130')
 
         CalColor=self.menu.add_node(SysVision,'ColorCalibration','Calibração das Cores', value='')
         self.menu.add_node(CalColor,'mainColor','Cor principal', value='[ 90 128 128]')

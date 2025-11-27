@@ -96,8 +96,8 @@ class VisionSystem:
 
 
         #configurações do campo comprimento e largura
-        self.fieldWidth             = 0                     # largura do campo
-        self.fieldHeight            = 0                     # altura do campo
+        self.fieldWidth             =  150                    # largura do campo
+        self.fieldHeight            = 130                     # altura do campo
         self.prop_px_cm             = 1                     # proporção pixel para cm
         self.prop_px_cm_virtual     = 3                     # proporção pixel para cm na imagem virtual
         self.min_diag = (7.5 / 4) * np.sqrt(2) * self.prop_px_cm
@@ -278,7 +278,6 @@ class VisionSystem:
         Pipeline principal de processamento da imagem de visão.
         Executa a detecção do campo, bola e jogadores, e gera a visualização final.
         """
-
         # ===========================
         # RESET ESTADO E TEMPOS
         # ===========================
@@ -326,10 +325,12 @@ class VisionSystem:
 
         campo_valido = (
             wbCmField != -1
-            and abs(wbCmField - self.fieldWidth) <= 10
+            and abs(wbCmField - self.fieldWidth) <= 20
             and self.fieldReduce is not None
             and self.fieldReduce.shape[1] >= 100
         )
+
+        if self.debug: print(f"[EMULATOR][DEBUG]: O campo é válido? wbField={wbCmField} | self.fieldWidth={self.fieldWidth} = {campo_valido} ")
 
         self.fieldDetectedFlag = campo_valido 
 
@@ -534,7 +535,7 @@ class VisionSystem:
                     
                     Isso garante uma detecção contínua do robô
                 '''
-                self.filtered_detection(img, debug)
+                self.proc(img, debug)
 
         # --- Caso 2: processamento completo periódico ---
         else:
@@ -1136,67 +1137,66 @@ class VisionSystem:
     #função responsável para reduzir a imagem para os contornos do campo
     def reduce_field(self, BinImg, Img, fieldWidth, d=10):
         """
-        Reduz a imagem para a região do campo (maior contorno encontrado)
-        e retorna as imagens recortadas + coordenadas do retângulo.
-
-        Parâmetros:
-            BinImg (np.ndarray): imagem binarizada do campo.
-            Img (np.ndarray): imagem original colorida.
-            fieldWidth (float): largura real do campo (em cm, por exemplo).
-            d (int): margem adicional em pixels (default = 10).
-
-        Retorna:
-            tuple: (bin_Reduce, img_Reduce, cooVetor)
-                - bin_Reduce: imagem binarizada reduzida
-                - img_Reduce: imagem colorida reduzida
-                - cooVetor: [x, y, w, h] do campo detectado
+        Reduz a imagem para a região do maior contorno (campo).
         """
-        # Encontrar contornos
+
+        # Buscar contornos externos
         contours, _ = cv2.findContours(BinImg, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         if not contours:
             print("[SystemVision]/[REDUCE_FIELD]: Nenhum contorno encontrado.")
             return BinImg, Img, [0, 0, 0, 0]
 
         try:
-            # Maior contorno (presumido como o campo)
+            # Selecionar contornos úteis (descartar ruidos pequenos)
+            contours = [c for c in contours if cv2.contourArea(c) > 200]  
+            if not contours:
+                print("[REDUCE_FIELD]: Contornos muito pequenos.")
+                return BinImg, Img, [0, 0, 0, 0]
+
+            # Maior contorno
             objT = max(contours, key=cv2.contourArea)
             x, y, w, h = cv2.boundingRect(objT)
             cooVetor = [x, y, w, h]
 
-            # Margem de segurança (impede valores negativos)
-            d = max(0, min(d, x, y))
+            # Margem segura
+            d = max(0, d)
 
-            # Recorte com margem
-            y1, y2 = max(0, y - d), min(BinImg.shape[0], y + h + d)
-            x1, x2 = max(0, x - d), min(BinImg.shape[1], x + w + d)
+            # Limite dos eixos
+            maxH, maxW = BinImg.shape[:2]
 
+            y1 = max(0, y - d)
+            y2 = min(maxH, y + h + d)
+            x1 = max(0, x - d)
+            x2 = min(maxW, x + w + d)
+
+            # Recortes
             bin_Reduce = BinImg[y1:y2, x1:x2]
             img_Reduce = Img[y1:y2, x1:x2]
 
-            # Define o retângulo de visão atual
-            pi = np.float32([[x1, y1], [x2, y1], [x1, y2], [x2, y2]])
+            # Retângulo do View Capture (ordem consistente)
+            pi = np.float32([
+                [x1, y1],  # TL
+                [x2, y1],  # TR
+                [x2, y2],  # BR
+                [x1, y2]   # BL
+            ])
+
             rect = Quad(
-                Point2D(pi[0, 0], pi[0, 1]),
-                Point2D(pi[1, 0], pi[1, 1]),
-                Point2D(pi[3, 0], pi[3, 1]),
-                Point2D(pi[2, 0], pi[2, 1])
+                Point2D(pi[0, 0], pi[0, 1]),   # TL
+                Point2D(pi[1, 0], pi[1, 1]),   # TR
+                Point2D(pi[2, 0], pi[2, 1]),   # BR
+                Point2D(pi[3, 0], pi[3, 1])    # BL
             )
 
-            # Atualiza o campo de visão
+            # Atualiza viewport
             self.viewCapture.setViewCapture(rect, cooVetor)
-
-            # Atualiza proporção pixel/cm
-            threshold = 50
-            if w > threshold and h > threshold:
-                pixelWidth = min(w, h)
-                self.convert_measures(fieldWidth, pixelWidth)
 
         except Exception as e:
             print(f"[SystemVision][REDUCE_FIELD]: Erro ao reduzir o campo: {e}")
-            bin_Reduce, img_Reduce, cooVetor = BinImg, Img, [0, 0, 0, 0]
-            self.prop_px_cm = 1
+            return BinImg, Img, [0, 0, 0, 0]
 
         return bin_Reduce, img_Reduce, cooVetor
+
 
     #função para converter medidas
     def convert_measures(self, w_cm, w_px):
@@ -1512,138 +1512,158 @@ class VisionSystem:
 
     
     #=============| Definindo funções módulares | ===========================
-    def detect_field(self, img ,debug):
-        '''
-            Função responsável por detectar o campo na imagem e gerar um ViewRect com as coordenadas
-            do campo que foi reduzido. Salvando o objeto em Field.
+    def detect_field(self, img, debug):
+        """
+            Detecta o campo e gera um ViewRect com as coordenadas da região reduzida.
+            Retorna o tamanho do campo detectado em centímetros ou -1 se falhar.
+        """
 
-            Os argumentos da função são configurações vindas do emulador.
-        '''
-        # usa variável local para offSetErode — evitar alterar o atributo da classe entre frames
-        local_offSetErode = self.offSetErode
-        h = img.shape[0]
-        w = img.shape[1]
-        debug = debug
+        # Verificação inicial
+        if img is None:
+            print("[VisionSystem]: A imagem é nula!!")
+            return -1
 
-        self.pixelWidth = min(w,h)
+        h, w = img.shape[:2]
+        self.pixelWidth = min(w, h)
 
-        #conversão da imagem para pixels
-        self.convert_measures(self.fieldWidth, self.pixelWidth)
+        # Conversão de cm → px (apenas baseada em pixelWidth inicial)
+        #print(f"[DEBUG]: {self.fieldWidth} / {self.pixelWidth} / {self.prop_px_cm}")
+        #self.convert_measures(self.fieldWidth, self.pixelWidth)
+        #print(f"[DEBUG]: {self.fieldWidth} / {self.pixelWidth} / {self.prop_px_cm}")
 
-        #flag para o laço while 
-        flagStop = False 
+        # offset local que realmente controla o loop
+        local_offset = self.offSetErode
+        campo_detectado = False
+        resultado_dp_cm = -1
 
-        #looping principal
-        while local_offSetErode< 20 and not flagStop:
+        # loop com tentativas progressivas
+        while local_offset < 20 and not campo_detectado:
+
             try:
-                #imagem original
+                # imagem base para este ciclo
                 self.frameOrigin = img.copy()
 
-                if img is None:
-                    print("[VisionSystem]: A imagem é nula!!")
-                #tomando imagem em tons de cinza
+                # pipeline de processamento
                 gray = self.gray_scale(self.frameOrigin)
-
-                #aplica filtro de mediana para diminuir ruídos
                 blur = self.median_blur(gray, 3)
-
-                #realça objetos brilhantes, que nesse caso é o campo
                 imgProc = self.highlight_img(blur, self.dimMatrix)
-
-                #binarizando a imagem num limiar
                 binary = self.binarize_up(imgProc, self.Thrashhold)
 
-                #tratando ruídos da imagem binarizada
-                self.binaryObjects = self.trait_noise(binary, self.offSetErode)
+                # ruído tratado com offset local
+                self.binaryObjects = self.trait_noise(binary, local_offset)
 
-                #reduzindo imagem e gerando ViewRect
-                self.binReduceField, self.fieldReduce, coorVetor = self.reduce_field(self.binaryObjects, self.frameOrigin, self.fieldWidth, self.offSetWindow)
+                # redução do campo
+                self.binReduceField, self.fieldReduce, coorVetor = self.reduce_field(
+                    self.binaryObjects,
+                    self.frameOrigin,
+                    self.fieldWidth,
+                    self.offSetWindow
+                )
 
+                # fallback de segurança caso falhe
                 if self.fieldReduce is None:
-                    print("[VisionSystem]: Passou do reduce field, mas o campo aqui não reduziu")
-                    print("[VisionSystem]: Coorvetor", coorVetor)
+                    self.fieldReduce = self.frameOrigin.copy()
 
-                    self.binReduceField, self.fieldReduce = self.binaryObjects, self.frameOrigin
-                
-                #encontra extremos do paralelogramo
-                contours, _ = cv2.findContours(self.binReduceField, cv2.RETR_EXTERNAL,cv2.CHAIN_APPROX_SIMPLE)
+                # buscar contornos
+                contours, _ = cv2.findContours(
+                    self.binReduceField,
+                    cv2.RETR_EXTERNAL,
+                    cv2.CHAIN_APPROX_SIMPLE
+                )
 
-                #gerando os vertices que serão guardados na classe ViewRect
-                rectVer = np.array([0,0,0,0], dtype=np.int32)
-                
-                #loop através dos contornos encontrados
+                encontrou_retangulo = False
+
                 for contour in contours:
-                    #aproximar o contorno para um polígono com poucos vértices
-                    epsilon = 0.02*cv2.arcLength(contour, True)
+
+                    epsilon = 0.02 * cv2.arcLength(contour, True)
                     approx = cv2.approxPolyDP(contour, epsilon, True)
 
-                    #Se o polígono tem 4 vértices então é um retângulo
-                    if len(approx) == 4:
-                        try:
-                            #extrair os vértices do retângulo que é gerada na imagem reduzida! rectVer é a coordenada do paralelepípedo na imagem reduzida
-                            rectVer = np.array([approx[0][0], approx[1][0], approx[2][0], approx[3][0]], dtype=np.int32)
-                            
-                            #Organizando da forma que o algorítmo entende
-                            rectVer = self.sort_points(rectVer)
-                            
-                            #Verifica o tamanho do campo
-                            dp = rectVer[1]-rectVer[0]
-                            modDpPx = np.sqrt(dp[0]**2+dp[1]**2)
+                    # só aceita quadrilátero
+                    if len(approx) != 4:
+                        continue
 
-                            self.modDpCm = modDpPx/self.prop_px_cm
+                    # extrair vértices
+                    rectVer = np.array([a[0] for a in approx], dtype=np.int32)
+                    rectVer = self.sort_points(rectVer)
 
-                            if self.modDpCm >= 60: #só salva um campo maior que 60 cm
+                    top = np.linalg.norm(rectVer[1] - rectVer[0])
+                    bottom = np.linalg.norm(rectVer[2] - rectVer[3])
+                    left = np.linalg.norm(rectVer[3] - rectVer[0])
+                    right = np.linalg.norm(rectVer[2] - rectVer[1])
 
-                                #rv é a janela com um "offset" de valor dd na imagem original.
-                                P1i=Point2D(rectVer[0, 0], rectVer[0, 1])
-                                P2i=Point2D(rectVer[1, 0], rectVer[1, 1])
-                                P3i=Point2D(rectVer[2, 0], rectVer[2, 1])
-                                P4i=Point2D(rectVer[3, 0], rectVer[3, 1])
+                    width_px = (top + bottom) / 2
+                    height_px = (left + right) / 2
 
-                                rect = Quad(P1=P1i, P2=P2i, P3=P3i, P4=P4i)
+                    
+                    self.convert_measures(self.fieldWidth, width_px)
 
-                                
-                                #salvando extremos do objeto campo informando os extremos e o tamanho do campo
-                                self.field.updatePos(rect, self.fieldWidth, self.fieldHeight)
-                                
-                                ptsSource =np.array([P1i.getPos(),P2i.getPos(),P3i.getPos(),P4i.getPos()])
-                                ptsFinal  =np.array([self.fieldP1v,self.fieldP2v,self.fieldP3v,self.fieldP4v])
-                                
-                                #Adquirindo as matrizes de equivalência
-                                self.getHomographyMatrix(ptsSrc=ptsSource, ptsFinal=ptsFinal)
+                    modDpCm = width_px / self.prop_px_cm
 
-                                #setando matrizes de homography para o campo conhecer
-                                self.field.setHomographyMatrix(mHomography=self.homography_matrix, invHomo=self.inv_homography_matrix)
+                    # só aceita valores plausíveis
+                    if modDpCm < 60:
+                        continue
 
-                        except Exception as e:
-                            flagStop = False
-                            print("[VisionSystem]: Não conseguiu desenhar na imagem: \n",e)
-                            self.fieldReduce = img.copy()
-                            self.frameResult = self.fieldReduce.copy()
-                            traceback.print_exc()
-                
-                
-                flagStop = True 
-                self.frameResult = self.fieldReduce.copy()
-                # sucesso: resetar o offSetErode persistente para comportamento inicial
+                    # criar pontos
+                    P1, P2, P3, P4 = [Point2D(v[0], v[1]) for v in rectVer]
+
+                    rect = Quad(P1=P1, P2=P2, P3=P3, P4=P4)
+
+                    # atualizar campo
+                    self.field.updatePos(rect, self.fieldWidth, self.fieldHeight)
+
+                    ptsSource = np.array([
+                        P1.getPos(), P2.getPos(), P3.getPos(), P4.getPos()
+                    ])
+
+                    ptsFinal = np.array([
+                        self.fieldP1v, self.fieldP2v,
+                        self.fieldP3v, self.fieldP4v
+                    ])
+
+                    # homografia
+                    self.getHomographyMatrix(
+                        ptsSrc=ptsSource,
+                        ptsFinal=ptsFinal
+                    )
+
+                    # atribuir no objeto field
+                    self.field.setHomographyMatrix(
+                        mHomography=self.homography_matrix,
+                        invHomo=self.inv_homography_matrix
+                    )
+
+                    encontrou_retangulo = True
+                    campo_detectado = True
+                    resultado_dp_cm = modDpCm
+                    break
+
+                # fim dos contornos
+                if not encontrou_retangulo:
+                    # aumenta offset para nova tentativa
+                    local_offset += 1
+                    continue
+
+                # sucesso → zerar offset global
                 self.offSetErode = 0
-                return self.modDpCm
 
             except Exception as e:
-                flagStop = False
-                self.offSetErode += 1
-                print("[VisionSystem]: Foi necessário subir um pouco o offset, devido ao erro:\n",e)
-                
-                # Captura a stack trace do erro
+                print("[VisionSystem]: Erro durante tentativa de detecção:", e)
                 traceback.print_exc()
 
-                #retornaria as variáveis, mas ele vai atualizar as variáveis internas
-                self.fieldReduce = self.frameOrigin.copy()
-                #copio o campo reduzido para frameResult
-                self.frameResult = self.fieldReduce.copy()
+                local_offset += 1
+                continue
 
-                return -1
+        # final do while
 
+        # desenhar resultado final
+        self.frameResult = (self.fieldReduce.copy()
+                            if self.fieldReduce is not None
+                            else img.copy())
+
+        if campo_detectado:
+            return resultado_dp_cm
+        else:
+            return -1
 
 
     #Detectar a imagem da bola na imagem
