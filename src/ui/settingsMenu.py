@@ -48,7 +48,7 @@ class settingsMenu(Frame):
         self.tree.item(id,tags=())
 
     def on_double_click  (self, event):
-        editable_items = ['Câmera USB','Vídeo Path','Cor','Cor Principal T1', 'Cor Principal T2','T1_robo 1','T1_robo 2','T1_robo 3','T2_robo 1','T2_robo 2','T2_robo 3','Borda da janela','offSet da Erosão','Binarização Threshold','Dim. Matriz TOPHAT', 'Largura (menor)', 'Comprimento (maior)']
+        editable_items = ['Câmera USB','Vídeo Path','Cor','Cor Principal T1', 'Cor Principal T2','T1_robo 1','T1_robo 2','T1_robo 3','T2_robo 1','T2_robo 2','T2_robo 3','Borda da janela','offSet da Erosão','Binarização Threshold','Dim. Matriz TOPHAT', 'Largura (eixo x)', 'Comprimento (eixo y)']
         #color_editables = ["Calibração das Cores"]
         color_editables = ['Cor principal', 'Goal Cor 1', 'Goal Cor 2', 'Atk1 Cor 1', 'Atk1 Cor 2', 'Atk2 Cor 1', 'Atk2 Cor 2', 'Cor inimigos', 'Cor da bola']
         item = self.tree.focus()

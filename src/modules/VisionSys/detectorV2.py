@@ -96,8 +96,8 @@ class VisionSystem:
 
 
         #configurações do campo comprimento e largura
-        self.fieldWidth             = 0                     # largura do campo
-        self.fieldHeight            = 0                     # altura do campo
+        self.fieldWidth             =  150                    # largura do campo
+        self.fieldHeight            = 130                     # altura do campo
         self.prop_px_cm             = 1                     # proporção pixel para cm
         self.prop_px_cm_virtual     = 3                     # proporção pixel para cm na imagem virtual
         self.min_diag = (7.5 / 4) * np.sqrt(2) * self.prop_px_cm
@@ -124,6 +124,8 @@ class VisionSystem:
 
         #tamanho do campo para utilizar
         self.modDpCm     = 0        
+        self.fieldDetectedFlag = False 
+
         #coordenadas dos pontos importantes na imagem virtual
         #Essas coordenadas são em pixels, para passar para o sistema de coordenadas O'
         #Necessário utilizar a função getVirtualPoint()
@@ -244,6 +246,8 @@ class VisionSystem:
         self.playersCount       = 0
         self.alliesCount        = 0
         self.enemiesCount       = 0
+        self.fieldDetectionFailCount  = 0
+        self.maxFieldFailures = 10
 
         self.playersWindows     = [None, None, None, None, None, None]
 
@@ -271,38 +275,44 @@ class VisionSystem:
         self.buildField()
     
     # Implementação da lógica de processamento para várias coisas
-    # Esse é o PROC MAIOR
-    def proc(self, img, debug: bool, isT: bool = False):
+    def proc(self, img, currentTime, debug: bool, isT: bool = False):
         """
         Pipeline principal de processamento da imagem de visão.
         Executa a detecção do campo, bola e jogadores, e gera a visualização final.
-
-        Parâmetros:
-            img (np.ndarray): imagem de entrada.
-            debug (bool): habilita visualização e marcações de depuração.
-            isT (bool): flag opcional usada em detecção de jogadores.
         """
-        # Reseta estado de execução temporário
+        # ===========================
+        # RESET ESTADO E TEMPOS
+        # ===========================
         self.resetExecutionState()
 
-        # marca tempo de início do processamento maior (se não inicializado)
+        # marca tempo de início do processamento maior (primeiro ciclo)
         if not hasattr(self, 'lastMajorTime') or self.lastMajorTime == 0:
             self.lastMajorTime = self.timer.getElapsedTime()
 
-        self.currentTime = self.timer.getElapsedTime()
-        # tempo em segundos desde último processamento maior
-        self._firstTimeExec = (self.currentTime - self.lastMajorTime) / 1000.0
+        currentTime = currentTime
+
+        # tempo desde o último processamento maior
+        self._firstTimeExec = (currentTime - self.lastMajorTime) / 1000.0
         self.debug = debug
 
-        # Zera a imagem virtual
+        # Zera imagem virtual
         self.virtualImg = self.virtual.copy()
 
-        # Validação de imagem
+        # ===========================
+        # CASO 1 — IMAGEM INVÁLIDA
+        # ===========================
         if img is None:
             self.drawAllRobots()
+
+            # ---- Atualiza tempos ANTES do retorno ----
+            try:
+                self.lastMajorTime = self.timer.getElapsedTime()
+            except Exception:
+                self.lastMajorTime = self.currentTime
+
             return img
 
-        # Reseta status dos robôs
+        # reseta status robôs
         for bot in self.enemyTeam:
             bot.setStatus(False)
         for bot in self.allyTeam:
@@ -310,42 +320,64 @@ class VisionSystem:
 
         imgP = img.copy()
 
-        # Detecta o campo
+        # ===========================
+        # 1) DETECTAR CAMPO
+        # ===========================
         wbCmField = self.detect_field(imgP, debug)
 
+        campo_valido = (
+            wbCmField != -1
+            and abs(wbCmField - self.fieldWidth) <= 20
+            and self.fieldReduce is not None
+            and self.fieldReduce.shape[1] >= 100
+        )
 
-        # Corrige erro de redução de campo
-        if self.fieldReduce is None or self.fieldReduce.shape[1] < 100:
-            print("[SystemVision][PROC]: FieldReduce é None ou muito pequeno, usando frame original.")
-            self.fieldReduce = self.frameOrigin
+        if self.debug: print(f"[EMULATOR][DEBUG]: O campo é válido? wbField={wbCmField} | self.fieldWidth={self.fieldWidth} = {campo_valido} ")
 
-        # === Detecta bola ===
-        self._safe_call(self.detect_ball, self.fieldReduce, debug, name="BALL")
+        self.fieldDetectedFlag = campo_valido 
 
-        # === Detecta jogadores ===
-        self._safe_call(self.detect_players, self.fieldReduce, debug, isT=isT, name="PLAYERS")
-
-        # Só continua se o campo for válido e com tamanho consistente
-        if wbCmField == -1 or abs(wbCmField - self.fieldWidth) > 30:
+        # ===========================
+        # CASO 2 — CAMPO INVÁLIDO
+        # ===========================
+        if not campo_valido:
             self.drawAllRobots()
+
+            # ---- Atualiza tempos ANTES do retorno ----
+            try:
+                self.lastMajorTime = self.timer.getElapsedTime()
+            except Exception:
+                self.lastMajorTime = self.currentTime
+
             return img
-            
-        # === Renderização de depuração ===
+
+        # ===========================
+        # 2) PROCESSA BOLA E JOGADORES
+        # ===========================
+        self._safe_call(self.detect_ball, self.fieldReduce, currentTime, debug, name="BALL")
+        self._safe_call(self.detect_players, self.fieldReduce, currentTime, debug, isT=isT, name="PLAYERS")
+
+        # ===========================
+        # DEPURAÇÃO VISUAL
+        # ===========================
         if debug:
             self._draw_field_debug()
             self.colorTree.print_store()
 
-        # Desenha robôs na imagem final
+        # ===========================
+        # RENDERIZAÇÃO FINAL
+        # ===========================
         self.drawAllRobots()
 
-        # atualiza lastMajorTime ao final do processamento "maior" (importante para decidir próximo tipo de processamento)
+        # ===========================
+        # ATUALIZA TEMPO FINAL (OBRIGATÓRIO)
+        # ===========================
         try:
             self.lastMajorTime = self.timer.getElapsedTime()
         except Exception:
-            # fallback seguro
-            self.lastMajorTime = self.currentTime
+            self.lastMajorTime = currentTime
 
         return self.frameResult
+
 
     # Funções auxiliares
     def _safe_call(self, func, *args, name="", **kwargs):
@@ -410,7 +442,7 @@ class VisionSystem:
         self.playersCount = 0
         self.alliesCount = 0
         self.enemiesCount = 0
-        
+        self.fieldDetectionFailCount  = 0
         # ==================== ESTADO DE DETECÇÃO ATUAL ====================
         # Reset apenas dos flags de detecção do frame atual
         # (não afeta histórico de posições)
@@ -453,7 +485,12 @@ class VisionSystem:
         """
         self.debug = debug
         self.frameOrigin = img
-        self.currentTime = self.timer.getElapsedTime()
+
+            # CORREÇÃO: Garantir que o timer está inicializado
+        if self.timer is None:
+            self.timer = HighPrecisionTimer()
+
+        self.currentTime = self.timer.getElapsedTime() #Atualizo o tempo interno.
 
         # --- Caso especial: modo imagem (emulação única) ---
         if self.emulatorMode == MODE_IMAGE:
@@ -461,51 +498,31 @@ class VisionSystem:
             self._count = 0
             self.lastMajorTime = 0
 
-            # Reseta robôs e bola completamente (inclusive Kalman)
-            for bot in (*self.allyTeam, *self.enemyTeam):
-                bot.reset()  # reset total
-            if hasattr(self, "ball"):
-                self.ball.reset()
-
             # Processa a imagem estática e retorna
-            self.proc(img, debug)
+            self.proc(img, self.currentTime, debug)
             
             return self.frameResult
 
         # --- Caso normal: processamento contínuo (vídeo) ---
 
         # Tempo desde o último processamento completo (em segundos)
-        elapsed = (
-            (self.currentTime - getattr(self, "lastMajorTime", 0)) / 1000.0
-            if hasattr(self, "lastMajorTime") else float("inf")
-        )
+        if hasattr(self, "lastMajorTime") and self.lastMajorTime > 0:
+            elapsed = self.currentTime - self.lastMajorTime  # Em milissegundos
+        else:
+            elapsed = float("inf")
 
         # --- Caso 1 - Atualização períodica com processamento pesado ---
         if elapsed < self.newProcTime:
             self._count += 1
 
             # Nas 3 primeiras execuções após inicialização, forçar processamento completo
-            if self._count <= 30: #Fase 1 - Alimentar o filtro de Kalman
-                self.proc(img, debug)
+            if self._count <= 60: #Fase 1 - Alimentar o filtro de Kalman
 
-                # Reset apenas dos estados físicos (não do Kalman)
-                for bot in (*self.allyTeam, *self.enemyTeam):
-                    bot.resetState()
-                if hasattr(self, "ball"):
-                    self.ball.resetState()
+                self.proc(img, self.currentTime, debug)
 
             else: #Fase 2 - Utilizar as predições do filtro
-                '''
-                    Após ele ser alimentado com N medições e atualização sigo o
-                    seguinte processo:
 
-                    1) Uso o Kalman como Guia de ROI
-                        * Se a detecção estiver dentro do ROI, atualizo kalman e o robô
-                        * Se a detecção não estiver dentro do ROI, utilizo o valor de kalman
-                    
-                    Isso garante uma detecção contínua do robô
-                '''
-                self.proc(img, debug)
+                self.filtered_detection(img, self.currentTime, self.currentTime, debug)
 
         # --- Caso 2: processamento completo periódico ---
         else:
@@ -516,13 +533,7 @@ class VisionSystem:
                 self.virtualImg = self.virtual.copy()
 
             # Processamento completo da visão
-            self.proc(img, debug)
-
-            # Após um proc, reseta apenas o estado físico (direção, velocidade)
-            for bot in (*self.allyTeam, *self.enemyTeam):
-                bot.resetState()
-            if hasattr(self, "ball"):
-                self.ball.resetState()
+            self.proc(img, self.currentTime, debug)
 
         # --- Atualiza delta temporal do frame ---
         tmf = self.timer.getElapsedTime()
@@ -1107,67 +1118,66 @@ class VisionSystem:
     #função responsável para reduzir a imagem para os contornos do campo
     def reduce_field(self, BinImg, Img, fieldWidth, d=10):
         """
-        Reduz a imagem para a região do campo (maior contorno encontrado)
-        e retorna as imagens recortadas + coordenadas do retângulo.
-
-        Parâmetros:
-            BinImg (np.ndarray): imagem binarizada do campo.
-            Img (np.ndarray): imagem original colorida.
-            fieldWidth (float): largura real do campo (em cm, por exemplo).
-            d (int): margem adicional em pixels (default = 10).
-
-        Retorna:
-            tuple: (bin_Reduce, img_Reduce, cooVetor)
-                - bin_Reduce: imagem binarizada reduzida
-                - img_Reduce: imagem colorida reduzida
-                - cooVetor: [x, y, w, h] do campo detectado
+        Reduz a imagem para a região do maior contorno (campo).
         """
-        # Encontrar contornos
+
+        # Buscar contornos externos
         contours, _ = cv2.findContours(BinImg, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         if not contours:
             print("[SystemVision]/[REDUCE_FIELD]: Nenhum contorno encontrado.")
             return BinImg, Img, [0, 0, 0, 0]
 
         try:
-            # Maior contorno (presumido como o campo)
+            # Selecionar contornos úteis (descartar ruidos pequenos)
+            contours = [c for c in contours if cv2.contourArea(c) > 200]  
+            if not contours:
+                print("[REDUCE_FIELD]: Contornos muito pequenos.")
+                return BinImg, Img, [0, 0, 0, 0]
+
+            # Maior contorno
             objT = max(contours, key=cv2.contourArea)
             x, y, w, h = cv2.boundingRect(objT)
             cooVetor = [x, y, w, h]
 
-            # Margem de segurança (impede valores negativos)
-            d = max(0, min(d, x, y))
+            # Margem segura
+            d = max(0, d)
 
-            # Recorte com margem
-            y1, y2 = max(0, y - d), min(BinImg.shape[0], y + h + d)
-            x1, x2 = max(0, x - d), min(BinImg.shape[1], x + w + d)
+            # Limite dos eixos
+            maxH, maxW = BinImg.shape[:2]
 
+            y1 = max(0, y - d)
+            y2 = min(maxH, y + h + d)
+            x1 = max(0, x - d)
+            x2 = min(maxW, x + w + d)
+
+            # Recortes
             bin_Reduce = BinImg[y1:y2, x1:x2]
             img_Reduce = Img[y1:y2, x1:x2]
 
-            # Define o retângulo de visão atual
-            pi = np.float32([[x1, y1], [x2, y1], [x1, y2], [x2, y2]])
+            # Retângulo do View Capture (ordem consistente)
+            pi = np.float32([
+                [x1, y1],  # TL
+                [x2, y1],  # TR
+                [x2, y2],  # BR
+                [x1, y2]   # BL
+            ])
+
             rect = Quad(
-                Point2D(pi[0, 0], pi[0, 1]),
-                Point2D(pi[1, 0], pi[1, 1]),
-                Point2D(pi[3, 0], pi[3, 1]),
-                Point2D(pi[2, 0], pi[2, 1])
+                Point2D(pi[0, 0], pi[0, 1]),   # TL
+                Point2D(pi[1, 0], pi[1, 1]),   # TR
+                Point2D(pi[2, 0], pi[2, 1]),   # BR
+                Point2D(pi[3, 0], pi[3, 1])    # BL
             )
 
-            # Atualiza o campo de visão
+            # Atualiza viewport
             self.viewCapture.setViewCapture(rect, cooVetor)
-
-            # Atualiza proporção pixel/cm
-            threshold = 50
-            if w > threshold and h > threshold:
-                pixelWidth = min(w, h)
-                self.convert_measures(fieldWidth, pixelWidth)
 
         except Exception as e:
             print(f"[SystemVision][REDUCE_FIELD]: Erro ao reduzir o campo: {e}")
-            bin_Reduce, img_Reduce, cooVetor = BinImg, Img, [0, 0, 0, 0]
-            self.prop_px_cm = 1
+            return BinImg, Img, [0, 0, 0, 0]
 
         return bin_Reduce, img_Reduce, cooVetor
+
 
     #função para converter medidas
     def convert_measures(self, w_cm, w_px):
@@ -1481,144 +1491,204 @@ class VisionSystem:
         
         return sorted_points
 
+
     
     #=============| Definindo funções módulares | ===========================
-    def detect_field(self, img ,debug):
-        '''
-            Função responsável por detectar o campo na imagem e gerar um ViewRect com as coordenadas
-            do campo que foi reduzido. Salvando o objeto em Field.
+    
+    def _check_field_reset(self):
+        """
+        Verifica se houve muitas falhas consecutivas na detecção do campo
+        e executa um reset completo se necessário.
+        """
+        if self.fieldDetectionFailCount >= self.maxFieldFailures:
+            print(f"[VisionSystem] RESET: {self.fieldDetectionFailCount} falhas consecutivas na detecção do campo")
+            
+            # Reset completo de todos os objetos
+            for bot in (*self.allyTeam, *self.enemyTeam):
+                bot.reset()  # Reset completo (incluindo Kalman)
+                
+            if hasattr(self, "ball"):
+                self.ball.reset()
+                
+            # Reset de transformações e configurações
+            self.homography_matrix = None
+            self.inv_homography_matrix = None
+            self.fieldDetectedFlag = False
+            
+            # Reset do contador (opcional - ou manter para evitar reset contínuo)
+            self.fieldDetectionFailCount = 0  # Reset para evitar múltiplos resets
+            
+            if self.debug:
+                print("[FIELD_RESET] Sistema resetado devido a falhas persistentes na detecção do campo")
+                
+    def detect_field(self, img, debug):
+        """
+        Detecta o campo e gerencia o contador de falhas.
+        Retorna o tamanho do campo detectado em centímetros ou -1 se falhar.
+        """
 
-            Os argumentos da função são configurações vindas do emulador.
-        '''
-        # usa variável local para offSetErode — evitar alterar o atributo da classe entre frames
-        local_offSetErode = self.offSetErode
-        h = img.shape[0]
-        w = img.shape[1]
-        debug = debug
+        # Verificação inicial
+        if img is None:
+            print("[VisionSystem]: A imagem é nula!!")
+            self.fieldDetectionFailCount += 1
+            self._check_field_reset()  # Verifica se precisa resetar
+            return -1
 
-        self.pixelWidth = min(w,h)
+        h, w = img.shape[:2]
+        self.pixelWidth = min(w, h)
 
-        #conversão da imagem para pixels
-        self.convert_measures(self.fieldWidth, self.pixelWidth)
+        # offset local que realmente controla o loop
+        local_offset = self.offSetErode
+        campo_detectado = False
+        resultado_dp_cm = -1
 
-        #flag para o laço while 
-        flagStop = False 
+        # loop com tentativas progressivas
+        while local_offset < 20 and not campo_detectado:
 
-        #looping principal
-        while local_offSetErode< 20 and not flagStop:
             try:
-                #imagem original
+                # imagem base para este ciclo
                 self.frameOrigin = img.copy()
 
-                if img is None:
-                    print("[VisionSystem]: A imagem é nula!!")
-                #tomando imagem em tons de cinza
+                # pipeline de processamento
                 gray = self.gray_scale(self.frameOrigin)
-
-                #aplica filtro de mediana para diminuir ruídos
                 blur = self.median_blur(gray, 3)
-
-                #realça objetos brilhantes, que nesse caso é o campo
                 imgProc = self.highlight_img(blur, self.dimMatrix)
-
-                #binarizando a imagem num limiar
                 binary = self.binarize_up(imgProc, self.Thrashhold)
 
-                #tratando ruídos da imagem binarizada
-                self.binaryObjects = self.trait_noise(binary, self.offSetErode)
+                # ruído tratado com offset local
+                self.binaryObjects = self.trait_noise(binary, local_offset)
 
-                #reduzindo imagem e gerando ViewRect
-                self.binReduceField, self.fieldReduce, coorVetor = self.reduce_field(self.binaryObjects, self.frameOrigin, self.fieldWidth, self.offSetWindow)
+                # redução do campo
+                self.binReduceField, self.fieldReduce, coorVetor = self.reduce_field(
+                    self.binaryObjects,
+                    self.frameOrigin,
+                    self.fieldWidth,
+                    self.offSetWindow
+                )
 
+                # fallback de segurança caso falhe
                 if self.fieldReduce is None:
-                    print("[VisionSystem]: Passou do reduce field, mas o campo aqui não reduziu")
-                    print("[VisionSystem]: Coorvetor", coorVetor)
+                    self.fieldReduce = self.frameOrigin.copy()
 
-                    self.binReduceField, self.fieldReduce = self.binaryObjects, self.frameOrigin
-                
-                #encontra extremos do paralelogramo
-                contours, _ = cv2.findContours(self.binReduceField, cv2.RETR_EXTERNAL,cv2.CHAIN_APPROX_SIMPLE)
+                # buscar contornos
+                contours, _ = cv2.findContours(
+                    self.binReduceField,
+                    cv2.RETR_EXTERNAL,
+                    cv2.CHAIN_APPROX_SIMPLE
+                )
 
-                #gerando os vertices que serão guardados na classe ViewRect
-                rectVer = np.array([0,0,0,0], dtype=np.int32)
-                
-                #loop através dos contornos encontrados
+                encontrou_retangulo = False
+
                 for contour in contours:
-                    #aproximar o contorno para um polígono com poucos vértices
-                    epsilon = 0.02*cv2.arcLength(contour, True)
+
+                    epsilon = 0.02 * cv2.arcLength(contour, True)
                     approx = cv2.approxPolyDP(contour, epsilon, True)
 
-                    #Se o polígono tem 4 vértices então é um retângulo
-                    if len(approx) == 4:
-                        try:
-                            #extrair os vértices do retângulo que é gerada na imagem reduzida! rectVer é a coordenada do paralelepípedo na imagem reduzida
-                            rectVer = np.array([approx[0][0], approx[1][0], approx[2][0], approx[3][0]], dtype=np.int32)
-                            
-                            #Organizando da forma que o algorítmo entende
-                            rectVer = self.sort_points(rectVer)
-                            
-                            #Verifica o tamanho do campo
-                            dp = rectVer[1]-rectVer[0]
-                            modDpPx = np.sqrt(dp[0]**2+dp[1]**2)
+                    # só aceita quadrilátero
+                    if len(approx) != 4:
+                        continue
 
-                            self.modDpCm = modDpPx/self.prop_px_cm
+                    # extrair vértices
+                    rectVer = np.array([a[0] for a in approx], dtype=np.int32)
+                    rectVer = self.sort_points(rectVer)
 
-                            if self.modDpCm >= 60: #só salva um campo maior que 60 cm
+                    top = np.linalg.norm(rectVer[1] - rectVer[0])
+                    bottom = np.linalg.norm(rectVer[2] - rectVer[3])
+                    left = np.linalg.norm(rectVer[3] - rectVer[0])
+                    right = np.linalg.norm(rectVer[2] - rectVer[1])
 
-                                #rv é a janela com um "offset" de valor dd na imagem original.
-                                P1i=Point2D(rectVer[0, 0], rectVer[0, 1])
-                                P2i=Point2D(rectVer[1, 0], rectVer[1, 1])
-                                P3i=Point2D(rectVer[2, 0], rectVer[2, 1])
-                                P4i=Point2D(rectVer[3, 0], rectVer[3, 1])
+                    width_px = (top + bottom) / 2
+                    height_px = (left + right) / 2
 
-                                rect = Quad(P1=P1i, P2=P2i, P3=P3i, P4=P4i)
+                    
+                    self.convert_measures(self.fieldWidth, width_px)
 
-                                
-                                #salvando extremos do objeto campo informando os extremos e o tamanho do campo
-                                self.field.updatePos(rect, self.fieldWidth, self.fieldHeight)
-                                
-                                ptsSource =np.array([P1i.getPos(),P2i.getPos(),P3i.getPos(),P4i.getPos()])
-                                ptsFinal  =np.array([self.fieldP1v,self.fieldP2v,self.fieldP3v,self.fieldP4v])
-                                
-                                #Adquirindo as matrizes de equivalência
-                                self.getHomographyMatrix(ptsSrc=ptsSource, ptsFinal=ptsFinal)
+                    modDpCm = width_px / self.prop_px_cm
 
-                                #setando matrizes de homography para o campo conhecer
-                                self.field.setHomographyMatrix(mHomography=self.homography_matrix, invHomo=self.inv_homography_matrix)
+                    # só aceita valores plausíveis
+                    if modDpCm < 60:
+                        continue
 
-                        except Exception as e:
-                            flagStop = False
-                            print("[VisionSystem]: Não conseguiu desenhar na imagem: \n",e)
-                            self.fieldReduce = img.copy()
-                            self.frameResult = self.fieldReduce.copy()
-                            traceback.print_exc()
-                
-                
-                flagStop = True 
-                self.frameResult = self.fieldReduce.copy()
-                # sucesso: resetar o offSetErode persistente para comportamento inicial
+                    # criar pontos
+                    P1, P2, P3, P4 = [Point2D(v[0], v[1]) for v in rectVer]
+
+                    rect = Quad(P1=P1, P2=P2, P3=P3, P4=P4)
+
+                    # atualizar campo
+                    self.field.updatePos(rect, self.fieldWidth, self.fieldHeight)
+
+                    ptsSource = np.array([
+                        P1.getPos(), P2.getPos(), P3.getPos(), P4.getPos()
+                    ])
+
+                    ptsFinal = np.array([
+                        self.fieldP1v, self.fieldP2v,
+                        self.fieldP3v, self.fieldP4v
+                    ])
+
+                    # homografia
+                    self.getHomographyMatrix(
+                        ptsSrc=ptsSource,
+                        ptsFinal=ptsFinal
+                    )
+
+                    # atribuir no objeto field
+                    self.field.setHomographyMatrix(
+                        mHomography=self.homography_matrix,
+                        invHomo=self.inv_homography_matrix
+                    )
+
+                    encontrou_retangulo = True
+                    campo_detectado = True
+                    resultado_dp_cm = modDpCm
+                    
+                    # ✅ SUCESSO: resetar contador de falhas
+                    self.fieldDetectionFailCount = 0
+                    break
+
+                # fim dos contornos
+                if not encontrou_retangulo:
+                    # aumenta offset para nova tentativa
+                    local_offset += 1
+                    continue
+
+                # sucesso → zerar offset global
                 self.offSetErode = 0
-                return self.modDpCm
 
             except Exception as e:
-                flagStop = False
-                self.offSetErode += 1
-                print("[VisionSystem]: Foi necessário subir um pouco o offset, devido ao erro:\n",e)
-                
-                # Captura a stack trace do erro
+                print("[VisionSystem]: Erro durante tentativa de detecção:", e)
                 traceback.print_exc()
 
-                #retornaria as variáveis, mas ele vai atualizar as variáveis internas
-                self.fieldReduce = self.frameOrigin.copy()
-                #copio o campo reduzido para frameResult
-                self.frameResult = self.fieldReduce.copy()
+                local_offset += 1
+                continue
 
-                return -1
+        # final do while
 
+        # ✅ INCREMENTAR CONTADOR SE NÃO DETECTOU CAMPO
+        if not campo_detectado:
+            self.fieldDetectionFailCount += 1
+            if debug:
+                print(f"[FIELD_DETECTION] Falha #{self.fieldDetectionFailCount}")
+        else:
+            # ✅ Campo detectado com sucesso (já zeramos acima, mas reforça)
+            self.fieldDetectionFailCount = 0
 
+        # ✅ VERIFICAR SE PRECISA RESETAR DEVIDO A MÚLTIPLAS FALHAS
+        self._check_field_reset()
+
+        # desenhar resultado final
+        self.frameResult = (self.fieldReduce.copy()
+                            if self.fieldReduce is not None
+                            else img.copy())
+
+        if campo_detectado:
+            return resultado_dp_cm
+        else:
+            return -1
+    
 
     #Detectar a imagem da bola na imagem
-    def detect_ball(self, img, debug:bool):
+    def detect_ball(self, img, timestamp, debug:bool):
         '''
             Função responsável por detectar a bola na imagem
 
@@ -1652,7 +1722,7 @@ class VisionSystem:
             xcm, ycm = self.getPointVirtual(np.array([xv,yv]))
             
             #Tempo que se passou
-            time = self.timer.getElapsedTime()
+            time = timestamp
 
             rb = self.ballRadiusP   #cm -> valor padrão
 
@@ -1678,7 +1748,7 @@ class VisionSystem:
             cv2.arrowedLine(self.virtualImg, (xv, yv), ((xv + int(self.ball.direction[0])), (yv + int(self.ball.direction[1]))), (0, 255, 255), 2)
 
 
-    def detect_players(self, img, dbg=False, isT=False):
+    def detect_players(self, img, timestamp, dbg=False, isT=False):
         """
         Detecta robôs na imagem com distinção por dominância de cor
         (comparando proporção de área entre cor de aliado e inimigo).
@@ -1775,9 +1845,6 @@ class VisionSystem:
             else:
                 team_type = "uncertain"
 
-            #Tempo coletado para salvar os robôs
-            tm = self.timer.getElapsedTime()/1000.0 #Tempo que foi detectado em segundos
-
             xcm, ycm = self.getPointVirtual(self.transformPoint(np.array([xi, yi])))
             rcm = 5.30
 
@@ -1824,7 +1891,7 @@ class VisionSystem:
 
                         # Pegar quais são essas cores 
                         bot = self.enemyTeam[self.enemiesCount]
-                        bot.setPosition(xcm, ycm, direction, windowActual, time=tim)
+                        bot.setPosition(xcm, ycm, direction, windowActual, time=timestamp)
                         bot.updtPositionImg(xi, yi, ri)
                         bot.setStatus(True)
                         bot.setRadius(rcm)
@@ -1866,7 +1933,6 @@ class VisionSystem:
                         print(f"  🔵 Possível aliado detectado | Raio cor: {rc:.2f}")
 
                     if rc >= 0.5 * mainColorRadius:
-                        tim = self.timer.getElapsedTime()
                         ally_checks = [
                             (not AgoalFlag, self.goalAllyColor1, self.goalAllyColor2, ID_Robots.ROBOT_ALLY_GOAL, "Goleiro"),
                             (not Aatk1Flag, self.atk1AllyColor1, self.atk1AllyColor2, ID_Robots.ROBOT_ALLY_1, "Atacante 1"),
@@ -1885,7 +1951,7 @@ class VisionSystem:
                                     direction = direction/modDir
 
                                 bot = self.allyTeam[bot_id]
-                                bot.setPosition(xcm, ycm, direction, windowActual, time=tim)
+                                bot.setPosition(xcm, ycm, direction, windowActual, time=timestamp)
                                 bot.updtPositionImg(xi, yi, ri)
                                 bot.setStatus(True)
                                 bot.setRadius(rcm)
@@ -2644,75 +2710,70 @@ class VisionSystem:
             return False
 
         
-    def filtered_detection(self, img, tms, debug=False):
+    def filtered_detection(self, img, currentTime, debug=False):
         """
         Detecção leve de robôs e bola usando predição do Kalman para definir ROI.
-        Protegida com _safe_call para não travar o loop em caso de exceção.
-
-        Parâmetros:
-            img : np.ndarray
-                Frame completo da câmera.
-            tms : float
-                Timestamp atual do frame.
+        Só roda se viewCapture tiver coordenadas válidas. Caso contrário, retorna proc().
         """
-
         if img is None:
-            return
+            return self.proc(img, currentTime, debug)
 
-        #counters
-        self.alliesCount = self.enemiesCount = self.playersCount = 0
+        if not self.fieldDetectedFlag:
+            return self.proc(img, currentTime, debug)
+        
+        # Verifica se a viewCapture existe e tem uma ROI válida
+        if not hasattr(self.viewCapture, 'cooVetor') or self.viewCapture.cooVetor is None:
+            # Sem campo detectado previamente, roda pipeline completo
+            return self.proc(img, currentTime, debug)
 
-        # --- Ajusta limites da janela viewCapture ---
-        if hasattr(self.viewCapture, 'cooVetor') and self.viewCapture.cooVetor is not None:
-            x_w, y_w, w_w, h_w = self.viewCapture.cooVetor
-            # Garantir que as coordenadas estão dentro dos limites da imagem
-            h_img, w_img = img.shape[:2]
-            x_w = max(0, min(x_w, w_img - 1))
-            y_w = max(0, min(y_w, h_img - 1))
-            w_w = max(1, min(w_w, w_img - x_w))
-            h_w = max(1, min(h_w, h_img - y_w))
-            self.fieldReduce = img[y_w:y_w+h_w, x_w:x_w+w_w]
-        else:
-            # Se não há viewCapture, usar a imagem inteira
-            self.fieldReduce = img
+        x_w, y_w, w_w, h_w = self.viewCapture.cooVetor
+        # Verifica se a ROI é grande o suficiente
+        w_r = w_w / self.prop_px_cm
+        h_r = h_w /  self.prop_px_cm
+        if w_r < 100 or h_r < 100:  # ajuste mínimo que faça sentido
+            return self.proc(img, currentTime, debug)
 
-     
-        shape = self.fieldReduce.shape[:2]
-        H, W = shape
+        # --- Campo previamente detectado, ROI válida ---
+        h_img, w_img = img.shape[:2]
+        x_w = max(0, min(x_w, w_img - 1))
+        y_w = max(0, min(y_w, h_img - 1))
+        w_w = max(1, min(w_w, w_img - x_w))
+        h_w = max(1, min(h_w, h_img - y_w))
+        self.fieldReduce = img[y_w:y_w+h_w, x_w:x_w+w_w]
 
+        H, W = self.fieldReduce.shape[:2]
+
+        # Inicializa máscaras
         self.binaryBall     = np.zeros((H, W), dtype=np.uint8)
         self.binaryAllTeam  = np.zeros((H, W), dtype=np.uint8)
         self.binaryPlayers  = np.zeros((H, W), dtype=np.uint8)
         self.binaryObjects  = np.zeros((H, W), dtype=np.uint8)
 
-
         self.frameResult = self.fieldReduce.copy()
         self.virtualImg = self.virtual.copy()
 
-        # --- Detectar a bola (seguro) ---
+        # Detecta bola e robôs com predição do Kalman
         self._safe_call(
             self.search_ball,
             img=self.fieldReduce,
-            roi=self.predictBall(shape, tms),  # você pode calcular ROI se necessário
-            timestamp=tms,
-            debug=self.debug,
+            roi=self.predictBall((H, W), currentTime),
+            timestamp=currentTime,
+            debug=debug,
             name="search_ball"
         )
 
-        # --- Detectar robôs (seguro) ---
         self._safe_call(
             self.search_bots,
             img=self.fieldReduce,
-            timestamp=tms,
-            debug=self.debug,
+            timestamp=currentTime,
+            debug=debug,
             name="search_bots"
         )
 
-        # --- Desenhar todos os robôs (seguro) ---
-        self._safe_call(
-            self.drawAllRobots,
-            name="drawAllRobots"
-        )
+        self._safe_call(self.drawAllRobots, name="drawAllRobots")
+
+        return self.frameResult
+
 
     # =================== Delete | Liberação de recursos =================
 

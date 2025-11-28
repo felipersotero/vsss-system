@@ -24,7 +24,6 @@ from ui.cards import *
 from modules.control.control import *
 from modules.communication.communication import *
 from modules.VisionSys.components.objects import *
-from ui.windowControl import *
 
 execution = False
 
@@ -243,8 +242,8 @@ class App:
 
 
         FieldSize=self.menu.add_node(SysVision,'fieldDimensions','Dimensões do campo (cm)', value='')
-        self.menu.add_node(FieldSize,'fieldWidth','Largura (menor)', value='130')
-        self.menu.add_node(FieldSize,'fieldHeight','Comprimento (maior)', value='150')
+        self.menu.add_node(FieldSize,'fieldWidth','Largura (eixo x)', value='150')
+        self.menu.add_node(FieldSize,'fieldHeight','Comprimento (eixo y)', value='130')
 
         CalColor=self.menu.add_node(SysVision,'ColorCalibration','Calibração das Cores', value='')
         self.menu.add_node(CalColor,'mainColor','Cor principal', value='[ 90 128 128]')
@@ -371,10 +370,10 @@ class App:
         self.arqMenu.add_separator()
 
         #criando menu de jogadores
-        self.players= Menu(self.menuTop, tearoff=0)
-        self.menuTop.add_cascade(label='Jogadores',menu=self.players)
-        self.players.add_command(label="Abrir controle de jogadores",command = self.open_player_control)
-        self.players.add_separator()
+        self.control= Menu(self.menuTop, tearoff=0)
+        self.menuTop.add_cascade(label='Comunicação',menu=self.control)
+        self.control.add_command(label="Abrir janela de comunicação",command = self.emulator._open_communication_window())
+        self.control.add_separator()
 
         #criando menu de ajuda
         self.helpMenu = Menu(self.menuTop, tearoff=0)
@@ -384,20 +383,6 @@ class App:
 
     #funções do menu para utilizar
     
-
-    #função de controle do jogador
-    def open_player_control(self):
-        #apenas abre se o jogador tiver escolhido modo câmera
-        self.emulator.load_vars()
-
-        #verifica então o modo
-        if(self.emulator.Mode == MODE_USB_CAM ):
-            print("Entrou com modo câmera e o emulador existe")
-            self.popUp = ControlWindow(self.root, self, self.emulator)
-        else:
-            #abre uma janela de popup falando que precisa estar configurada a camera
-            self.show_error_message("Necessário estar no modo câmera")
-            
 
 if __name__ == "__main__":
     app = App()
