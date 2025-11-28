@@ -246,6 +246,8 @@ class VisionSystem:
         self.playersCount       = 0
         self.alliesCount        = 0
         self.enemiesCount       = 0
+        self.fieldDetectionFailCount  = 0
+        self.maxFieldFailures = 10
 
         self.playersWindows     = [None, None, None, None, None, None]
 
@@ -273,7 +275,7 @@ class VisionSystem:
         self.buildField()
     
     # Implementação da lógica de processamento para várias coisas
-    def proc(self, img, debug: bool, isT: bool = False):
+    def proc(self, img, currentTime, debug: bool, isT: bool = False):
         """
         Pipeline principal de processamento da imagem de visão.
         Executa a detecção do campo, bola e jogadores, e gera a visualização final.
@@ -287,10 +289,10 @@ class VisionSystem:
         if not hasattr(self, 'lastMajorTime') or self.lastMajorTime == 0:
             self.lastMajorTime = self.timer.getElapsedTime()
 
-        self.currentTime = self.timer.getElapsedTime()
+        currentTime = currentTime
 
         # tempo desde o último processamento maior
-        self._firstTimeExec = (self.currentTime - self.lastMajorTime) / 1000.0
+        self._firstTimeExec = (currentTime - self.lastMajorTime) / 1000.0
         self.debug = debug
 
         # Zera imagem virtual
@@ -351,8 +353,8 @@ class VisionSystem:
         # ===========================
         # 2) PROCESSA BOLA E JOGADORES
         # ===========================
-        self._safe_call(self.detect_ball, self.fieldReduce, debug, name="BALL")
-        self._safe_call(self.detect_players, self.fieldReduce, debug, isT=isT, name="PLAYERS")
+        self._safe_call(self.detect_ball, self.fieldReduce, currentTime, debug, name="BALL")
+        self._safe_call(self.detect_players, self.fieldReduce, currentTime, debug, isT=isT, name="PLAYERS")
 
         # ===========================
         # DEPURAÇÃO VISUAL
@@ -372,7 +374,7 @@ class VisionSystem:
         try:
             self.lastMajorTime = self.timer.getElapsedTime()
         except Exception:
-            self.lastMajorTime = self.currentTime
+            self.lastMajorTime = currentTime
 
         return self.frameResult
 
@@ -440,7 +442,7 @@ class VisionSystem:
         self.playersCount = 0
         self.alliesCount = 0
         self.enemiesCount = 0
-        
+        self.fieldDetectionFailCount  = 0
         # ==================== ESTADO DE DETECÇÃO ATUAL ====================
         # Reset apenas dos flags de detecção do frame atual
         # (não afeta histórico de posições)
@@ -483,7 +485,12 @@ class VisionSystem:
         """
         self.debug = debug
         self.frameOrigin = img
-        self.currentTime = self.timer.getElapsedTime()
+
+            # CORREÇÃO: Garantir que o timer está inicializado
+        if self.timer is None:
+            self.timer = HighPrecisionTimer()
+
+        self.currentTime = self.timer.getElapsedTime() #Atualizo o tempo interno.
 
         # --- Caso especial: modo imagem (emulação única) ---
         if self.emulatorMode == MODE_IMAGE:
@@ -491,51 +498,31 @@ class VisionSystem:
             self._count = 0
             self.lastMajorTime = 0
 
-            # Reseta robôs e bola completamente (inclusive Kalman)
-            for bot in (*self.allyTeam, *self.enemyTeam):
-                bot.reset()  # reset total
-            if hasattr(self, "ball"):
-                self.ball.reset()
-
             # Processa a imagem estática e retorna
-            self.proc(img, debug)
+            self.proc(img, self.currentTime, debug)
             
             return self.frameResult
 
         # --- Caso normal: processamento contínuo (vídeo) ---
 
         # Tempo desde o último processamento completo (em segundos)
-        elapsed = (
-            (self.currentTime - getattr(self, "lastMajorTime", 0)) / 1000.0
-            if hasattr(self, "lastMajorTime") else float("inf")
-        )
+        if hasattr(self, "lastMajorTime") and self.lastMajorTime > 0:
+            elapsed = self.currentTime - self.lastMajorTime  # Em milissegundos
+        else:
+            elapsed = float("inf")
 
         # --- Caso 1 - Atualização períodica com processamento pesado ---
         if elapsed < self.newProcTime:
             self._count += 1
 
             # Nas 3 primeiras execuções após inicialização, forçar processamento completo
-            if self._count <= 30: #Fase 1 - Alimentar o filtro de Kalman
-                self.proc(img, debug)
+            if self._count <= 60: #Fase 1 - Alimentar o filtro de Kalman
 
-                # Reset apenas dos estados físicos (não do Kalman)
-                for bot in (*self.allyTeam, *self.enemyTeam):
-                    bot.resetState()
-                if hasattr(self, "ball"):
-                    self.ball.resetState()
+                self.proc(img, self.currentTime, debug)
 
             else: #Fase 2 - Utilizar as predições do filtro
-                '''
-                    Após ele ser alimentado com N medições e atualização sigo o
-                    seguinte processo:
 
-                    1) Uso o Kalman como Guia de ROI
-                        * Se a detecção estiver dentro do ROI, atualizo kalman e o robô
-                        * Se a detecção não estiver dentro do ROI, utilizo o valor de kalman
-                    
-                    Isso garante uma detecção contínua do robô
-                '''
-                self.proc(img, debug)
+                self.filtered_detection(img, self.currentTime, self.currentTime, debug)
 
         # --- Caso 2: processamento completo periódico ---
         else:
@@ -546,13 +533,7 @@ class VisionSystem:
                 self.virtualImg = self.virtual.copy()
 
             # Processamento completo da visão
-            self.proc(img, debug)
-
-            # Após um proc, reseta apenas o estado físico (direção, velocidade)
-            for bot in (*self.allyTeam, *self.enemyTeam):
-                bot.resetState()
-            if hasattr(self, "ball"):
-                self.ball.resetState()
+            self.proc(img, self.currentTime, debug)
 
         # --- Atualiza delta temporal do frame ---
         tmf = self.timer.getElapsedTime()
@@ -1510,26 +1491,51 @@ class VisionSystem:
         
         return sorted_points
 
+
     
     #=============| Definindo funções módulares | ===========================
+    
+    def _check_field_reset(self):
+        """
+        Verifica se houve muitas falhas consecutivas na detecção do campo
+        e executa um reset completo se necessário.
+        """
+        if self.fieldDetectionFailCount >= self.maxFieldFailures:
+            print(f"[VisionSystem] RESET: {self.fieldDetectionFailCount} falhas consecutivas na detecção do campo")
+            
+            # Reset completo de todos os objetos
+            for bot in (*self.allyTeam, *self.enemyTeam):
+                bot.reset()  # Reset completo (incluindo Kalman)
+                
+            if hasattr(self, "ball"):
+                self.ball.reset()
+                
+            # Reset de transformações e configurações
+            self.homography_matrix = None
+            self.inv_homography_matrix = None
+            self.fieldDetectedFlag = False
+            
+            # Reset do contador (opcional - ou manter para evitar reset contínuo)
+            self.fieldDetectionFailCount = 0  # Reset para evitar múltiplos resets
+            
+            if self.debug:
+                print("[FIELD_RESET] Sistema resetado devido a falhas persistentes na detecção do campo")
+                
     def detect_field(self, img, debug):
         """
-            Detecta o campo e gera um ViewRect com as coordenadas da região reduzida.
-            Retorna o tamanho do campo detectado em centímetros ou -1 se falhar.
+        Detecta o campo e gerencia o contador de falhas.
+        Retorna o tamanho do campo detectado em centímetros ou -1 se falhar.
         """
 
         # Verificação inicial
         if img is None:
             print("[VisionSystem]: A imagem é nula!!")
+            self.fieldDetectionFailCount += 1
+            self._check_field_reset()  # Verifica se precisa resetar
             return -1
 
         h, w = img.shape[:2]
         self.pixelWidth = min(w, h)
-
-        # Conversão de cm → px (apenas baseada em pixelWidth inicial)
-        #print(f"[DEBUG]: {self.fieldWidth} / {self.pixelWidth} / {self.prop_px_cm}")
-        #self.convert_measures(self.fieldWidth, self.pixelWidth)
-        #print(f"[DEBUG]: {self.fieldWidth} / {self.pixelWidth} / {self.prop_px_cm}")
 
         # offset local que realmente controla o loop
         local_offset = self.offSetErode
@@ -1635,6 +1641,9 @@ class VisionSystem:
                     encontrou_retangulo = True
                     campo_detectado = True
                     resultado_dp_cm = modDpCm
+                    
+                    # ✅ SUCESSO: resetar contador de falhas
+                    self.fieldDetectionFailCount = 0
                     break
 
                 # fim dos contornos
@@ -1655,6 +1664,18 @@ class VisionSystem:
 
         # final do while
 
+        # ✅ INCREMENTAR CONTADOR SE NÃO DETECTOU CAMPO
+        if not campo_detectado:
+            self.fieldDetectionFailCount += 1
+            if debug:
+                print(f"[FIELD_DETECTION] Falha #{self.fieldDetectionFailCount}")
+        else:
+            # ✅ Campo detectado com sucesso (já zeramos acima, mas reforça)
+            self.fieldDetectionFailCount = 0
+
+        # ✅ VERIFICAR SE PRECISA RESETAR DEVIDO A MÚLTIPLAS FALHAS
+        self._check_field_reset()
+
         # desenhar resultado final
         self.frameResult = (self.fieldReduce.copy()
                             if self.fieldReduce is not None
@@ -1664,10 +1685,10 @@ class VisionSystem:
             return resultado_dp_cm
         else:
             return -1
-
+    
 
     #Detectar a imagem da bola na imagem
-    def detect_ball(self, img, debug:bool):
+    def detect_ball(self, img, timestamp, debug:bool):
         '''
             Função responsável por detectar a bola na imagem
 
@@ -1701,7 +1722,7 @@ class VisionSystem:
             xcm, ycm = self.getPointVirtual(np.array([xv,yv]))
             
             #Tempo que se passou
-            time = self.timer.getElapsedTime()
+            time = timestamp
 
             rb = self.ballRadiusP   #cm -> valor padrão
 
@@ -1727,7 +1748,7 @@ class VisionSystem:
             cv2.arrowedLine(self.virtualImg, (xv, yv), ((xv + int(self.ball.direction[0])), (yv + int(self.ball.direction[1]))), (0, 255, 255), 2)
 
 
-    def detect_players(self, img, dbg=False, isT=False):
+    def detect_players(self, img, timestamp, dbg=False, isT=False):
         """
         Detecta robôs na imagem com distinção por dominância de cor
         (comparando proporção de área entre cor de aliado e inimigo).
@@ -1824,9 +1845,6 @@ class VisionSystem:
             else:
                 team_type = "uncertain"
 
-            #Tempo coletado para salvar os robôs
-            tm = self.timer.getElapsedTime()/1000.0 #Tempo que foi detectado em segundos
-
             xcm, ycm = self.getPointVirtual(self.transformPoint(np.array([xi, yi])))
             rcm = 5.30
 
@@ -1873,7 +1891,7 @@ class VisionSystem:
 
                         # Pegar quais são essas cores 
                         bot = self.enemyTeam[self.enemiesCount]
-                        bot.setPosition(xcm, ycm, direction, windowActual, time=tim)
+                        bot.setPosition(xcm, ycm, direction, windowActual, time=timestamp)
                         bot.updtPositionImg(xi, yi, ri)
                         bot.setStatus(True)
                         bot.setRadius(rcm)
@@ -1915,7 +1933,6 @@ class VisionSystem:
                         print(f"  🔵 Possível aliado detectado | Raio cor: {rc:.2f}")
 
                     if rc >= 0.5 * mainColorRadius:
-                        tim = self.timer.getElapsedTime()
                         ally_checks = [
                             (not AgoalFlag, self.goalAllyColor1, self.goalAllyColor2, ID_Robots.ROBOT_ALLY_GOAL, "Goleiro"),
                             (not Aatk1Flag, self.atk1AllyColor1, self.atk1AllyColor2, ID_Robots.ROBOT_ALLY_1, "Atacante 1"),
@@ -1934,7 +1951,7 @@ class VisionSystem:
                                     direction = direction/modDir
 
                                 bot = self.allyTeam[bot_id]
-                                bot.setPosition(xcm, ycm, direction, windowActual, time=tim)
+                                bot.setPosition(xcm, ycm, direction, windowActual, time=timestamp)
                                 bot.updtPositionImg(xi, yi, ri)
                                 bot.setStatus(True)
                                 bot.setRadius(rcm)
@@ -2693,28 +2710,28 @@ class VisionSystem:
             return False
 
         
-    def filtered_detection(self, img, tms, debug=False):
+    def filtered_detection(self, img, currentTime, debug=False):
         """
         Detecção leve de robôs e bola usando predição do Kalman para definir ROI.
         Só roda se viewCapture tiver coordenadas válidas. Caso contrário, retorna proc().
         """
         if img is None:
-            return self.proc(img, debug)
+            return self.proc(img, currentTime, debug)
 
         if not self.fieldDetectedFlag:
-            return self.proc(img, debug)
+            return self.proc(img, currentTime, debug)
         
         # Verifica se a viewCapture existe e tem uma ROI válida
         if not hasattr(self.viewCapture, 'cooVetor') or self.viewCapture.cooVetor is None:
             # Sem campo detectado previamente, roda pipeline completo
-            return self.proc(img, debug)
+            return self.proc(img, currentTime, debug)
 
         x_w, y_w, w_w, h_w = self.viewCapture.cooVetor
         # Verifica se a ROI é grande o suficiente
         w_r = w_w / self.prop_px_cm
         h_r = h_w /  self.prop_px_cm
         if w_r < 100 or h_r < 100:  # ajuste mínimo que faça sentido
-            return self.proc(img, debug)
+            return self.proc(img, currentTime, debug)
 
         # --- Campo previamente detectado, ROI válida ---
         h_img, w_img = img.shape[:2]
@@ -2739,8 +2756,8 @@ class VisionSystem:
         self._safe_call(
             self.search_ball,
             img=self.fieldReduce,
-            roi=self.predictBall((H, W), tms),
-            timestamp=tms,
+            roi=self.predictBall((H, W), currentTime),
+            timestamp=currentTime,
             debug=debug,
             name="search_ball"
         )
@@ -2748,7 +2765,7 @@ class VisionSystem:
         self._safe_call(
             self.search_bots,
             img=self.fieldReduce,
-            timestamp=tms,
+            timestamp=currentTime,
             debug=debug,
             name="search_bots"
         )
