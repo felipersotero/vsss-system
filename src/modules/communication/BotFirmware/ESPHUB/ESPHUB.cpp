@@ -2,14 +2,17 @@
 #include <Arduino.h>
 #include <cstring>
 
-// Substitua pelos MACs reais
+
+// Devem ser iguais aos que gravamos nos códigos dos robôs
 static const uint8_t ROBOT_MACS[][6] = {
-    {0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0x01},
-    {0xBB, 0xBB, 0xBB, 0xBB, 0xBB, 0x02},
-    {0xCC, 0xCC, 0xCC, 0xCC, 0xCC, 0x03}
+    {0x94, 0xB9, 0x7E, 0xC2, 0xCA, 0xA8}, // Robô 1 real
+    {0x00, 0x00, 0x00, 0x00, 0x00, 0x00}, // Robô 2 (preencher quando tiver)
+    {0x00, 0x00, 0x00, 0x00, 0x00, 0x01}  // Robô 3 (preencher quando tiver)
 };
 
+
 ESPHub* ESPHub::instance = nullptr;
+
 
 ESPHub::ESPHub()
     : incoming(100), outgoing(100), robots{ RobotChannel(20), RobotChannel(20), RobotChannel(20), RobotChannel(20) }
@@ -19,9 +22,24 @@ ESPHub::ESPHub()
 }
 
 void ESPHub::begin() {
-    WiFi.mode(WIFI_STA);
-    WiFi.disconnect();
 
+    // Inicializar WiFi adequadamente antes de tentar ler MAC
+    WiFi.mode(WIFI_MODE_STA);
+    esp_wifi_start();     // <<< IMPORTANTE
+    esp_wifi_set_promiscuous(true);
+    delay(100);
+
+    // Ler MAC real do HUB
+    if (esp_wifi_get_mac(WIFI_IF_STA, hubMac) == ESP_OK) {
+        Serial.printf("[INIT] MAC real do HUB: %02X:%02X:%02X:%02X:%02X:%02X\n",
+            hubMac[0], hubMac[1], hubMac[2], hubMac[3], hubMac[4], hubMac[5]);
+    } else {
+        Serial.println("[ERRO] Falha ao obter MAC do HUB! (driver nao iniciado?)");
+    }
+
+    delay(50);
+
+    // Inicializar ESPNOW
     if (esp_now_init() != ESP_OK) {
         Serial.println("ESPNOW init failed!");
         return;
@@ -29,7 +47,26 @@ void ESPHub::begin() {
 
     esp_now_register_send_cb(ESPHub::onESPNOWSent);
     esp_now_register_recv_cb(ESPHub::onESPNOWRecv);
+
+    // Registrar peers
+    for (int i = 0; i < 3; ++i) {
+        esp_now_peer_info_t peerInfo;
+        memset(&peerInfo, 0, sizeof(peerInfo));
+
+        memcpy(peerInfo.peer_addr, ROBOT_MACS[i], 6);
+        peerInfo.channel = 0;
+        peerInfo.encrypt = false;
+        peerInfo.ifidx = WIFI_IF_STA;
+
+        if (esp_now_add_peer(&peerInfo) != ESP_OK) {
+            Serial.printf("[ERRO] Falha ao adicionar peer Robo %d\n", i + 1);
+        } else {
+            Serial.printf("[INIT] Robo %d registrado\n", i + 1);
+        }
+    }
 }
+
+
 
 void ESPHub::receiveSerial() {
     while (Serial.available()) {
@@ -164,20 +201,47 @@ void ESPHub::processTimeouts() {
  * - Se destino robô -> coloca na fila do robô
  */
 void ESPHub::processIncomingFromPC(const PFOXPacket& pkt) {
+    // 1. Sempre confirma o recebimento para o PC (Handshake Serial)
     sendAckToPC(pkt);
 
-    // Broadcast para todos (não enfileira)
+    // 2. Verifica se é um Broadcast (Para todos)
     if (pkt.dst == PFOXAddress::BROADCAST) {
-        // Envia broadcast via ESP-NOW para cada MAC definido
+
+        // CASO A: Pedido de STATUS (Network Discovery)
+        // O Hub intercepta e responde com o que ele sabe. Não envia via rádio.
+        if (pkt.type == PFOXMsgType::STATUS) {
+            PFOXPacket report;
+            report.preamble = PFOXPacket::PREAMBLE;
+            report.version  = PFOXPacket::VERSION;
+            report.src      = PFOXAddress::ESPMAIN; // Fonte: Hub
+            report.dst      = PFOXAddress::PC;      // Destino: PC
+            report.type     = PFOXMsgType::STATUS;
+            report.seq24    = pkt.seq24;            // Mantém sync
+            
+            // Payload: [Status_R1, Status_R2, Status_R3]
+            // 0x01 = Online, 0x00 = Offline
+            report.payload.push_back(robots[1].online ? 0x01 : 0x00);
+            report.payload.push_back(robots[2].online ? 0x01 : 0x00);
+            report.payload.push_back(robots[3].online ? 0x01 : 0x00);
+            report.len = 3;
+
+            // Envia resposta pela Serial
+            auto bytes = report.encode();
+            Serial.write(bytes.data(), bytes.size());
+            return; 
+        }
+
+        // CASO B: Comandos de ação (STOP, START, FLOW_CTRL, SET_SPEED...)
+        // O Hub repassa imediatamente para todos (Fire-and-Forget)
         for (int r = 1; r <= 3; ++r) {
             PFOXPacket copy = pkt;
-            copy.dst = (PFOXAddress)r;
-            sendToRobot(copy);
+            copy.dst = (PFOXAddress)r; // Altera o destino lógico
+            sendToRobot(copy);         // Envia via ESP-NOW (sem esperar ACK)
         }
         return;
     }
 
-    // Se destino é um robô -> enfileira
+    // 3. Se não for Broadcast, segue fluxo normal (Unicast com fila e ACK)
     uint8_t dst = (uint8_t)pkt.dst;
     if (dst >= 1 && dst <= 3) {
         addToQueue(dst, pkt);
@@ -203,9 +267,15 @@ void ESPHub::handleIncomingFromRobot(const PFOXPacket& pkt, const esp_now_recv_i
                 ch.retryCount = 0;
                 ch.online = true;
                 ch.lastSeen = millis();
+
+                // Repassa o ACK do Robô para o PC.
+                // Assim o PC recebe:
+                // 1. O ACK do Hub (imediato)
+                // 2. O ACK do Robô (alguns ms depois)
+                forwardToPC(pkt); 
             }
-        }
-        return; // ACK não é repassado ao PC
+        }   
+        return; // Retorna aqui, pois já foi encaminhado acima (se necessário)
     }
 
     // Se for status response -> marcar online e encaminhar

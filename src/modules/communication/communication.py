@@ -428,9 +428,6 @@ class Communication:
         self._loop_running = False
 
 
-    # ============================================================
-    # ⬇️ ADICIONE ESTE MÉTODO NOVO AQUI ⬇️
-    # ============================================================
     def _process_incoming_data(self, new_bytes: bytes):
         """Processa bytes recebidos, decodifica pacotes PFOX ou logs (texto)."""
 
@@ -465,38 +462,83 @@ class Communication:
             # 2️⃣ PACOTE PFOX (0xF0)
             # ============================================================
             if first == 0xF0:
+                # Cabeçalho mínimo (9) + CRC (2) = 11 bytes mínimo absoluto
+                # Mas a verificação real de tamanho é feita pelo PFOXPacket.decode
                 if len(self._incoming_buffer) < 9:
-                    break  # pacote incompleto
+                    break  # pacote incompleto (pelo menos header)
 
                 try:
+                    # Tenta decodificar. Se faltar dados, PFOXPacket lança exceção ou retorna?
+                    # Assumindo que sua implementação lança erro se incompleto ou CRC falhar.
+                    # Se sua implementação retorna None/Exception para dados incompletos, 
+                    # verifique se precisa de um 'peek' antes. 
+                    # Aqui assumo que o decode levanta erro se CRC ruim e trata buffer.
+                    
                     decoded_pkt, used_len = PFOXPacket.decode(self._incoming_buffer)
 
                     # Só chegamos aqui se o pacote está INTEIRO e o CRC está CORRETO.
                     if hasattr(self, 'stats'):
                         self.stats.total_received += 1
+                        
+                    # ---------------------------------------------------------
+                    # 🔥 NOVA LÓGICA: INTERCEPTAR STATUS E ATUALIZAR VARIÁVEIS
+                    # ---------------------------------------------------------
+                    if decoded_pkt.type == MsgType.STATUS:
+                        payload = decoded_pkt.payload
+                        if len(payload) >= 3:
+                            # Payload formato: [R1_Status, R2_Status, R3_Status]
+                            # 1 = Online, 0 = Offline
+                            r1_online = (payload[0] == 1)
+                            r2_online = (payload[1] == 1)
+                            r3_online = (payload[2] == 1)
 
-                    # Log do pacote decodificado
+                            # Atualiza o estado interno da classe
+                            self.robot_status[1] = r1_online
+                            self.robot_status[2] = r2_online
+                            self.robot_status[3] = r3_online
+
+                            # Log informativo bonito
+                            status_str = (f"R1={'🟢' if r1_online else '🔴'} "
+                                          f"R2={'🟢' if r2_online else '🔴'} "
+                                          f"R3={'🟢' if r3_online else '🔴'}")
+                            
+                            self._emit_log(f"🔄 [RX:STATUS] Network Discovery: {status_str}")
+                        else:
+                            self._emit_log(f"⚠️ [RX:WARN] Status recebido com tamanho inválido: {len(payload)}")
+                    # ---------------------------------------------------------
+
+                    # Log do pacote decodificado (Geral)
                     self._log_pfox_packet(decoded_pkt, self._incoming_buffer[:used_len])
 
-                    # Enfileira para a aplicação
+                    # Enfileira para a aplicação (caso a UI precise ler também)
                     self._rx_queue.put(decoded_pkt)
 
-                    # Remove exatamente o tamanho consumido
+                    # Remove exatamente o tamanho consumido pelo pacote
                     del self._incoming_buffer[:used_len]
                     continue
 
                 except ValueError as crc_error:
+                    # Se for erro de CRC, descartamos 1 byte para tentar ressincronizar
+                    # ou descartamos o pacote todo se soubermos o tamanho.
+                    # Abordagem segura: descartar 1 byte.
                     self.stats.total_errors += 1
-                    self.robot_status_error_count += 1  # opcional
+                    self.robot_status_error_count += 1 
 
                     self._emit_log(
-                        f"❌ [RX:ERR] HUB → PC | PFOX CRC inválido ({crc_error})"
+                        f"❌ [RX:ERR] HUB → PC | PFOX CRC/Decode inválido: {crc_error}"
                     )
 
                     del self._incoming_buffer[0]
                     continue
 
                 except Exception as e:
+                    # Erro genérico (ex: buffer incompleto no meio do decode, ou erro de lógica)
+                    # Se for "incomplete packet", deveríamos dar 'break' no while.
+                    # Assumindo que decode lança exceção específica para incompleto, 
+                    # aqui tratamos erro fatal de parse.
+                    if "incomplete" in str(e).lower(): # Exemplo hipotético
+                        break
+                    
                     self.robot_status_error_count += 1
                     self._emit_log(
                         f"❌ [RX PFOX ERROR] Erro inesperado: {e}. "
@@ -505,7 +547,9 @@ class Communication:
                     del self._incoming_buffer[0]
                     continue
 
-            # 3️⃣ TEXTO comum recebido (HUB → PC)
+            # ============================================================
+            # 3️⃣ TEXTO COMUM (HUB → PC)
+            # ============================================================
             if 32 <= first <= 126 or first in (9, 10, 13):
                 newline_pos = None
                 for i, b in enumerate(self._incoming_buffer):
@@ -520,7 +564,8 @@ class Communication:
                     'utf-8', errors='ignore'
                 ).strip()
 
-                self._emit_log(f"📄 [RX:TEXT] HUB → PC | {text}")
+                if text: # Só loga se não for vazio
+                    self._emit_log(f"📄 [RX:TEXT] HUB → PC | {text}")
 
                 del self._incoming_buffer[:newline_pos+1]
                 continue
@@ -530,9 +575,9 @@ class Communication:
             # 4️⃣ BYTE NÃO PFOX E NÃO ASCII → DESCARTAR
             # ============================================================
             invalid = self._incoming_buffer[0]
-            self._emit_log(f"❌ [RX:ERR] HUB → PC | Byte inválido 0x{invalid:02X}")
+            # Opcional: não logar sujeira para não spammar, ou logar apenas em debug
+            # self._emit_log(f"❌ [RX:ERR] Byte descartado 0x{invalid:02X}")
             del self._incoming_buffer[0]
-
 
     def _log_pfox_packet(self, pkt, raw_bytes):
             """Log simplificado para pacotes recebidos (RX)."""
@@ -787,19 +832,34 @@ class Communication:
             # Lista simples de comandos para gerar (Lambdas)
             # Não precisamos de nomes/descrições, o send_data já vai ler o pacote e dizer o que é!
             scenarios = [
+                # --- TESTES EXISTENTES ---
                 # 1. Heartbeat
                 lambda: pfox.create_packet(Address.ESPMAIN, MsgType.HEARTBEAT, []).to_bytes(),
                 
                 # 2. Flow Control (Start Robot 1)
                 lambda: pfox.send_flow_control(Address.ROBOT1, 0x01).to_bytes(),
                 
-                # 3. Set Speed (Robot 2 - Testa a visualização do vetor de velocidade)
+                # 3. Set Speed (Robot 2)
                 lambda: pfox.send_speed_command(Address.ROBOT2, 100, 150, 90, 140).to_bytes(),
                 
-                # 4. Broadcast
-                lambda: pfox.create_packet(Address.BROADCAST, MsgType.HEARTBEAT, []).to_bytes()
-            ]
+                # --- NOVOS TESTES (O QUE FALTA) ---
 
+                # 4. TESTE DE NETWORK DISCOVERY (CRÍTICO)
+                # Este é o mais importante agora. O Hub deve interceptar e responder IMEDIATAMENTE
+                # com um pacote STATUS contendo o payload [0, 0, 0] (se nenhum robô conectou).
+                # Se isso funcionar, sua lógica de "não usar o rádio para status" está perfeita.
+                lambda: pfox.create_packet(Address.BROADCAST, MsgType.STATUS, []).to_bytes(),
+
+                # 5. TESTE DE EMERGÊNCIA (STOP GERAL)
+                # Envia um comando de PARAR para BROADCAST.
+                # O Hub deve receber e você deve ver (se tivesse o LED) ele disparar o rádio 3 vezes.
+                # Como resposta serial, você deve receber apenas o ACK do HUB.
+                lambda: pfox.send_flow_control(Address.BROADCAST, 0x20).to_bytes(), # 0x20 = STOP
+
+                # 6. TESTE DE BUFFER (BURST)
+                # Envia para o Robô 3 (que ainda não testamos)
+                lambda: pfox.send_speed_command(Address.ROBOT3, 50, 50, 0, 0).to_bytes(),
+            ]
             total_sent = 0
             total_ok = 0
 
