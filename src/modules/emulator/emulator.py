@@ -147,7 +147,7 @@ class Emulator:
                 frame = self.capture.getImage() #A câmera tem um FPS de 30, então fica travado a 30 FPS o sistema.
                 if frame is None:
                     # Meu FPS é limitado pela velocidade de aquisição de dados da câmera.
-                    time.sleep(0.002)
+                    time.sleep(0.001)
                     continue
 
                 # --- Processamento de visão ---
@@ -206,7 +206,7 @@ class Emulator:
             except Exception as e:
                 print("[VISION THREAD] Erro:", e)
                 traceback.print_exc()
-                time.sleep(0.003)
+                time.sleep(0.001)
                 continue
 
         print("[VISION THREAD] Finalizada.")

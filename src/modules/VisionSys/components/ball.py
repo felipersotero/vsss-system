@@ -209,9 +209,9 @@ class Ball:
 
         # Matriz de observação H
         H = np.array([
-            [1, 0, 0, 0, 0, 0], #x
-            [0, 1, 0, 0, 0, 0], #y
-            [0, 0, 1, 0, 0, 0] #theta
+            [1, 0, 0, 0, 0], #x
+            [0, 1, 0, 0, 0], #y
+            [0, 0, 1, 0, 0] #theta
         ])
 
         # Predição
@@ -372,7 +372,7 @@ class Ball:
 
         self.kalman_initialized = False
         self.kalman_state[:] = 0
-        self.kalman_P = np.eye(6) * 500
+        self.kalman_P = np.eye(5) * 500
         self.kalman_last_time = None
 
         self.objLimit = Circle(Point2D(0, 0), 0)
