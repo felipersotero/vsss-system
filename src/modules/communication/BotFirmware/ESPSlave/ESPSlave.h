@@ -1,47 +1,47 @@
 #pragma once
-#include "PacketQueue.h"
-#include "PFOXPacket.h" // Adicionado para garantir o PFOXAddress/MsgType
+
 #include <Arduino.h>
 #include <esp_now.h>
 #include <WiFi.h>
-#include <vector>
+#include <esp_wifi.h>
+#include "PFOXPacket.h"
+#include "PFOXQueue.h"
+#include "Control.h"
+
+// Estrutura para os dados do robô diferencial
+struct DiffRobotData {
+    int16_t leftReal;
+    int16_t leftDes;   // Desired (Setpoint)
+    int16_t rightReal;
+    int16_t rightDes;  // Desired (Setpoint)
+};
 
 class ESPSlave {
-private:
-    static ESPSlave* instance;
-    PacketQueue incoming;
-    PacketQueue outgoing;
-
-    std::vector<uint8_t> serialBuffer;
-
-    struct PendingAck {
-        uint8_t seq;
-        uint8_t dst;
-        uint32_t timestamp;
-        PFOXPacket pkt;
-    };
-
-    std::vector<PendingAck> pendingAcks;
-
-    // Métodos estáticos (Callbacks)
-    static void onESPNOWSent(const wifi_tx_info_t* info, esp_now_send_status_t status);
-    static void onESPNOWRecv(const esp_now_recv_info_t* info, const uint8_t* data, int len);
-
-    // Métodos de processamento
-    void processSerialBytes();
-    void sendAckToHUB(const PFOXPacket& pkt);
-    void forwardToHUB(const PFOXPacket& pkt);
-
-    void processOutgoing();
-    void processTimeouts();
-
-
 public:
-    ESPSlave();
+    ESPSlave(PFOXAddress id, uint8_t* hubMacAddress);
+
     void begin();
     void loop();
-    void receiveSerial();
 
-    // usado pelos callbacks estáticos
-    static ESPSlave* getInstance() { return instance; }
+    // Funções de Hardware (Robô Diferencial)
+    // Recebe velocidade esquerda e direita (int16: -32768 a 32767)
+    void setMotors(int16_t leftSpeed, int16_t rightSpeed);
+    void stopMotors();
+
+private:
+    PFOXAddress myId;
+    uint8_t hubMac[6];
+    
+    PacketQueue incomingQueue;
+    static ESPSlave* instance;
+    bool running;
+
+    static void onDataRecv(const esp_now_recv_info_t *info, const uint8_t *data, int len);
+    static void onDataSent(const wifi_tx_info_t *info, esp_now_send_status_t status);
+
+    void processPacket(const PFOXPacket& pkt);
+    void sendAck(const PFOXPacket& originalPkt);
+    void sendStatus(uint32_t seq);
+
+    RobotControl robotCtrl;
 };

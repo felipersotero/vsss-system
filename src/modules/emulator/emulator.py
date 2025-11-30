@@ -112,7 +112,7 @@ class Emulator:
         self.CUDAselected = False
 
         # Tempo de comunicação
-        self.comm_send_interval = 0.01667 #60 FPS
+        self.comm_send_interval = 0.030 #60 FPS
 
     # ==============================================================
     #  2.1 Processamento paralelo
@@ -279,7 +279,7 @@ class Emulator:
         Envia comandos, solicita status periódico e processa respostas.
         """
 
-        STATUS_INTERVAL = getattr(self, "comm_status_interval", 3)
+        STATUS_INTERVAL = getattr(self, "comm_send_interval", 3)
 
         last_status_request = self.Timer.getElapsedTime()
 
@@ -292,10 +292,10 @@ class Emulator:
             # ---------------------------------------------------------
             # 0) Checar comunicação
             # ---------------------------------------------------------
-            if not self.comm or not self.comm.is_connected():
+            if not self.comm or not self.comm.is_connected() or self.comm._paused:
                 time.sleep(0.2)
                 continue
-
+        
             # ---------------------------------------------------------
             # 1) Enviar comandos pendentes
             # ---------------------------------------------------------
@@ -344,10 +344,11 @@ class Emulator:
             # ---------------------------------------------------------
             # 4) Fechamento do loop
             # ---------------------------------------------------------
-            time.sleep(self.sendTime)
-
-            loop_end = self.Timer.getTimelapse()
+            time.sleep(STATUS_INTERVAL)
+            
+            loop_end = self.Timer.getElapsedTime()
             self.deque_send.append(loop_end - loop_start)
+            
 
         print("[Emulator] 🔴 Communication Thread finalizada")
 

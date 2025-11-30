@@ -428,111 +428,139 @@ class Communication:
         self._loop_running = False
 
 
-    # ============================================================
-    # ⬇️ ADICIONE ESTE MÉTODO NOVO AQUI ⬇️
-    # ============================================================
     def _process_incoming_data(self, new_bytes: bytes):
-        """Processa bytes recebidos, decodifica pacotes PFOX ou logs (texto)."""
+            """Processa bytes recebidos, decodifica pacotes PFOX ou logs (texto)."""
 
-        self._incoming_buffer.extend(new_bytes)
+            self._incoming_buffer.extend(new_bytes)
 
-        max_bytes_per_loop = 1024
-        bytes_processed = 0
+            max_bytes_per_loop = 1024
+            bytes_processed = 0
 
-        while len(self._incoming_buffer) > 0 and bytes_processed < max_bytes_per_loop:
-            bytes_processed += 1
+            while len(self._incoming_buffer) > 0 and bytes_processed < max_bytes_per_loop:
+                bytes_processed += 1
 
-            first = self._incoming_buffer[0]
+                first = self._incoming_buffer[0]
 
-            # ============================================================
-            # 1️⃣ LOG DO HUB COMEÇANDO POR '['
-            # ============================================================
-            if first == ord('['):
-                try:
-                    newline_idx = self._incoming_buffer.index(b'\n')
-                    log_line = self._incoming_buffer[:newline_idx+1].decode(
+                # ============================================================
+                # 1️⃣ LOG DO HUB COMEÇANDO POR '['
+                # ============================================================
+                if first == ord('['):
+                    try:
+                        newline_idx = self._incoming_buffer.index(b'\n')
+                        log_line = self._incoming_buffer[:newline_idx+1].decode(
+                            'utf-8', errors='ignore'
+                        ).strip()
+
+                        self._emit_log(f"🧾 [RX:LOG] HUB → PC | {log_line}")
+
+                        del self._incoming_buffer[:newline_idx+1]
+                        continue
+                    except ValueError:
+                        break  # linha incompleta
+
+                # ============================================================
+                # 2️⃣ PACOTE PFOX (0xF0)
+                # ============================================================
+                if first == 0xF0:
+                    # Cabeçalho mínimo (9) + CRC (2) = 11 bytes mínimo absoluto
+                    if len(self._incoming_buffer) < 9:
+                        break  # pacote incompleto (pelo menos header)
+
+                    try:
+                        decoded_pkt, used_len = PFOXPacket.decode(self._incoming_buffer)
+
+                        # Só chegamos aqui se o pacote está INTEIRO e o CRC está CORRETO.
+                        if hasattr(self, 'stats'):
+                            self.stats.total_received += 1
+                            
+                        # ---------------------------------------------------------
+                        # 🔥 LÓGICA DE STATUS E PRESENÇA
+                        # ---------------------------------------------------------
+                        if decoded_pkt.msg_type == MsgType.STATUS:
+                            payload = decoded_pkt.payload
+                            if len(payload) >= 3:
+                                # 1 = Online, 0 = Offline
+                                r1_online = (payload[0] == 1)
+                                r2_online = (payload[1] == 1)
+                                r3_online = (payload[2] == 1)
+                                
+                                now = time.time()
+                                if r1_online: self.robot_last_seen[1] = now
+                                if r2_online: self.robot_last_seen[2] = now
+                                if r3_online: self.robot_last_seen[3] = now
+
+                                with self._robot_status_lock:
+                                    self.robot_status[1] = "OK" if r1_online else "FAIL"
+                                    self.robot_status[2] = "OK" if r2_online else "FAIL"
+                                    self.robot_status[3] = "OK" if r3_online else "FAIL"
+
+                                status_str = (f"R1={'ON' if r1_online else 'OFF'} "
+                                            f"R2={'ON' if r2_online else 'OFF'} "
+                                            f"R3={'ON' if r3_online else 'OFF'}")
+                                
+                                self._emit_log(f"🔄 [RX:STATUS] Network Discovery: {status_str}")
+                            else:
+                                self._emit_log(f"⚠️ [RX:WARN] Status inválido (len={len(payload)})")
+
+                        # Atualiza "Last Seen" se o pacote veio de um robô
+                        if decoded_pkt.src in [Address.ROBOT1, Address.ROBOT2, Address.ROBOT3]:
+                            rid = decoded_pkt.src.value
+                            self.robot_last_seen[rid] = time.time()
+                            with self._robot_status_lock:
+                                self.robot_status[rid] = "OK"
+
+                        # Log e Queue
+                        self._log_pfox_packet(decoded_pkt, self._incoming_buffer[:used_len])
+                        self._rx_queue.put(decoded_pkt)
+
+                        del self._incoming_buffer[:used_len]
+                        continue
+
+                    except ValueError as e:
+                        # =========================================================
+                        # 🛠️ CORREÇÃO IMPORTANTE DO TRY/EXCEPT
+                        # =========================================================
+                        err_msg = str(e)
+                        
+                        # 1. Se for pacote incompleto, SAÍMOS do loop e esperamos mais dados
+                        #    NÃO apague o buffer!
+                        if "INCOMPLETE" in err_msg:
+                            # break  <--- COMENTE ISSO PARA TESTAR
+                            pass     # Deixe passar para o delete abaixo
+                        
+                        self.stats.total_errors += 1
+                        self._emit_log(f"❌ [RX:ERR] PFOX Inválido ({err_msg})")
+                        del self._incoming_buffer[0]
+                        continue
+
+                # ============================================================
+                # 3️⃣ TEXTO COMUM (HUB → PC)
+                # ============================================================
+                if 32 <= first <= 126 or first in (9, 10, 13):
+                    newline_pos = None
+                    for i, b in enumerate(self._incoming_buffer):
+                        if b in (10, 13):
+                            newline_pos = i
+                            break
+
+                    if newline_pos is None:
+                        break  # ainda não chegou a linha inteira
+
+                    text = self._incoming_buffer[:newline_pos+1].decode(
                         'utf-8', errors='ignore'
                     ).strip()
 
-                    self._emit_log(f"🧾 [RX:LOG] HUB → PC | {log_line}")
+                    if text: 
+                        self._emit_log(f"📄 [RX:TEXT] HUB → PC | {text}")
 
-                    del self._incoming_buffer[:newline_idx+1]
-                    continue
-                except ValueError:
-                    break  # linha incompleta
-
-            # ============================================================
-            # 2️⃣ PACOTE PFOX (0xF0)
-            # ============================================================
-            if first == 0xF0:
-                if len(self._incoming_buffer) < 9:
-                    break  # pacote incompleto
-
-                try:
-                    decoded_pkt, used_len = PFOXPacket.decode(self._incoming_buffer)
-
-                    # Só chegamos aqui se o pacote está INTEIRO e o CRC está CORRETO.
-                    if hasattr(self, 'stats'):
-                        self.stats.total_received += 1
-
-                    # Log do pacote decodificado
-                    self._log_pfox_packet(decoded_pkt, self._incoming_buffer[:used_len])
-
-                    # Enfileira para a aplicação
-                    self._rx_queue.put(decoded_pkt)
-
-                    # Remove exatamente o tamanho consumido
-                    del self._incoming_buffer[:used_len]
+                    del self._incoming_buffer[:newline_pos+1]
                     continue
 
-                except ValueError as crc_error:
-                    self.stats.total_errors += 1
-                    self.robot_status_error_count += 1  # opcional
-
-                    self._emit_log(
-                        f"❌ [RX:ERR] HUB → PC | PFOX CRC inválido ({crc_error})"
-                    )
-
-                    del self._incoming_buffer[0]
-                    continue
-
-                except Exception as e:
-                    self.robot_status_error_count += 1
-                    self._emit_log(
-                        f"❌ [RX PFOX ERROR] Erro inesperado: {e}. "
-                        f"Bytes: {self._incoming_buffer.hex(' ')}"
-                    )
-                    del self._incoming_buffer[0]
-                    continue
-
-            # 3️⃣ TEXTO comum recebido (HUB → PC)
-            if 32 <= first <= 126 or first in (9, 10, 13):
-                newline_pos = None
-                for i, b in enumerate(self._incoming_buffer):
-                    if b in (10, 13):
-                        newline_pos = i
-                        break
-
-                if newline_pos is None:
-                    break  # ainda não chegou a linha inteira
-
-                text = self._incoming_buffer[:newline_pos+1].decode(
-                    'utf-8', errors='ignore'
-                ).strip()
-
-                self._emit_log(f"📄 [RX:TEXT] HUB → PC | {text}")
-
-                del self._incoming_buffer[:newline_pos+1]
-                continue
-
-
-            # ============================================================
-            # 4️⃣ BYTE NÃO PFOX E NÃO ASCII → DESCARTAR
-            # ============================================================
-            invalid = self._incoming_buffer[0]
-            self._emit_log(f"❌ [RX:ERR] HUB → PC | Byte inválido 0x{invalid:02X}")
-            del self._incoming_buffer[0]
-
+                # ============================================================
+                # 4️⃣ LIXO / DESCONHECIDO
+                # ============================================================
+                # self._emit_log(f"🗑️ Byte descartado: 0x{first:02X}")
+                del self._incoming_buffer[0]
 
     def _log_pfox_packet(self, pkt, raw_bytes):
             """Log simplificado para pacotes recebidos (RX)."""
@@ -787,19 +815,34 @@ class Communication:
             # Lista simples de comandos para gerar (Lambdas)
             # Não precisamos de nomes/descrições, o send_data já vai ler o pacote e dizer o que é!
             scenarios = [
+                # --- TESTES EXISTENTES ---
                 # 1. Heartbeat
                 lambda: pfox.create_packet(Address.ESPMAIN, MsgType.HEARTBEAT, []).to_bytes(),
                 
                 # 2. Flow Control (Start Robot 1)
                 lambda: pfox.send_flow_control(Address.ROBOT1, 0x01).to_bytes(),
                 
-                # 3. Set Speed (Robot 2 - Testa a visualização do vetor de velocidade)
+                # 3. Set Speed (Robot 2)
                 lambda: pfox.send_speed_command(Address.ROBOT2, 100, 150, 90, 140).to_bytes(),
                 
-                # 4. Broadcast
-                lambda: pfox.create_packet(Address.BROADCAST, MsgType.HEARTBEAT, []).to_bytes()
-            ]
+                # --- NOVOS TESTES (O QUE FALTA) ---
 
+                # 4. TESTE DE NETWORK DISCOVERY (CRÍTICO)
+                # Este é o mais importante agora. O Hub deve interceptar e responder IMEDIATAMENTE
+                # com um pacote STATUS contendo o payload [0, 0, 0] (se nenhum robô conectou).
+                # Se isso funcionar, sua lógica de "não usar o rádio para status" está perfeita.
+                lambda: pfox.create_packet(Address.BROADCAST, MsgType.STATUS, []).to_bytes(),
+
+                # 5. TESTE DE EMERGÊNCIA (STOP GERAL)
+                # Envia um comando de PARAR para BROADCAST.
+                # O Hub deve receber e você deve ver (se tivesse o LED) ele disparar o rádio 3 vezes.
+                # Como resposta serial, você deve receber apenas o ACK do HUB.
+                lambda: pfox.send_flow_control(Address.BROADCAST, 0x20).to_bytes(), # 0x20 = STOP
+
+                # 6. TESTE DE BUFFER (BURST)
+                # Envia para o Robô 3 (que ainda não testamos)
+                lambda: pfox.send_speed_command(Address.ROBOT3, 50, 50, 0, 0).to_bytes(),
+            ]
             total_sent = 0
             total_ok = 0
 

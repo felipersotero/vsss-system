@@ -4,10 +4,13 @@
 #include <esp_now.h>
 #include <WiFi.h>
 #include <vector>
+#include <esp_wifi.h>
+#include <esp_system.h>
 
 #include "PacketQueue.h"
 #include "RobotChannel.h"
 #include "PFOXPacket.h"
+
 
 class ESPHub {
 public:
@@ -65,4 +68,8 @@ private:
     // proibir cópia
     ESPHub(const ESPHub&) = delete;
     ESPHub& operator=(const ESPHub&) = delete;
+
+    uint8_t hubMac[6];      // MAC carregado da NVS ou padrão
+
+
 };

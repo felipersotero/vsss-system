@@ -120,7 +120,7 @@ class PFOXPacket:
             raise ValueError("BAD_START")
 
         total_len = cls.HEADER_LEN + plen + 2
-        if len(data) != total_len:
+        if len(data) < total_len:
             raise ValueError("INCOMPLETE_PACKET")
 
         payload = data[cls.HEADER_LEN:cls.HEADER_LEN + plen]

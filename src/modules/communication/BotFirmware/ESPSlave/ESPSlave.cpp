@@ -1,230 +1,207 @@
 #include "ESPSlave.h"
-#include <Arduino.h>
-#include <cstring> // Para memcpy
 
+// Garante que o linker encontre a instância
 ESPSlave* ESPSlave::instance = nullptr;
 
-// 🚨 IMPORTANTE: SUBSTITUA ESTES ENDEREÇOS MAC PELOS REAIS!
-static const uint8_t ROBOT_MACS[][6] = {
-    {0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0x01}, 
-    {0xBB, 0xBB, 0xBB, 0xBB, 0xBB, 0x02},
-    {0xCC, 0xCC, 0xCC, 0xCC, 0xCC, 0x03}
-};
-
-ESPSlave::ESPSlave() : incoming(100), outgoing(100) {
-    serialBuffer.reserve(256);
+// CORREÇÃO 1: Removido 'const' para bater com o arquivo .h (uint8_t* hubMacAddress)
+ESPSlave::ESPSlave(PFOXAddress id, uint8_t* hubAddress) 
+    : myId(id), incomingQueue(50), running(true) {
+    
+    // Inicializa MAC do hub com zeros por segurança
+    memset(hubMac, 0, sizeof(hubMac));
+    if (hubAddress != nullptr) {
+        memcpy(hubMac, hubAddress, 6);
+    }
     instance = this;
 }
 
 void ESPSlave::begin() {
-  //Iniciando a coneção com o espnow
-    WiFi.mode(WIFI_STA);
-    WiFi.disconnect();      
+    // Modo STA e garante que não haja conexão que interfira
+    WiFi.mode(WIFI_MODE_STA);
+    WiFi.disconnect(true);
 
+    // Inicializa driver WiFi
+    esp_err_t err = esp_wifi_start();
+    if (err != ESP_OK && err != ESP_ERR_WIFI_NOT_STARTED) {
+        Serial.printf("[SLAVE] falha esp_wifi_start(): 0x%02X\n", err);
+    }
+
+    // Inicializa controle do robô
+    robotCtrl.begin();
+
+    // Inicializa ESP-NOW
     if (esp_now_init() != ESP_OK) {
-        Serial.println("ESPNOW init failed!"); // Este log de erro permanece apenas para debug local (console)
+        Serial.println("[SLAVE] Erro ESP-NOW");
         return;
     }
 
-    esp_now_register_send_cb(ESPSlave::onESPNOWSent);
-    esp_now_register_recv_cb(ESPSlave::onESPNOWRecv);
+    esp_now_register_recv_cb(ESPSlave::onDataRecv);
+    esp_now_register_send_cb(ESPSlave::onDataSent);
 
-    // logToPC("ESPNOW iniciado"); // REMOVIDO: Hub começa em silêncio
-}
-
-void ESPSlave::receiveSerial() {
-    while (Serial.available()) {
-        serialBuffer.push_back(Serial.read());
-
-        if (serialBuffer.size() > 512) {
-            serialBuffer.clear();
-            // logToPC("Serial buffer overflow - cleared"); // REMOVIDO
-        }
+    // Se MAC do hub for todo zero, não tenta adicionar peer
+    bool macAllZero = true;
+    for (int i = 0; i < 6; ++i) {
+        if (hubMac[i] != 0) { macAllZero = false; break; }
     }
-}
 
-void ESPSlave::processSerialBytes() {
-    while (serialBuffer.size() >= 7) {
+    if (!macAllZero) {
+        esp_now_peer_info_t peerInfo;
+        memset(&peerInfo, 0, sizeof(peerInfo));
+        memcpy(peerInfo.peer_addr, hubMac, 6);
+
+        // CORREÇÃO 2: Mudado de int para uint8_t
+        uint8_t current_channel = 0;
+        wifi_second_chan_t second_ch = WIFI_SECOND_CHAN_NONE;
         
-        if (serialBuffer[0] != PFOXPacket::PREAMBLE) {
-            // Tenta ressincronizar (apaga 1 byte e tenta de novo)
-            serialBuffer.erase(serialBuffer.begin());
-            continue;
+        if (esp_wifi_get_channel(&current_channel, &second_ch) == ESP_OK) {
+            peerInfo.channel = current_channel;
+        } else {
+            peerInfo.channel = 0; // fallback
         }
 
-        uint8_t len = serialBuffer[6];
-        size_t full_packet_size = 7 + len + 2;
+        peerInfo.encrypt = false;
+        peerInfo.ifidx = WIFI_IF_STA;
 
-        if (serialBuffer.size() < full_packet_size) {
-            break; // Pacote incompleto, espera mais bytes
+        if (esp_now_add_peer(&peerInfo) != ESP_OK) {
+            Serial.println("[SLAVE] Erro add Peer HUB");
+        } else {
+            Serial.println("[SLAVE] Peer HUB adicionado");
         }
-
-        try {
-            PFOXPacket pkt(serialBuffer.data(), full_packet_size);
-            
-            if (!incoming.push(pkt)) {
-                // logToPC("Pacote Serial descartado: fila cheia."); // REMOVIDO
-            }
-
-            // Pacote OK, remove do buffer
-            serialBuffer.erase(serialBuffer.begin(), serialBuffer.begin() + full_packet_size);
-            
-        } catch (const std::runtime_error& e) {
-            // logToPC("PFOX Erro de decodificação: " + String(e.what())); // REMOVIDO: Apenas resincroniza
-            // Remove apenas o byte de PREAMBLE para tentar resincronizar
-            serialBuffer.erase(serialBuffer.begin());
-        }
-    }
-}
-
-/**
- * @brief Envia um pacote ACK binário (PFOX) para o PC.
- * Esta é a ÚNICA comunicação Serial (PC) esperada do Hub.
- * @param original_pkt Pacote original que gerou o ACK.
- */
-void ESPSlave::sendAckToPC(const PFOXPacket& original_pkt) {
-    PFOXPacket ack_pkt;
-
-    ack_pkt.preamble = PFOXPacket::PREAMBLE;
-    ack_pkt.version  = PFOXPacket::VERSION;
-    ack_pkt.src      = PFOXAddress::ESPMAIN;
-    ack_pkt.dst      = PFOXAddress::PC;
-    ack_pkt.type     = PFOXMsgType::ACK;
-    ack_pkt.seq      = original_pkt.seq;
-    ack_pkt.len      = 0;
-    // O payload é zero para o ACK
-    // ack_pkt.payload.clear(); // O construtor padrão ou clear() fará isso
-
-    std::vector<uint8_t> encoded = ack_pkt.encode();
-    Serial.write(encoded.data(), encoded.size());
-}
-
-// ----------------------------------------------------------------------------------------------------
-// CALLBACKS ESPNOW (Limpeza de Logs de DEBUG)
-// ----------------------------------------------------------------------------------------------------
-
-// ** logToPC foi removida do ESPSlave.h e da implementação **
-
-void ESPSlave::onESPNOWSent(const wifi_tx_info_t *info, esp_now_send_status_t status) {
-    if (!instance || info == nullptr) return;
-
-    // String macStr = "";
-    // for (int i = 0; i < 6; ++i) {
-    //     macStr += String(info->des_addr[i], HEX);
-    //     if (i < 5) macStr += ":";
-    // }
-
-    // if (status == ESP_NOW_SEND_SUCCESS) {
-    //     instance->logToPC("ESPNOW Link-ACK: SUCESSO → " + macStr); // REMOVIDO
-    // } else {
-    //     instance->logToPC("ESPNOW Link-ACK: FALHA → " + macStr + 
-    //         " (status=" + String(status) + ")"); // REMOVIDO
-    // }
-}
-
-void ESPSlave::onESPNOWRecv(const esp_now_recv_info_t *info, const uint8_t *data, int len) {
-    if (!instance || info == nullptr) return;
-
-    const uint8_t* mac = info->src_addr;
-
-    if (len < 9) {
-        // instance->logToPC("ESPNOW Recv: Pacote muito curto (" + String(len) + ")"); // REMOVIDO
-        return;
+    } else {
+        Serial.println("[SLAVE] Aviso: MAC do HUB não definido — não adicionando peer");
     }
 
-    try {
-        PFOXPacket pkt(data, len);
-
-        // ACK de robô (PFOX)
-        if (pkt.type == PFOXMsgType::ACK) {
-            // instance->logToPC("ACK PFOX de Robo. Seq=" + String(pkt.seq)); // REMOVIDO
-            return;
-        }
-
-        // Enviar ACK de volta ao robô
-        PFOXPacket ack;
-        ack.src = PFOXAddress::ESPMAIN;
-        ack.dst = pkt.src;
-        ack.type = PFOXMsgType::ACK;
-        ack.seq = pkt.seq;
-        ack.len = 0;
-
-        uint8_t dest_mac[6];
-        if (instance->getRobotMac(pkt.src, dest_mac)) {
-            auto encoded = ack.encode();
-            esp_now_send(dest_mac, encoded.data(), encoded.size());
-        }
-
-        // Enfileira o pacote
-        if (instance->incoming.push(pkt)) {
-            // instance->logToPC("PKT de Robo enfileirado"); // REMOVIDO
-        }
-
-    } catch (const std::runtime_error& e) {
-        // instance->logToPC("Erro ao decodificar ESP-NOW: " + String(e.what())); // REMOVIDO
-    }
+    Serial.printf("[SLAVE] Iniciado ID: 0x%02X\n", (uint8_t)myId);
 }
-
-// ----------------------------------------------------------------------------------------------------
-
-bool ESPSlave::getRobotMac(PFOXAddress robot_id, uint8_t mac[6]) {
-    uint8_t idx = (uint8_t)robot_id;
-
-    if (idx == 0 || idx > 3) return false;
-
-    memcpy(mac, ROBOT_MACS[idx - 1], 6);
-    return true;
-}
-
-// ----------------------------------------------------------------------------------------------------
-
-void ESPSlave::forwardToPC(const PFOXPacket& pkt) {
-    // TODO: Implementar envio PFOX binário para o PC
-    // Por enquanto, não é usado no loop de teste
-}
-
-void ESPSlave::sendToRobot(const PFOXPacket& pkt) {
-    // TODO: Implementar lógica de envio (e retry) para o ESP-NOW
-    // Por enquanto, não é usado no loop de teste
-}
-
-void ESPSlave::processOutgoing() {
-    // TODO: Implementar lógica de processamento de fila de saída
-}
-
-void ESPSlave::processTimeouts() {
-    // TODO: Implementar lógica de timeout para pacotes ESP-NOW pendentes
-}
-
-// ----------------------------------------------------------------------------------------------------
 
 void ESPSlave::loop() {
-
-    // 1. Ler bytes da Serial e armazenar no buffer
-    receiveSerial();
-
-    // 2. Decodificar pacotes completos do buffer da Serial
-    processSerialBytes();
-
     PFOXPacket pkt;
+    // Processa todos os pacotes da fila
+    while (incomingQueue.pop(pkt)) {
+        processPacket(pkt);
+    }
+}
 
-    // 3. Processar todos os pacotes válidos que chegaram da Serial
-    while (incoming.pop(pkt)) {
+void ESPSlave::onDataRecv(const esp_now_recv_info_t *info, const uint8_t *data, int len) {
+    if (!instance) return;
+    if (!data || len <= 0) return;
 
-        // 4. Fluxo principal de teste: PC → HUB → ACK → PC
-        if (pkt.src == PFOXAddress::PC) {
+    try {
+        PFOXPacket pkt(data, (size_t)len);
+        if (pkt.dst == instance->myId || pkt.dst == PFOXAddress::BROADCAST) {
+            instance->incomingQueue.push(pkt);
+        }
+    } catch (...) {
+        // Serial.println("[SLAVE] Erro pct");
+    }
+}
 
-            // Envia ACK diretamente para o PC (como um pacote PFOX binário)
-            sendAckToPC(pkt);
-            
-            // Nenhum log de texto é gerado aqui, a comunicação é estritamente binária (ACK)
+// CORREÇÃO 3: Atualizado para a API do ESP32 v3.0 (recebe wifi_tx_info_t*)
+void ESPSlave::onDataSent(const wifi_tx_info_t *info, esp_now_send_status_t status) {
+    if (status != ESP_NOW_SEND_SUCCESS) {
+        // Serial.println("[SLAVE] Falha envio!");
+    } else {
+        // Se quiser ver o MAC de destino, use info->des_addr
+        // const uint8_t *mac_addr = info->des_addr;
+    }
+}
 
-            continue; // volta ao próximo pacote
+void ESPSlave::processPacket(const PFOXPacket& pkt) {
+    // Se destinatário for este nó e não for ACK, responde com ACK
+    if (pkt.dst == myId && pkt.type != PFOXMsgType::ACK) {
+        sendAck(pkt);
+    }
+
+    switch (pkt.type) {
+        case PFOXMsgType::CMD_SET_SPEED: {
+            if (pkt.payload.size() >= 9) {
+                const uint8_t* p = pkt.payload.data();
+
+                // Big-endian (MSB primeiro)
+                int16_t leftReal  = (int16_t)((p[1] << 8) | p[2]);
+                int16_t leftDes   = (int16_t)((p[3] << 8) | p[4]);
+                int16_t rightReal = (int16_t)((p[5] << 8) | p[6]);
+                int16_t rightDes  = (int16_t)((p[7] << 8) | p[8]);
+
+                if (running) {
+                    robotCtrl.update(leftReal, leftDes, rightReal, rightDes);
+                }
+            }
+            break;
         }
 
+        case PFOXMsgType::CMD_FLOW_CTRL: {
+            if (!pkt.payload.empty()) {
+                uint8_t cmd = pkt.payload[0];
+                if (cmd == (uint8_t)PFOXFlowType::STOP) {
+                    running = false;
+                    robotCtrl.stop();
+                } else if (cmd == (uint8_t)PFOXFlowType::RUN) {
+                    running = true;
+                }
+            }
+            break;
+        }
+
+        case PFOXMsgType::STATUS: {
+            if (pkt.dst == myId) sendStatus(pkt.seq24);
+            break;
+        }
+
+        default: break;
     }
-    
-    // Processamento de mensagens de robôs
-    // processOutgoing(); 
-    // processTimeouts();
 }
+
+void ESPSlave::sendAck(const PFOXPacket& originalPkt) {
+    PFOXPacket ack;
+    ack.preamble = PFOXPacket::PREAMBLE;
+    ack.version  = PFOXPacket::VERSION;
+    ack.src      = myId;
+    ack.dst      = originalPkt.src;
+    ack.type     = PFOXMsgType::ACK;
+    ack.seq24    = originalPkt.seq24;
+    ack.len      = 0;
+    ack.payload.clear();
+
+    std::vector<uint8_t> data = ack.encode();
+
+    bool macAllZero = true;
+    for (int i = 0; i < 6; ++i) if (hubMac[i] != 0) { macAllZero = false; break; }
+
+    if (!macAllZero) {
+        esp_now_send(hubMac, data.data(), data.size());
+    }
+}
+
+void ESPSlave::sendStatus(uint32_t seq) {
+    PFOXPacket statusPkt;
+    statusPkt.preamble = PFOXPacket::PREAMBLE;
+    statusPkt.version  = PFOXPacket::VERSION;
+    statusPkt.src   = myId;
+    statusPkt.dst   = PFOXAddress::PC;
+    statusPkt.type  = PFOXMsgType::STATUS;
+    statusPkt.seq24 = seq;
+    statusPkt.payload.clear();
+
+    union {
+        float f;
+        uint8_t b[sizeof(float)];
+    } u;
+    u.f = 12.0f; // Mock tensão
+
+    statusPkt.payload.insert(statusPkt.payload.end(), u.b, u.b + sizeof(u.b));
+    statusPkt.len = (uint8_t)statusPkt.payload.size();
+
+    std::vector<uint8_t> data = statusPkt.encode();
+
+    bool macAllZero = true;
+    for (int i = 0; i < 6; ++i) if (hubMac[i] != 0) { macAllZero = false; break; }
+
+    if (!macAllZero) {
+        esp_now_send(hubMac, data.data(), data.size());
+    }
+}
+
+// Funções mock removidas
+void ESPSlave::setMotors(int16_t l, int16_t r) {}
+void ESPSlave::stopMotors() {}
