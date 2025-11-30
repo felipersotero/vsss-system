@@ -1,147 +1,131 @@
-# ⚽ VSSS Communication System (PFOX Protocol)
+# 🦊 FoxCom - VSSS Communication Module
 
-Este repositório contém o ecossistema completo de firmware para o sistema de comunicação do VSSS (Very Small Size Soccer). O sistema foi projetado para alta performance, baixa latência e confiabilidade robusta usando **ESP-NOW**.
-
-O sistema é dividido em dois firmwares distintos:
-
-1.  **ESPHUB (Gateway):** A ponte entre o Computador (IA) e o rádio.
-2.  **ESPSlave (Robô):** O firmware embarcado nos robôs que controla motores e executa comandos.
-
------
+O **FoxCom** é o módulo responsável por toda a camada de comunicação e controle de baixo nível do sistema VSSS (Very Small Size Soccer). Ele gerencia a troca de dados entre a Inteligência Artificial (no PC) e os robôs em campo, garantindo **baixa latência**, **confiabilidade** e **monitoramento em tempo real**.
 
 ## 📡 Arquitetura do Sistema
 
-O fluxo de dados segue o caminho:
-`[PC/IA]` $\xrightarrow{\text{USB Serial}}$ `[ESPHUB]` $\xrightarrow{\text{ESP-NOW (Rádio)}}$ `[ESPSlave]`
+O sistema opera em uma arquitetura híbrida para maximizar a velocidade:
 
-### Destaques Técnicos
+1.  **Nível de Software (PC):** A IA calcula as trajetórias e envia comandos via **Serial (USB)** ou **MQTT**.
+2.  **Nível de Gateway (ESPHUB):** Um ESP32 central recebe os dados da Serial e os converte para ondas de rádio.
+3.  **Nível Físico (Robôs):** Os robôs recebem os comandos via **ESP-NOW** (protocolo de rádio proprietário de baixa latência) e executam o controle de motores.
 
-  * **Protocolo PFOX:** Protocolo binário customizado com CRC16 para integridade de dados.
-  * **ARQ (Automatic Repeat Request):** O Hub reenvia pacotes automaticamente se o Robô não enviar um ACK (confirmação) em 60ms.
-  * **Controle PID:** Os robôs possuem controle de malha fechada (ou aberta) para garantir velocidades precisas.
-  * **Filas de Prioridade:** O Hub mantém filas independentes para cada robô, evitando gargalos.
+### Fluxo de Dados
 
------
-
-## 1️⃣ Firmware do Gateway (ESPHUB)
-
-O **ESPHUB** é o mestre da rede. Ele não toma decisões de jogo, apenas gerencia o tráfego de dados para garantir que os comandos do PC cheguem aos robôs.
-
-### 📋 Responsabilidades
-
-  * Receber *bytes* da Serial e montar pacotes PFOX.
-  * Gerenciar o envio via rádio e aguardar confirmação (ACK).
-  * Receber telemetria (Status/Bateria) dos robôs e repassar ao PC via Serial.
-
-### ⚙️ Configuração Obrigatória (Antes de gravar)
-
-No arquivo `ESPHUB.cpp`, você deve cadastrar os endereços MAC dos robôs que receberão os comandos.
-
-```cpp
-// ESPHUB.cpp
-static const uint8_t ROBOT_MACS[][6] = {
-    {0x94, 0xB9, 0x7E, 0xC2, 0xCA, 0xA8}, // Endereço MAC do Robô 1
-    {0x32, 0xAE, 0x11, 0x22, 0x33, 0x44}, // Endereço MAC do Robô 2
-    {0x00, 0x00, 0x00, 0x00, 0x00, 0x00}  // Endereço MAC do Robô 3
-};
-```
-
-> **Nota:** Se você não souber o MAC dos robôs ainda, grave o código `ESPSlave` neles primeiro; eles imprimirão o MAC na Serial ao ligar.
-
-### 🚀 Como Usar
-
-1.  Conecte o ESP32 do Hub ao PC via USB.
-2.  Abra a Serial (Baudrate **115200**).
-3.  O Hub imprimirá: `[INIT] MAC Address deste HUB: XX:XX:XX...`.
-4.  **Copie este endereço\!** Você precisará dele para configurar os robôs.
+`[IA/Strategy]` $\leftrightarrow$ `[FoxCom Python]` $\leftrightarrow$ `[USB Serial]` $\leftrightarrow$ `[ESPHUB]` $\leftrightarrow$ `[ESP-NOW]` $\leftrightarrow$ `[ESPSlave Robots]`
 
 -----
 
-## 2️⃣ Firmware do Robô (ESPSlave)
+## 📦 Componentes do Módulo
 
-O **ESPSlave** é o firmware que roda dentro do robô. Ele recebe pacotes de velocidade, calcula o PID e aciona a Ponte H.
+O FoxCom é dividido em três grandes pilares:
 
-### 📋 Responsabilidades
+### 1\. Software Core (`communication.py`)
 
-  * Escutar o rádio por pacotes endereçados ao seu ID.
-  * Responder imediatamente com um **ACK** (mesmo número de sequência).
-  * Executar o controle PID dos motores.
-  * Monitorar Failsafe (para os motores se perder conexão).
+O coração do sistema no lado do computador.
 
-### 🔌 Hardware & Pinagem (Ponte H L298N)
+  * **Multithreading:** Gerencia threads separadas para envio e recepção de dados para não bloquear a IA.
+  * **Dual-Protocol:** Suporta conexão via **Serial** (para jogos, latência mínima) e **MQTT** (para telemetria remota/debug).
+  * **Protocolo PFOX:** Implementa o empacotamento binário (Structs C-like), cálculo de CRC16 e validação de pacotes.
+  * **Gerenciamento de Estado:** Monitora RTT (Round Trip Time), perda de pacotes e status de conexão.
 
-A configuração padrão (arquivo `Control.cpp`) utiliza 3 pinos por motor (IN1, IN2 e ENABLE/PWM).
+### 2\. Interface de Debug (`interface.py`)
 
-| Motor | Função | Pino ESP32 (GPIO) |
+Uma GUI robusta construída em **Tkinter** para facilitar o desenvolvimento.
+
+  * **Monitor Serial em Tempo Real:** Visualização de logs hexadecimais e ASCII.
+  * **Dashboard de Telemetria:** Gráficos de latência (Ping) e status dos robôs.
+  * **Controle Manual:** Permite enviar comandos de velocidade e trocar configurações sem rodar a IA completa.
+  * **Singleton:** Garante que apenas uma janela de debug exista para não conflitar portas.
+
+### 3\. Firmware Embarcado
+
+Código C++ otimizado rodando nos microcontroladores ESP32.
+
+  * **ESPHUB (Gateway):** Atua como mestre. Possui filas (Queues) inteligentes para cada robô e sistema de **ARQ** (Retransmissão automática em caso de falha).
+  * **ESPSlave (Robôs):** Recebe comandos, executa o controle PID dos motores L298N e envia feedback de bateria/status.
+
+-----
+
+## 🛠️ Tecnologias Utilizadas
+
+| Escopo | Tecnologia | Função |
 | :--- | :--- | :--- |
-| **Esquerdo** | IN1 (Direção A) | 2 |
-| | IN2 (Direção B) | 4 |
-| | ENA (PWM) | 15 |
-| **Direito** | IN3 (Direção A) | 25 |
-| | IN4 (Direção B) | 26 |
-| | ENB (PWM) | 32 |
-
-### ⚙️ Configuração Obrigatória (Antes de gravar)
-
-No arquivo `ESPSlave.ino`, configure a identidade do robô e o endereço do Hub:
-
-```cpp
-// ESPSlave.ino
-// 1. Quem sou eu? (ROBOT1, ROBOT2 ou ROBOT3)
-#define MY_IDENTITY  PFOXAddress::ROBOT1 
-
-// 2. Para quem devo enviar o ACK? (Endereço do Hub copiado anteriormente)
-uint8_t HUB_MAC_ADDR[] = {0x30, 0xAE, 0xA4, 0x07, 0x0D, 0x64}; 
-```
-
-### 🧠 Ajuste do PID
-
-No arquivo `Control.cpp`, você pode ajustar as constantes do controlador:
-
-```cpp
-#define K_P  2.0   // Aumente se o robô estiver lento para reagir
-#define K_I  0.5   // Aumente se o robô não atingir a velocidade máxima
-#define K_D  0.1   // Aumente se o robô estiver vibrando/oscilando
-```
+| **Linguagem PC** | Python 3.10+ | Lógica de comunicação e Interface |
+| **GUI** | Tkinter (CustomTkinter Style) | Interface Gráfica de Debug |
+| **Comunicação PC** | PySerial & Paho-MQTT | Drivers de transporte de dados |
+| **Firmware** | C++ / Arduino Core | Código dos ESP32 |
+| **Protocolo Rádio** | **ESP-NOW** | Comunicação sem fio (\< 4ms latência) |
+| **Integridade** | CRC-16 CCITT | Verificação de erros nos pacotes |
 
 -----
 
-## 📦 Bibliotecas Compartilhadas (Core)
+## 🚀 Como Funciona o Protocolo (PFOX)
 
-Para garantir que o Hub e o Robô falem a mesma língua, ambos utilizam os mesmos arquivos de definição de protocolo. **Não altere estes arquivos em apenas um lado\!**
+O **FoxCom** utiliza um protocolo binário customizado chamado **PFOX**. Diferente de enviar strings (ex: "v=100"), enviamos bytes brutos para economizar tempo de transmissão.
 
-  * **`PFOXPacket.h/.cpp`**: Define a estrutura do pacote (Header, Payload, CRC16).
-  * **`PFOXQueue.h/.cpp`**: Implementação de fila circular para buffering de mensagens.
+**Estrutura do Pacote:**
+`[PREAMBLE 0xF0] [VERSION] [SRC] [DST] [TYPE] [SEQ_ID] [LEN] [PAYLOAD...] [CRC16]`
 
------
-
-## 👣 Guia de Instalação Passo-a-Passo
-
-1.  **Preparar IDE:** Instale o Arduino IDE e configure o suporte a **ESP32 versão 3.0.0+** (necessário para a nova API de PWM `ledcAttach`).
-2.  **Gravar HUB:**
-      * Abra a pasta `ESPHub`.
-      * Grave no primeiro ESP32.
-      * Abra o Monitor Serial e anote o MAC Address: `[INIT] MAC: AA:BB:CC...`
-3.  **Configurar Robô:**
-      * Abra a pasta `ESPSlave`.
-      * Edite `ESPSlave.ino`: Cole o MAC do Hub em `HUB_MAC_ADDR`.
-      * Defina `#define MY_IDENTITY PFOXAddress::ROBOT1`.
-4.  **Gravar Robô:**
-      * Grave no segundo ESP32.
-      * Abra o Monitor Serial e anote o MAC Address dele.
-5.  **Finalizar HUB:**
-      * Volte ao `ESPHUB.cpp`.
-      * Atualize a lista `ROBOT_MACS` com o endereço real do Robô 1 que você acabou de gravar.
-      * Regrave o Hub.
-6.  **Jogar:** Agora o sistema está pareado e pronto.
+1.  **Handshake:** O PC envia um comando.
+2.  **Processamento:** O ESPHUB recebe, valida o CRC e coloca na fila do robô específico.
+3.  **Envio Rádio:** O ESPHUB envia via ESP-NOW.
+4.  **Execução:** O Robô recebe, aplica no PID e responde com um **ACK**.
+5.  **Confirmação:** Se o Hub não receber o ACK em 60ms, ele reenvia o pacote automaticamente.
 
 -----
 
-## ❓ Troubleshooting (Solução de Problemas)
+## 🔌 Pinagem e Hardware
 
-| Sintoma | Causa Provável | Solução |
-| :--- | :--- | :--- |
-| **Erro de Compilação `ledcAttach`** | Versão antiga do ESP32 Core | Atualize o Board Manager do ESP32 para versão **3.0.0** ou superior. |
-| **Robô não mexe e Hub dá erro de ACK** | Endereços MAC errados | Verifique se o Hub tem o MAC do Robô e o Robô tem o MAC do Hub. |
-| **Robô gira ao contrário** | Fios do motor invertidos | Inverta os fios na Ponte H ou troque os pinos IN1/IN2 no `Control.cpp`. |
-| **Robô fica "tremendo" parado** | Ruído no PID | Aumente a "Zona Morta" no código ou diminua o `K_P`. |
+[Image of ESP32 pinout diagram]
+
+Para o correto funcionamento do firmware **ESPSlave**, utilize a seguinte ligação com a Ponte H L298N:
+
+  * **Motor Esquerdo:** GPIO 2 (IN1), GPIO 4 (IN2), GPIO 15 (PWM).
+  * **Motor Direito:** GPIO 25 (IN3), GPIO 26 (IN4), GPIO 32 (PWM).
+
+-----
+
+## ✅ Checklist de Desenvolvimento
+
+### Estado Atual (v1.0.0)
+
+  - [x] **Core Python:** Comunicação Serial estável com Threads.
+  - [x] **Protocolo:** Empacotamento PFOX com CRC16 implementado.
+  - [x] **Firmware HUB:** Conversão Serial -\> ESP-NOW funcionando com filas.
+  - [x] **Firmware Robô:** Controle de motores (L298N) e recepção de comandos.
+  - [x] **Interface:** Janela de Debug recebendo logs e enviando comandos.
+  - [x] **Failsafe:** Robôs param se perderem conexão (Timeout).
+
+### Futuras Atualizações (Roadmap)
+
+  - [ ] **Otimização MQTT:** Melhorar a latência para telemetria via WiFi.
+  - [ ] **Gráficos Avançados:** Plotar PID (Setpoint vs Real) na interface Python em tempo real.
+  - [ ] **OTA (Over-the-Air):** Permitir atualizar o firmware dos robôs via rádio através do Hub.
+  - [ ] **Auto-Discovery:** O Hub detectar automaticamente quais robôs estão ligados e informar o Python.
+  - [ ] **Log em Arquivo:** Salvar logs de partidas para análise posterior (Blackbox).
+
+-----
+
+## 👨‍💻 Como Rodar (Dev Mode)
+
+1.  **Firmware:**
+      * Grave o `ESPHUB` em um ESP32.
+      * Grave o `ESPSlave` nos robôs (configurando os IDs corretamente).
+2.  **Dependências Python:**
+    ```bash
+    pip install pyserial paho-mqtt
+    ```
+3.  **Executar Interface de Teste:**
+    Para abrir apenas o módulo de comunicação sem a IA completa:
+    ```python
+    # Crie um script main_test.py
+    import tkinter as tk
+    from modules.communication.communication import FoxCom
+    from modules.communication.interface import CommunicationDebugWindow
+
+    root = tk.Tk()
+    comm = FoxCom()
+    debug_window = CommunicationDebugWindow(root, comm)
+    root.mainloop()
+    ```
