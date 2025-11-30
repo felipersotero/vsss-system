@@ -1,3 +1,4 @@
+
 # ⚽ VSSS Communication System (PFOX Protocol)
 
 Este repositório contém o ecossistema completo de firmware para o sistema de comunicação do VSSS (Very Small Size Soccer). O sistema foi projetado para alta performance, baixa latência e confiabilidade robusta usando **ESP-NOW**.

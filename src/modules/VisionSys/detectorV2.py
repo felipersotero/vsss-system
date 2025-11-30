@@ -118,6 +118,7 @@ class VisionSystem:
         self.lastMajorTime = 0 
         self.currentTime   = 0                  # tempo atual de execução
 
+        self.newSendTime = 0.02
 
         #Tamanho padrão da bola
         self.ballRadiusP = 2.135 #cm
@@ -522,8 +523,8 @@ class VisionSystem:
 
             else: #Fase 2 - Utilizar as predições do filtro
 
-                self.filtered_detection(img, self.currentTime, self.currentTime, debug)
-
+                #self.filtered_detection(img, self.currentTime, self.currentTime, debug)
+                self.proc(img, self.currentTime,debug)
         # --- Caso 2: processamento completo periódico ---
         else:
             self._count = 0
@@ -1523,30 +1524,28 @@ class VisionSystem:
                 
     def detect_field(self, img, debug):
         """
-        Detecta o campo e gerencia o contador de falhas.
+        Detecta o campo com no máximo DUAS tentativas.
         Retorna o tamanho do campo detectado em centímetros ou -1 se falhar.
         """
 
-        # Verificação inicial
         if img is None:
             print("[VisionSystem]: A imagem é nula!!")
             self.fieldDetectionFailCount += 1
-            self._check_field_reset()  # Verifica se precisa resetar
+            self._check_field_reset()
             return -1
 
         h, w = img.shape[:2]
         self.pixelWidth = min(w, h)
 
-        # offset local que realmente controla o loop
-        local_offset = self.offSetErode
+        # Vamos tentar apenas com esses dois offsets:
+        tentativa_offsets = [self.offSetErode, self.offSetErode + 1]
+
         campo_detectado = False
         resultado_dp_cm = -1
 
-        # loop com tentativas progressivas
-        while local_offset < 20 and not campo_detectado:
-
+        for local_offset in tentativa_offsets:
             try:
-                # imagem base para este ciclo
+                # imagem base desta tentativa
                 self.frameOrigin = img.copy()
 
                 # pipeline de processamento
@@ -1555,10 +1554,8 @@ class VisionSystem:
                 imgProc = self.highlight_img(blur, self.dimMatrix)
                 binary = self.binarize_up(imgProc, self.Thrashhold)
 
-                # ruído tratado com offset local
                 self.binaryObjects = self.trait_noise(binary, local_offset)
 
-                # redução do campo
                 self.binReduceField, self.fieldReduce, coorVetor = self.reduce_field(
                     self.binaryObjects,
                     self.frameOrigin,
@@ -1566,11 +1563,9 @@ class VisionSystem:
                     self.offSetWindow
                 )
 
-                # fallback de segurança caso falhe
                 if self.fieldReduce is None:
                     self.fieldReduce = self.frameOrigin.copy()
 
-                # buscar contornos
                 contours, _ = cv2.findContours(
                     self.binReduceField,
                     cv2.RETR_EXTERNAL,
@@ -1580,15 +1575,12 @@ class VisionSystem:
                 encontrou_retangulo = False
 
                 for contour in contours:
-
                     epsilon = 0.02 * cv2.arcLength(contour, True)
                     approx = cv2.approxPolyDP(contour, epsilon, True)
 
-                    # só aceita quadrilátero
                     if len(approx) != 4:
                         continue
 
-                    # extrair vértices
                     rectVer = np.array([a[0] for a in approx], dtype=np.int32)
                     rectVer = self.sort_points(rectVer)
 
@@ -1600,39 +1592,25 @@ class VisionSystem:
                     width_px = (top + bottom) / 2
                     height_px = (left + right) / 2
 
-                    
                     self.convert_measures(self.fieldWidth, width_px)
-
                     modDpCm = width_px / self.prop_px_cm
 
-                    # só aceita valores plausíveis
                     if modDpCm < 60:
                         continue
 
-                    # criar pontos
                     P1, P2, P3, P4 = [Point2D(v[0], v[1]) for v in rectVer]
-
                     rect = Quad(P1=P1, P2=P2, P3=P3, P4=P4)
 
-                    # atualizar campo
                     self.field.updatePos(rect, self.fieldWidth, self.fieldHeight)
 
-                    ptsSource = np.array([
-                        P1.getPos(), P2.getPos(), P3.getPos(), P4.getPos()
-                    ])
-
+                    ptsSource = np.array([P1.getPos(), P2.getPos(), P3.getPos(), P4.getPos()])
                     ptsFinal = np.array([
                         self.fieldP1v, self.fieldP2v,
                         self.fieldP3v, self.fieldP4v
                     ])
 
-                    # homografia
-                    self.getHomographyMatrix(
-                        ptsSrc=ptsSource,
-                        ptsFinal=ptsFinal
-                    )
+                    self.getHomographyMatrix(ptsSrc=ptsSource, ptsFinal=ptsFinal)
 
-                    # atribuir no objeto field
                     self.field.setHomographyMatrix(
                         mHomography=self.homography_matrix,
                         invHomo=self.inv_homography_matrix
@@ -1641,51 +1619,38 @@ class VisionSystem:
                     encontrou_retangulo = True
                     campo_detectado = True
                     resultado_dp_cm = modDpCm
-                    
-                    # ✅ SUCESSO: resetar contador de falhas
+
+                    # Resetar contador de falhas
                     self.fieldDetectionFailCount = 0
                     break
 
-                # fim dos contornos
-                if not encontrou_retangulo:
-                    # aumenta offset para nova tentativa
-                    local_offset += 1
-                    continue
-
-                # sucesso → zerar offset global
-                self.offSetErode = 0
+                # Se achou retângulo, não tenta mais
+                if encontrou_retangulo:
+                    self.offSetErode = 0
+                    break
 
             except Exception as e:
-                print("[VisionSystem]: Erro durante tentativa de detecção:", e)
+                print("[VisionSystem]: Erro durante detecção:", e)
                 traceback.print_exc()
+                continue  # vai para segunda tentativa
 
-                local_offset += 1
-                continue
+        # FIM DAS DUAS TENTATIVAS
 
-        # final do while
-
-        # ✅ INCREMENTAR CONTADOR SE NÃO DETECTOU CAMPO
         if not campo_detectado:
             self.fieldDetectionFailCount += 1
             if debug:
                 print(f"[FIELD_DETECTION] Falha #{self.fieldDetectionFailCount}")
         else:
-            # ✅ Campo detectado com sucesso (já zeramos acima, mas reforça)
             self.fieldDetectionFailCount = 0
 
-        # ✅ VERIFICAR SE PRECISA RESETAR DEVIDO A MÚLTIPLAS FALHAS
         self._check_field_reset()
 
-        # desenhar resultado final
         self.frameResult = (self.fieldReduce.copy()
                             if self.fieldReduce is not None
                             else img.copy())
 
-        if campo_detectado:
-            return resultado_dp_cm
-        else:
-            return -1
-    
+        return resultado_dp_cm if campo_detectado else -1
+
 
     #Detectar a imagem da bola na imagem
     def detect_ball(self, img, timestamp, debug:bool):
