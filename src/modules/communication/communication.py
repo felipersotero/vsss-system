@@ -1,13 +1,21 @@
 '''
-    @GNOMIO: Aqui está o módulo de comunicação FoxCOM, código responsável pelo controle 
-    da comunicação
+    @GNOMIO: Este módulo gerencia a comunicação via MQTT ou Serial com o HUB e robôs.
+    representa uma refatoração completa do sistema de comunicação,
+    incluindo análise detalhada dos robôs, estatísticas de comunicação,
 
-    Versão: v1.0.0
-    Última modificação: 22/11/2025
+    Versão: v1.15.40
+    Última modificação: 18/12/2025
     Autor: Saulo (update)
 
-    Patch Notes v1.0.0:
-    - Início da programação do código
+    Patch Notes v1.15.40:
+    - Sistema de análise dos robôs
+    - Logs aprimorados para pacotes PFOX
+    - Correção crítica na leitura MQTT (payload agora é bytes puros)
+    - Estatísticas completas de comunicação
+    - Suporte a listeners externos para logs e mensagens RX
+    - Refatoração geral para melhor organização e clareza
+    - Implementação de locks para segurança em threads
+    - Monitoramento em background robusto
 '''
 #=============================================================
 
@@ -201,7 +209,7 @@ class SerialConnection:
 
 class Communication:
     """
-    Communication handler supporting both MQTT and Serial protocols.
+    @GNÔMIO: Communication handler supporting both MQTT and Serial protocols.
     Includes comprehensive logging, statistics, RTT calculation, and external log listeners.
     """
 
@@ -265,6 +273,9 @@ class Communication:
 
         # Instancia o Gerador de Pacotes (Gerencia Sequence ID e Estrutura)
         self.pfox_controller = PFOXController()
+
+        # Flag para controle de envio de informações
+        self.sending_enabled = False
 
 
     # ============================================================
@@ -333,13 +344,29 @@ class Communication:
 
             if self.client and self.client.status.is_connected:
                 self._emit_log(f"Conectado via {mode_str}")
-                self._start_monitoring()
             else:
                 self._emit_log(f"Falha na conexão {mode_str}")
 
         except Exception as e:
             self.client = None
             self._emit_log(f"Erro ao inicializar comunicação: {e}")
+
+    def connect(self):
+        """Estabelece a conexão sem iniciar o monitoramento."""
+        if not self.is_connected():
+            self._setup_connection()
+            self._emit_log("Conexão estabelecida")
+        else:
+            self._emit_log("Já conectado")
+
+    def set_sending_enabled(self, enabled: bool):
+        """Habilita ou desabilita o envio de informações."""
+        self.sending_enabled = enabled
+        self._emit_log(f"Envio de informações {'habilitado' if enabled else 'desabilitado'}")
+
+    def is_sending_enabled(self) -> bool:
+        """Retorna se o envio está habilitado."""
+        return self.sending_enabled
 
     def _update_stats(self, success: bool = True, latency: Optional[float] = None):
         """Atualiza estatísticas de forma thread-safe."""
@@ -530,11 +557,6 @@ class Communication:
                 self.robot_status[rid] = "OK"
                 #self._emit_log(f"🔄 Robô {rid} Online (pacote recebido: {decoded_pkt.msg_type.name})")
         
-        # Para ACK, logar e talvez atualizar se for de robô
-        if decoded_pkt.msg_type == MsgType.ACK:
-            self._emit_log(f"✅ ACK recebido de {decoded_pkt.src.name} (Seq: {decoded_pkt.seq24})")
-            # Se ACK vem de robô, já foi tratado acima
-
         # Log e envia para a fila de consumo da aplicação
         self._log_pfox_packet(decoded_pkt, self._incoming_buffer[:used_len])
         try:
@@ -647,7 +669,6 @@ class Communication:
     def start(self):
         """Inicia ou reinicia a comunicação e monitoramento."""
         self._paused = False
-        self._setup_connection()
         self._start_monitoring()
 
     def pause(self):
@@ -977,13 +998,13 @@ class Communication:
             self._emit_log(f"❌ Erro ao pedir status: {e}")
 
 
-    def send_heartbeat(self) -> None:
+    def send_heartbeat(self, dst: Address = Address.BROADCAST) -> None:
         """
         Envia heartbeat (ping) para o Hub/Robôs – evita acionamento do watchdog.
         """
         try:
             # Enviar para BROADCAST para alcançar todos os robôs
-            pkg = self.pfox_controller.create_packet(Address.BROADCAST, MsgType.HEARTBEAT, [])
+            pkg = self.pfox_controller.send_heartbeat(dst)
             self.send_data("HEARTBEAT", pkg.to_bytes())
         except Exception as e:
             self._emit_log(f"❌ Erro ao enviar heartbeat: {e}")

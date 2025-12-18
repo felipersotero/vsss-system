@@ -300,25 +300,29 @@ class Emulator:
             # ---------------------------------------------------------
             # 1) Enviar comandos pendentes
             # ---------------------------------------------------------
-            try:
-                while not self.commands_queue.empty():
-                    cmd = self.commands_queue.get_nowait()
-                    self.comm.send_data("espfox/cmd", cmd)
+            if self.comm.is_sending_enabled():
+                try:
+                    while not self.commands_queue.empty():
+                        cmd = self.commands_queue.get_nowait()
+                        self.comm.send_data("espfox/cmd", cmd)
 
-            except Exception as e:
-                print(f"[Emulator] ❌ Erro ao enviar comando: {e}")
+                except Exception as e:
+                    print(f"[Emulator] ❌ Erro ao enviar comando: {e}")
 
-            # ---------------------------------------------------------
-            # 2) Envio periódico de heartbeat
-            # ---------------------------------------------------------
-            try:
-                now = self.Timer.getElapsedTime()
-                if now - last_status_request >= STATUS_INTERVAL_MS:
-                    self.comm.send_heartbeat()
-                    last_status_request = now
+                # ---------------------------------------------------------
+                # 2) Envio periódico de heartbeat
+                # ---------------------------------------------------------
+                try:
+                    now = self.Timer.getElapsedTime()
+                    if now - last_status_request >= 3000:
+                        self.comm.send_heartbeat()
+                        last_status_request = now
 
-            except Exception as e:
-                print(f"[Emulator] ❌ Erro ao enviar heartbeat: {e}")
+                except Exception as e:
+                    print(f"[Emulator] ❌ Erro ao enviar heartbeat: {e}")
+            else:
+                # Se envio desabilitado, ainda processar RX
+                pass
 
             # ---------------------------------------------------------
             # 3) Processar RX
