@@ -231,6 +231,16 @@ void ESPHub::processIncomingFromPC(const PFOXPacket& pkt) {
             return; 
         }
 
+        // NOVO CASO: Heartbeat ou Comandos Críticos que exigem confirmação de todos
+        if (pkt.type == PFOXMsgType::HEARTBEAT || pkt.type == PFOXMsgType::CMD_FLOW_CTRL) {
+            for (int r = 1; r <= 3; ++r) {
+                PFOXPacket copy = pkt;
+                copy.dst = (PFOXAddress)r; // Transforma o Broadcast em 3 Unicasts
+                addToQueue(r, copy);       // Coloca na fila com retry e espera de ACK
+            }
+            return;
+        }
+
         // CASO B: Comandos de ação (STOP, START, FLOW_CTRL, SET_SPEED...)
         // O Hub repassa imediatamente para todos (Fire-and-Forget)
         for (int r = 1; r <= 3; ++r) {
@@ -256,39 +266,30 @@ void ESPHub::processIncomingFromPC(const PFOXPacket& pkt) {
  * Observação: esta é invocada dentro do callback static onESPNOWRecv
  */
 void ESPHub::handleIncomingFromRobot(const PFOXPacket& pkt, const esp_now_recv_info_t *info) {
+    uint8_t id = (uint8_t)pkt.src;
+    
+    // Filtro básico de segurança
+    if (id < 1 || id > 3) return;
 
-    // Se ACK do robô para comando → resolver fila
+    // 1. ATUALIZAÇÃO DE ESTADO INTERNO
+    // Qualquer pacote vindo de um ID válido prova que o robô está online
+    robots[id].online = true;
+    robots[id].lastSeen = millis();
+
+    // 2. FORWARD PARA O PC (Watchdog da Interface)
+    // Encaminhamos TODO pacote válido para o PC. Assim, o 'communication.py'
+    // atualiza o 'robot_last_seen' e mantém o robô como "OK" na interface.
+    forwardToPC(pkt);
+
+    // 3. LÓGICA DE FILA DO HUB (ACK)
     if (pkt.type == PFOXMsgType::ACK) {
-        uint8_t id = (uint8_t)pkt.src;
-        if (id >= 1 && id <= 3) {
-            RobotChannel& ch = robots[id];
-            if (ch.waitingAck && pkt.seq24 == ch.lastPacket.seq24) {
-                ch.waitingAck = false;
-                ch.retryCount = 0;
-                ch.online = true;
-                ch.lastSeen = millis();
-
-                // Repassa o ACK do Robô para o PC.
-                // Assim o PC recebe:
-                // 1. O ACK do Hub (imediato)
-                // 2. O ACK do Robô (alguns ms depois)
-                forwardToPC(pkt); 
-            }
-        }   
-        return; // Retorna aqui, pois já foi encaminhado acima (se necessário)
-    }
-
-    // Se for status response -> marcar online e encaminhar
-    if (pkt.type == PFOXMsgType::STATUS) {
-        uint8_t id = (uint8_t)pkt.src;
-        if (id >= 1 && id <= 3) {
-            robots[id].online = true;
-            robots[id].lastSeen = millis();
+        RobotChannel& ch = robots[id];
+        // Se este for o ACK que estávamos esperando, liberamos o canal para o próximo pacote
+        if (ch.waitingAck && pkt.seq24 == ch.lastPacket.seq24) {
+            ch.waitingAck = false;
+            ch.retryCount = 0;
         }
     }
-
-    // para qualquer pacote que não seja ACK, encaminhar ao PC
-    forwardToPC(pkt);
 }
 
 // ----------------------------------------------------------------------

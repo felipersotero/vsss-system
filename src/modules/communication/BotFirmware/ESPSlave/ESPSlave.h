@@ -44,4 +44,10 @@ private:
     void sendStatus(uint32_t seq);
 
     RobotControl robotCtrl;
+
+    static constexpr uint8_t LED_PIN = 2; // Pino do LED interno (geralmente GPIO 2 no ESP32)
+    unsigned long blinkEndTime = 0;       // Até quando o LED deve ficar piscando
+    uint32_t lastPacketTime = 0; // Para o Watchdog
+    unsigned long lastBlinkToggle = 0;    // Controle da cadência do pisca
+    bool ledState = false;
 };

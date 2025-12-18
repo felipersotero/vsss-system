@@ -16,15 +16,13 @@ ESPSlave::ESPSlave(PFOXAddress id, uint8_t* hubAddress)
 }
 
 void ESPSlave::begin() {
+    pinMode(LED_PIN, OUTPUT); // <-- Adicione isso
+    digitalWrite(2, LOW);
+
     // Modo STA e garante que não haja conexão que interfira
     WiFi.mode(WIFI_MODE_STA);
-    WiFi.disconnect(true);
 
-    // Inicializa driver WiFi
-    esp_err_t err = esp_wifi_start();
-    if (err != ESP_OK && err != ESP_ERR_WIFI_NOT_STARTED) {
-        Serial.printf("[SLAVE] falha esp_wifi_start(): 0x%02X\n", err);
-    }
+    delay(100);
 
     // Inicializa controle do robô
     robotCtrl.begin();
@@ -38,86 +36,105 @@ void ESPSlave::begin() {
     esp_now_register_recv_cb(ESPSlave::onDataRecv);
     esp_now_register_send_cb(ESPSlave::onDataSent);
 
-    // Se MAC do hub for todo zero, não tenta adicionar peer
-    bool macAllZero = true;
-    for (int i = 0; i < 6; ++i) {
-        if (hubMac[i] != 0) { macAllZero = false; break; }
-    }
+    // Registro do HUB (Peer)
+    esp_now_peer_info_t peerInfo;
+    memset(&peerInfo, 0, sizeof(peerInfo));
+    memcpy(peerInfo.peer_addr, hubMac, 6);
+    
+    uint8_t channel = 0;
+    wifi_second_chan_t second_ch = WIFI_SECOND_CHAN_NONE;
+    esp_wifi_get_channel(&channel, &second_ch);
+    
+    peerInfo.channel = channel;
+    peerInfo.encrypt = false;
+    peerInfo.ifidx = WIFI_IF_STA;
 
-    if (!macAllZero) {
-        esp_now_peer_info_t peerInfo;
-        memset(&peerInfo, 0, sizeof(peerInfo));
-        memcpy(peerInfo.peer_addr, hubMac, 6);
-
-        // CORREÇÃO 2: Mudado de int para uint8_t
-        uint8_t current_channel = 0;
-        wifi_second_chan_t second_ch = WIFI_SECOND_CHAN_NONE;
-        
-        if (esp_wifi_get_channel(&current_channel, &second_ch) == ESP_OK) {
-            peerInfo.channel = current_channel;
-        } else {
-            peerInfo.channel = 0; // fallback
-        }
-
-        peerInfo.encrypt = false;
-        peerInfo.ifidx = WIFI_IF_STA;
-
-        if (esp_now_add_peer(&peerInfo) != ESP_OK) {
-            Serial.println("[SLAVE] Erro add Peer HUB");
-        } else {
-            Serial.println("[SLAVE] Peer HUB adicionado");
-        }
+    if (esp_now_add_peer(&peerInfo) != ESP_OK) {
+        Serial.println("[SLAVE] Falha ao adicionar HUB");
     } else {
-        Serial.println("[SLAVE] Aviso: MAC do HUB não definido — não adicionando peer");
+        Serial.println("[SLAVE] HUB registrado com sucesso");
     }
 
-    Serial.printf("[SLAVE] Iniciado ID: 0x%02X\n", (uint8_t)myId);
 }
 
 void ESPSlave::loop() {
     PFOXPacket pkt;
-    // Processa todos os pacotes da fila
+    uint32_t now = millis();
+
+    // 1. Processa todos os pacotes da fila
     while (incomingQueue.pop(pkt)) {
         processPacket(pkt);
+    }
+
+    // 2. Lógica do LED (Aceso apenas quando recebe informação)
+    // Se o tempo atual for menor que o tempo limite, mantém aceso.
+    if (now < blinkEndTime) {
+        digitalWrite(LED_PIN, HIGH); 
+        ledState = true;
+    } else {
+        digitalWrite(LED_PIN, LOW);
+        ledState = false;
+    }
+
+    // 3. LÓGICA DE SEGURANÇA (Watchdog)
+    // Se o robô estiver em modo 'running' mas não receber NADA por mais de 1 segundo,
+    // ele para os motores automaticamente.
+    if (running && (now - lastPacketTime > 1000)) { 
+        Serial.println("[TIMEOUT] Comunicação perdida! Parando robô...");
+        running = false;
+        robotCtrl.stop();
     }
 }
 
 void ESPSlave::onDataRecv(const esp_now_recv_info_t *info, const uint8_t *data, int len) {
     if (!instance) return;
-    if (!data || len <= 0) return;
-
+    
     try {
         PFOXPacket pkt(data, (size_t)len);
         if (pkt.dst == instance->myId || pkt.dst == PFOXAddress::BROADCAST) {
             instance->incomingQueue.push(pkt);
         }
-    } catch (...) {
-        // Serial.println("[SLAVE] Erro pct");
+    } catch (const std::exception& e) {
+        Serial.printf("[RADIO] Erro no pacote: %s\n", e.what());
     }
 }
 
 // CORREÇÃO 3: Atualizado para a API do ESP32 v3.0 (recebe wifi_tx_info_t*)
 void ESPSlave::onDataSent(const wifi_tx_info_t *info, esp_now_send_status_t status) {
-    if (status != ESP_NOW_SEND_SUCCESS) {
-        // Serial.println("[SLAVE] Falha envio!");
-    } else {
-        // Se quiser ver o MAC de destino, use info->des_addr
-        // const uint8_t *mac_addr = info->des_addr;
-    }
+    // Callback de envio
 }
 
+
 void ESPSlave::processPacket(const PFOXPacket& pkt) {
-    // Se destinatário for este nó e não for ACK, responde com ACK
-    if (pkt.dst == myId && pkt.type != PFOXMsgType::ACK) {
+    // Atualiza o tempo do último pacote recebido (Watchdog)
+    lastPacketTime = millis();
+
+    blinkEndTime = millis()+100;
+
+    // 1. Identifica o nome do comando para o Serial
+    const char* typeStr = "DESCONHECIDO";
+    switch (pkt.type) {
+        case PFOXMsgType::CMD_SET_SPEED: typeStr = "SET_SPEED (Motores)"; break;
+        case PFOXMsgType::CMD_FLOW_CTRL: typeStr = "FLOW_CTRL (Run/Stop)"; break;
+        case PFOXMsgType::STATUS:        typeStr = "STATUS (Telemetria)"; break;
+        case PFOXMsgType::HEARTBEAT:     typeStr = "HEARTBEAT"; break;
+        case PFOXMsgType::ACK:           typeStr = "ACK"; break;
+        default:                         typeStr = "OUTRO"; break;
+    }
+
+    // 2. Print solicitado: Mostra Seq e o que a informação pede
+    Serial.printf("\n[RX] Seq: %u | Tipo: %s | Origem: 0x%02X\n", pkt.seq24, typeStr, (uint8_t)pkt.src);
+
+    // 3. Retorna o ACK (Apenas se NÃO for um pedido de STATUS, pois o STATUS já é uma resposta)
+    if (pkt.dst == myId && pkt.type != PFOXMsgType::ACK && pkt.type != PFOXMsgType::STATUS) {
         sendAck(pkt);
     }
 
+    // 4. Executa a lógica do comando
     switch (pkt.type) {
         case PFOXMsgType::CMD_SET_SPEED: {
             if (pkt.payload.size() >= 9) {
                 const uint8_t* p = pkt.payload.data();
-
-                // Big-endian (MSB primeiro)
                 int16_t leftReal  = (int16_t)((p[1] << 8) | p[2]);
                 int16_t leftDes   = (int16_t)((p[3] << 8) | p[4]);
                 int16_t rightReal = (int16_t)((p[5] << 8) | p[6]);
@@ -138,19 +155,26 @@ void ESPSlave::processPacket(const PFOXPacket& pkt) {
                     robotCtrl.stop();
                 } else if (cmd == (uint8_t)PFOXFlowType::RUN) {
                     running = true;
+                    lastPacketTime = millis();
                 }
             }
             break;
         }
 
         case PFOXMsgType::STATUS: {
-            if (pkt.dst == myId) sendStatus(pkt.seq24);
+            sendStatus(pkt.seq24);
             break;
         }
 
-        default: break;
+        case PFOXMsgType::HEARTBEAT:{
+            
+            break;
+        }
+
+        default:break;
     }
 }
+
 
 void ESPSlave::sendAck(const PFOXPacket& originalPkt) {
     PFOXPacket ack;
@@ -165,6 +189,8 @@ void ESPSlave::sendAck(const PFOXPacket& originalPkt) {
 
     std::vector<uint8_t> data = ack.encode();
 
+    Serial.printf("[ACK] Respondendo ao HUB (Seq: %u)... ", originalPkt.seq24);
+
     bool macAllZero = true;
     for (int i = 0; i < 6; ++i) if (hubMac[i] != 0) { macAllZero = false; break; }
 
@@ -174,6 +200,7 @@ void ESPSlave::sendAck(const PFOXPacket& originalPkt) {
 }
 
 void ESPSlave::sendStatus(uint32_t seq) {
+    Serial.printf("[ACK] Respondendo ao HUB (Seq: %u)... ", seq);
     PFOXPacket statusPkt;
     statusPkt.preamble = PFOXPacket::PREAMBLE;
     statusPkt.version  = PFOXPacket::VERSION;
@@ -202,6 +229,3 @@ void ESPSlave::sendStatus(uint32_t seq) {
     }
 }
 
-// Funções mock removidas
-void ESPSlave::setMotors(int16_t l, int16_t r) {}
-void ESPSlave::stopMotors() {}

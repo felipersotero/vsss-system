@@ -743,7 +743,6 @@ class Capture:
         self.mode = mode
         self.image = None
         self.isCamRunning = False
-        #self.frameDelay = 10000 #Influencia totalmente na velocidade do código. NÃO SEI PQ!!!
         self._hasGPU = useGpu
         self.cuda = None
         self.idCam = 0

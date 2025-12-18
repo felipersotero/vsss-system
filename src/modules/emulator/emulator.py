@@ -3,7 +3,7 @@
     coordena threads de visão e comunicação, e mantém o estado global do sistema.
 
     Versão: v3.0.1
-    Última modificação: 14/02/2024
+    Última modificação: 15/11/2025
     Autor: Saulo (update)
 
     Patch Notes v3.0.1:
@@ -112,7 +112,7 @@ class Emulator:
         self.CUDAselected = False
 
         # Tempo de comunicação
-        self.comm_send_interval = 0.030 #60 FPS
+        self.comm_send_interval = 0.100 #10 FPS - Ajustado para evitar sobrecarga na serial 115200 bps
 
     # ==============================================================
     #  2.1 Processamento paralelo
@@ -279,7 +279,8 @@ class Emulator:
         Envia comandos, solicita status periódico e processa respostas.
         """
 
-        STATUS_INTERVAL = getattr(self, "comm_send_interval", 3)
+        STATUS_INTERVAL = getattr(self, "comm_send_interval", 3)  # em segundos
+        STATUS_INTERVAL_MS = STATUS_INTERVAL * 1000  # converter para ms
 
         last_status_request = self.Timer.getElapsedTime()
 
@@ -304,24 +305,20 @@ class Emulator:
                     cmd = self.commands_queue.get_nowait()
                     self.comm.send_data("espfox/cmd", cmd)
 
-
-                #Aqui faço o envio dos comandos para testar.
-
-
             except Exception as e:
                 print(f"[Emulator] ❌ Erro ao enviar comando: {e}")
 
             # ---------------------------------------------------------
-            # 2) Envio periódico de request_robot_status()
+            # 2) Envio periódico de heartbeat
             # ---------------------------------------------------------
             try:
                 now = self.Timer.getElapsedTime()
-                if now - last_status_request >= STATUS_INTERVAL:
-                    self.comm.request_robot_status()
+                if now - last_status_request >= STATUS_INTERVAL_MS:
+                    self.comm.send_heartbeat()
                     last_status_request = now
 
             except Exception as e:
-                print(f"[Emulator] ❌ Erro ao solicitar status: {e}")
+                print(f"[Emulator] ❌ Erro ao enviar heartbeat: {e}")
 
             # ---------------------------------------------------------
             # 3) Processar RX
@@ -344,7 +341,9 @@ class Emulator:
             # ---------------------------------------------------------
             # 4) Fechamento do loop
             # ---------------------------------------------------------
-            time.sleep(STATUS_INTERVAL)
+            elapsed = self.Timer.getElapsedTime() - loop_start
+            sleep_time = max(0, STATUS_INTERVAL - elapsed / 1000)
+            time.sleep(sleep_time)
             
             loop_end = self.Timer.getElapsedTime()
             self.deque_send.append(loop_end - loop_start)

@@ -58,7 +58,7 @@ private:
     static ESPHub* instance;
 
     // configurações
-    static constexpr uint32_t ACK_TIMEOUT_MS = 60;  // ms (ajustar conforme teste)
+    static constexpr uint32_t ACK_TIMEOUT_MS = 30;  // ms (ajustar conforme teste)
     static constexpr uint8_t MAX_RETRY = 3;
 
     // helpers internos
