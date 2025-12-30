@@ -6,8 +6,7 @@ Este repositório contém o ecossistema completo de firmware para o sistema de c
 O sistema é dividido em dois firmwares distintos:
 
 1.  **ESPHUB (Gateway):** A ponte entre o Computador (IA) e o rádio.
-2.  **ESPSlave (Robô):** O firmware embarcado nos robôs que controla motores e executa comandos.
-
+2.  **ESPSlave (Robô):** O firmware embarcado nos robôs que controla motores e executa comandos.3.  **MACADDRESS (Utilitário):** Ferramenta para configurar endereços MAC dos ESP32.
 -----
 
 ## 📡 Arquitetura do Sistema
@@ -33,6 +32,15 @@ O **ESPHUB** é o mestre da rede. Ele não toma decisões de jogo, apenas gerenc
   * Receber *bytes* da Serial e montar pacotes PFOX.
   * Gerenciar o envio via rádio e aguardar confirmação (ACK).
   * Receber telemetria (Status/Bateria) dos robôs e repassar ao PC via Serial.
+  * Manter filas por robô com sistema de retry em caso de falha.
+
+### ⚙️ Funcionalidades Principais (ESPHub.cpp)
+
+- **Inicialização:** Configura WiFi, obtém MAC próprio, inicializa ESP-NOW e registra peers (robôs).
+- **Recepção Serial:** Recebe dados da Serial do PC, monta pacotes PFOX e os enfileira.
+- **Envio para Robôs:** Processa filas de cada robô, envia via ESP-NOW, aguarda ACK com timeout.
+- **Retransmissão:** Se ACK não chega em 60ms, reenvia até 3 vezes.
+- **Callbacks ESP-NOW:** Trata envio e recepção de dados via rádio.
 
 ### ⚙️ Configuração Obrigatória (Antes de gravar)
 
@@ -107,12 +115,42 @@ No arquivo `Control.cpp`, você pode ajustar as constantes do controlador:
 
 -----
 
+## 3️⃣ Utilitário MACADDRESS
+
+O **MACADDRESS** é um sketch simples para configurar ou verificar o endereço MAC de um ESP32.
+
+### 📋 Responsabilidades
+
+  * Ler o MAC atual do ESP32.
+  * Permitir definir um novo MAC para teste ou configuração.
+  * Imprimir o MAC em formato legível para copiar.
+
+### ⚙️ Funcionalidades Principais (MACADDRESS.ino)
+
+- **Leitura de MAC:** Usa `WiFi.macAddress()` para obter o MAC atual.
+- **Definição de MAC:** Permite definir um novo MAC via `esp_wifi_set_mac()`.
+- **Reinicialização WiFi:** Necessária para validar mudanças no MAC.
+- **Formato de Saída:** Imprime MAC em formato hexadecimal para fácil cópia.
+
+### 🚀 Como Usar
+
+1.  Grave o sketch `MACADDRESS.ino` no ESP32.
+2.  Abra o Monitor Serial (115200 baud).
+3.  O ESP32 imprimirá o MAC original.
+4.  Opcionalmente, defina um novo MAC no código e regrave para testar.
+5.  Use o MAC impresso para configurar no ESPHUB ou ESPSlave.
+
+> **Nota:** Mudanças de MAC persistem até o próximo reset ou regravação do firmware.
+
+-----
+
 ## 📦 Bibliotecas Compartilhadas (Core)
 
 Para garantir que o Hub e o Robô falem a mesma língua, ambos utilizam os mesmos arquivos de definição de protocolo. **Não altere estes arquivos em apenas um lado\!**
 
-  * **`PFOXPacket.h/.cpp`**: Define a estrutura do pacote (Header, Payload, CRC16).
-  * **`PFOXQueue.h/.cpp`**: Implementação de fila circular para buffering de mensagens.
+  * **`PFOXPacket.h/.cpp`**: Define a estrutura do pacote PFOX, incluindo encode/decode, CRC16 e validação.
+  * **`PFOXQueue.h/.cpp`**: Implementação de fila circular para buffering de mensagens (usada no Hub e Slave).
+  * **`RobotChannel.h/.cpp`**: Gerencia canais de comunicação por robô no Hub, incluindo retries e timeouts.
 
 -----
 

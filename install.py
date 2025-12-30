@@ -1,10 +1,11 @@
 import tkinter as tk
-from tkinter import ttk, messagebox
+from tkinter import ttk, messagebox, scrolledtext
 import subprocess
 import sys
 import importlib
 import os
 import threading
+import platform
 
 # Pacotes e módulos correspondentes
 PACKAGE_MODULE_MAP = {
@@ -48,47 +49,102 @@ PACKAGE_MODULE_MAP = {
 class InstallerApp(tk.Tk):
     def __init__(self):
         super().__init__()
-        self.title("VSSS Project Installer")
-        self.configure(bg="#2b2b2b")
-        self.geometry("600x450")
+        self.title("VSSS System Installer - Professional Setup")
+        self.configure(bg="#1a1a1a")
+        self.geometry("700x600")
+        self.resizable(False, False)
         self.center_window()
         self.installing = False
 
-        # Ícone (coloque installer_icon.ico na mesma pasta)
-        icon_path = os.path.join(os.path.dirname(__file__), "installer_icon.ico")
+        # Ícone (se existir)
+        icon_path = os.path.join(os.path.dirname(__file__), "src", "data", "icon.ico")
         if os.path.exists(icon_path):
             self.iconbitmap(icon_path)
 
-        # Título
-        tk.Label(self, text="VSSS Project Installer", font=("Segoe UI", 16, "bold"), fg="#f0f0f0", bg="#2b2b2b").pack(pady=10)
+        # Estilos
+        self.setup_styles()
 
-        # Barra de progresso
-        self.progress = ttk.Progressbar(self, length=500, mode="determinate")
-        self.progress.pack(pady=10)
+        # Layout principal
+        self.create_widgets()
 
-        # Status
-        self.status_text = tk.StringVar()
-        self.status_label = tk.Label(self, textvariable=self.status_text, font=("Segoe UI", 11), fg="#e0e0e0", bg="#2b2b2b")
-        self.status_label.pack(pady=5)
-
-        # Log detalhado
-        self.log_box = tk.Text(self, height=12, width=70, bg="#1e1e1e", fg="#d0d0d0", state="disabled", font=("Consolas", 10))
-        self.log_box.pack(pady=10)
-
-        # Botões
-        self.button_frame = tk.Frame(self, bg="#2b2b2b")
-        self.button_frame.pack(pady=10)
-
-        self.install_button = tk.Button(self.button_frame, text="Instalar", command=self.start_install_thread, width=12)
-        self.install_button.pack(side="left", padx=10)
-
-        self.start_button = tk.Button(self.button_frame, text="Iniciar Aplicação", command=self.run_main, width=16, state="disabled")
-        self.start_button.pack(side="left", padx=10)
-
-        # Estilo da barra de progresso
+    def setup_styles(self):
         style = ttk.Style(self)
         style.theme_use('clam')
-        style.configure("TProgressbar", thickness=25, troughcolor="#444444", background="#00bfff")
+
+        # Botões
+        style.configure("TButton", font=("Segoe UI", 10, "bold"), padding=6, background="#1a1a1a", foreground="#e0e0e0")
+        style.map("TButton",
+                  background=[('active', '#4a9eff'), ('pressed', '#2d6fd1')],
+                  foreground=[('active', 'white')])
+
+        # Barra de progresso
+        style.configure("TProgressbar", thickness=20, troughcolor="#1a1a1a", background="#007acc")
+
+        # Labels
+        style.configure("TLabel", background="#1a1a1a", foreground="#e0e0e0", font=("Segoe UI", 10))
+
+        # LabelFrame
+        style.configure("TLabelframe", background="#1a1a1a", foreground="#e0e0e0", borderwidth=1, relief="solid")
+        style.configure("TLabelframe.Label", background="#1a1a1a", foreground="#e0e0e0", font=("Segoe UI", 10, "bold"))
+
+        # Frame
+        style.configure("TFrame", background="#1a1a1a")
+
+    def create_widgets(self):
+        # Frame principal
+        main_frame = ttk.Frame(self)
+        main_frame.pack(fill="both", expand=True, padx=20, pady=20)
+
+        # Título e descrição
+        title_label = ttk.Label(main_frame, text="VSSS System Installer",
+                               font=("Segoe UI", 18, "bold"), foreground="#007acc")
+        title_label.pack(pady=(0, 10))
+
+        desc_text = ("Bem-vindo ao instalador do Sistema VSSS (Very Small Size Soccer)!\n\n"
+                     "Este sistema é uma solução completa para controle de robôs em competições de futebol de robôs.\n"
+                     "Inclui visão computacional, controle de estratégia, comunicação via ESP-NOW e interface gráfica.\n\n"
+                     "Este instalador verificará e instalará todas as dependências Python necessárias.\n"
+                     "Acesse nossa página no GitHub para mais informações e suporte. @GN0M10\n")
+        desc_label = ttk.Label(main_frame, text=desc_text, wraplength=650, justify="center")
+        desc_label.pack(pady=(0, 20))
+
+        # Informações do sistema
+        system_info = f"Sistema: {platform.system()} {platform.release()} | Python: {sys.version.split()[0]}"
+        info_label = ttk.Label(main_frame, text=system_info, foreground="#888888")
+        info_label.pack(pady=(0, 20))
+
+        # Barra de progresso
+        self.progress = ttk.Progressbar(main_frame, length=600, mode="determinate")
+        self.progress.pack(pady=(0, 10))
+
+        # Status
+        self.status_text = tk.StringVar(value="Pronto para instalar")
+        self.status_label = ttk.Label(main_frame, textvariable=self.status_text)
+        self.status_label.pack(pady=(0, 10))
+
+        # Log detalhado
+        log_frame = ttk.LabelFrame(main_frame, text="Log de Instalação", padding=10)
+        log_frame.pack(fill="both", expand=True, pady=(0, 20))
+
+        self.log_box = scrolledtext.ScrolledText(log_frame, height=10, width=80,
+                                                bg="#1a1a1a", fg="#d0d0d0",
+                                                font=("Consolas", 9), state="disabled")
+        self.log_box.pack(fill="both", expand=True)
+
+        # Botões
+        button_frame = ttk.Frame(main_frame)
+        button_frame.pack(pady=(0, 10))
+
+        self.install_button = ttk.Button(button_frame, text="🔧 Instalar Dependências",
+                                        command=self.start_install_thread)
+        self.install_button.pack(side="left", padx=10)
+
+        self.start_button = ttk.Button(button_frame, text="🚀 Iniciar VSSS System",
+                                      command=self.run_main, state="disabled")
+        self.start_button.pack(side="left", padx=10)
+
+        self.exit_button = ttk.Button(button_frame, text="❌ Sair", command=self.quit)
+        self.exit_button.pack(side="left", padx=10)
 
     def center_window(self):
         self.update_idletasks()
@@ -103,42 +159,75 @@ class InstallerApp(tk.Tk):
         self.log_box.insert(tk.END, message + "\n")
         self.log_box.see(tk.END)
         self.log_box.configure(state="disabled")
+        self.update()
 
     def start_install_thread(self):
         self.install_button.config(state="disabled")
         self.progress["value"] = 0
-        self.status_text.set("Iniciando instalação...")
+        self.status_text.set("Iniciando verificação de dependências...")
+        self.log("🔍 Iniciando verificação de pacotes Python necessários...")
         threading.Thread(target=self.install_packages, daemon=True).start()
-
 
     def install_packages(self):
         self.installing = True
         total = len(PACKAGE_MODULE_MAP)
         self.progress["maximum"] = total
+        installed_count = 0
+        failed_count = 0
+
+        self.log(f"📦 Total de pacotes a verificar: {total}")
 
         for i, (pkg, module) in enumerate(PACKAGE_MODULE_MAP.items(), start=1):
+            self.status_text.set(f"Verificando {pkg} ({i}/{total})...")
+            self.log(f"🔍 Verificando {pkg}...")
 
-            self.status_text.set(f"Verificando {pkg}...")
-            self.update()
-            if not self.is_installed(module):
-                self.status_text.set(f"Instalando {pkg}...")
-                self.update()
-                try:
-                    subprocess.check_call([sys.executable, "-m", "pip", "install", pkg])
-                    self.log(f"[✔] {pkg} instalado com sucesso")
-                except subprocess.CalledProcessError:
-                    self.log(f"[✖] Falha ao instalar {pkg}")
+            if self.is_installed(module):
+                self.log(f"✅ {pkg} já está instalado")
+                installed_count += 1
             else:
-                self.log(f"[i] {pkg} já está instalado")
+                self.status_text.set(f"Instalando {pkg} ({i}/{total})...")
+                self.log(f"📥 Instalando {pkg}...")
+                try:
+                    result = subprocess.run([sys.executable, "-m", "pip", "install", pkg],
+                                          capture_output=True, text=True, timeout=300)
+                    if result.returncode == 0:
+                        self.log(f"✅ {pkg} instalado com sucesso")
+                        installed_count += 1
+                    else:
+                        self.log(f"❌ Falha ao instalar {pkg}: {result.stderr}")
+                        failed_count += 1
+                except subprocess.TimeoutExpired:
+                    self.log(f"⏰ Timeout ao instalar {pkg}")
+                    failed_count += 1
+                except Exception as e:
+                    self.log(f"❌ Erro ao instalar {pkg}: {str(e)}")
+                    failed_count += 1
 
             self.progress["value"] = i
             self.update()
 
+        # Resumo final
         self.status_text.set("Instalação concluída!")
-        self.log("[✔] Todos os pacotes estão prontos")
-        messagebox.showinfo("Concluído", "Todos os pacotes necessários foram instalados.")
+        self.log("\n" + "="*50)
+        self.log("📊 RESUMO DA INSTALAÇÃO")
+        self.log(f"✅ Pacotes já instalados: {installed_count}")
+        self.log(f"📦 Pacotes instalados agora: {installed_count - (total - len([p for p in PACKAGE_MODULE_MAP.values() if self.is_installed(p)]))}")
+        self.log(f"❌ Falhas: {failed_count}")
+        self.log("="*50)
+
+        if failed_count == 0:
+            self.log("🎉 Todas as dependências foram instaladas com sucesso!")
+            messagebox.showinfo("Instalação Concluída",
+                              "Todas as dependências foram instaladas com sucesso!\n\n"
+                              "Clique em 'Iniciar VSSS System' para executar o programa.")
+        else:
+            self.log("⚠️ Algumas dependências falharam. Verifique o log acima.")
+            messagebox.showwarning("Instalação Parcial",
+                                 f"{failed_count} pacotes falharam na instalação.\n"
+                                 "Verifique o log para detalhes.")
+
         self.installing = False
-        self.start_button.config(state="normal")
+        self.start_button.config(state="normal" if failed_count == 0 else "disabled")
 
     @staticmethod
     def is_installed(module_name):
@@ -151,13 +240,17 @@ class InstallerApp(tk.Tk):
     def run_main(self):
         main_path = os.path.join(os.path.dirname(__file__), "main.py")
         if os.path.exists(main_path):
-            # Inicia o main.py
-            subprocess.Popen([sys.executable, main_path])
-            # Fecha a janela do instalador
-            self.destroy()
+            self.log("🚀 Iniciando VSSS System...")
+            try:
+                subprocess.Popen([sys.executable, main_path])
+                self.log("✅ VSSS System iniciado com sucesso!")
+                self.after(1000, self.destroy)  # Fecha após 1 segundo
+            except Exception as e:
+                self.log(f"❌ Erro ao iniciar: {str(e)}")
+                messagebox.showerror("Erro", f"Falha ao iniciar o sistema: {str(e)}")
         else:
-            messagebox.showerror("Erro", "main.py não encontrado!")
-
+            self.log("❌ Arquivo main.py não encontrado!")
+            messagebox.showerror("Erro", "main.py não encontrado no diretório do projeto!")
 
 if __name__ == "__main__":
     app = InstallerApp()

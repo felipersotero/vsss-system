@@ -1,6 +1,24 @@
 #pragma once
 #include <Arduino.h>
 
+/**
+ * @brief Estrutura para agrupar os ganhos do controlador PID.
+ */
+struct PIDConfig {
+    float kp;
+    float ki;
+    float kd;
+};
+
+/**
+ * @brief Estrutura para mapeamento de pinos da Ponte H L298N.
+ */
+struct MotorPins {
+    int in1;
+    int in2;
+    int enable; // Pino PWM
+};
+
 // Configurações PWM (Mantendo compatibilidade com ESP32 v3.0)
 #define PWM_FREQ 5000  // 5kHz (padrão L298N)
 #define PWM_RES  8     // 8 bits = 0 a 255
@@ -9,50 +27,59 @@
 // ================= CLASSE PID =================
 class PID {
 public:
-    PID(float kp, float ki, float kd, float outMin, float outMax);
+    PID(PIDConfig config, float outMin, float outMax);
+
     float compute(float setpoint, float measured);
     void reset();
+    void setGains(PIDConfig config);
 
 private:
-    float kp, ki, kd;
-    float minVal, maxVal;
-    float integral;
-    float prevError;
-    unsigned long lastTime;
+    float _kp, _ki, _kd;
+    float _minVal, _maxVal;
+    float _integral;
+    float _prevError;
+    unsigned long _lastTime;
 };
 
 // ================= CLASSE MOTOR (L298N - 3 PINOS) =================
 class Motor {
 public:
     // CORREÇÃO: Construtor agora aceita 3 argumentos (IN1, IN2, ENABLE)
-    Motor(int pinIn1, int pinIn2, int pinEnable);
+    Motor(MotorPins pins);
     
     void begin();
     
     // speed: -255 a +255
-    void drive(int speed);
+    void drive(int16_t speed);
 
 private:
-    int pin1, pin2, pinEn;
+    MotorPins _pins;
 };
 
 // ================= CLASSE ROBOT (Main) =================
 class RobotControl {
 public:
-    RobotControl();
+    /**
+     * @brief Construtor que recebe configurações de hardware e software.
+     */
+    RobotControl(MotorPins pinsLeft, MotorPins pinsRight, PIDConfig pidCfg);
 
     // Inicializa Pinos e PWM
     void begin();
 
-    // Método principal: Recebe velocidades reais e desejadas
+    /**
+     * @brief Atualiza o controle dos motores baseado no erro de velocidade.
+     * @param leftReal Velocidade atual lida pelos encoders (Esquerda)
+     * @param leftDes Velocidade desejada (Setpoint Esquerda)
+     */
     void update(int16_t leftReal, int16_t leftDes, int16_t rightReal, int16_t rightDes);
 
     // Parada de emergência
     void stop();
 
 private:
-    Motor motorLeft;
-    Motor motorRight;
-    PID pidLeft;
-    PID pidRight;
+    Motor _motorLeft;
+    Motor _motorRight;
+    PID _pidLeft;
+    PID _pidRight;
 };

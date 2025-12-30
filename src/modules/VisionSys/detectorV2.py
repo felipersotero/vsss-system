@@ -1522,8 +1522,12 @@ class VisionSystem:
         
         return sorted_points
 
+    # =========== | CALIBRAÇÃO DA CÂMERA | ===========================
 
-    
+    """
+    @GNõMIO 2025: Aqui seria interessante, mas seria um bonûs. Pois, só com a homografica
+    já garanto resultados suficientemente satisfatórios.
+    """
     #=============| Definindo funções módulares | ===========================
     
     def _check_field_reset(self):

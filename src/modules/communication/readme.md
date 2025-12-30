@@ -22,28 +22,41 @@ O FoxCom é dividido em três grandes pilares:
 
 ### 1\. Software Core (`communication.py`)
 
-O coração do sistema no lado do computador.
+O coração do sistema no lado do computador, implementado na classe `Communication`.
 
   * **Multithreading:** Gerencia threads separadas para envio e recepção de dados para não bloquear a IA.
   * **Dual-Protocol:** Suporta conexão via **Serial** (para jogos, latência mínima) e **MQTT** (para telemetria remota/debug).
   * **Protocolo PFOX:** Implementa o empacotamento binário (Structs C-like), cálculo de CRC16 e validação de pacotes.
   * **Gerenciamento de Estado:** Monitora RTT (Round Trip Time), perda de pacotes e status de conexão.
+  * **Métodos de Controle:** Inclui métodos como `connect()`, `start()`, `pause()`, `resume()`, `stop()`, `send_robot_velocity()`, `send_heartbeat()`, etc.
+  * **Flag de Envio:** Possui flag `sending_enabled` para controlar dinamicamente o envio de comandos.
 
 ### 2\. Interface de Debug (`interface.py`)
 
-Uma GUI robusta construída em **Tkinter** para facilitar o desenvolvimento.
+Uma GUI robusta construída em **Tkinter** para facilitar o desenvolvimento, implementada na classe `CommunicationDebugWindow`.
 
   * **Monitor Serial em Tempo Real:** Visualização de logs hexadecimais e ASCII.
   * **Dashboard de Telemetria:** Gráficos de latência (Ping) e status dos robôs.
   * **Controle Manual:** Permite enviar comandos de velocidade e trocar configurações sem rodar a IA completa.
+  * **Controles Atualizados:** Inclui dropdowns para tipo de mensagem (MsgType), endereço (Address), ações específicas, e checkbox para controle dinâmico via teclas W/A/S/D.
   * **Singleton:** Garante que apenas uma janela de debug exista para não conflitar portas.
 
-### 3\. Firmware Embarcado
+### 3\. Protocolo PFOX (`protocolHeader.py`)
+
+Define o protocolo de comunicação binário.
+
+  * **Estrutura de Pacote:** Preamble, version, src, dst, type, seq, len, payload, CRC16.
+  * **Tipos de Mensagem:** CMD_SET_SPEED, CMD_FLOW_CTRL, ACK, STATUS, HEARTBEAT, ERROR.
+  * **Endereços:** PC, ROBOT1, ROBOT2, ROBOT3, ESPMAIN, BROADCAST.
+  * **Controle de Pacotes:** Classe PFOXController para criar e gerenciar pacotes.
+
+### 4\. Firmware Embarcado
 
 Código C++ otimizado rodando nos microcontroladores ESP32.
 
   * **ESPHUB (Gateway):** Atua como mestre. Possui filas (Queues) inteligentes para cada robô e sistema de **ARQ** (Retransmissão automática em caso de falha).
   * **ESPSlave (Robôs):** Recebe comandos, executa o controle PID dos motores L298N e envia feedback de bateria/status.
+  * **MACADDRESS:** Utilitário para configurar endereços MAC dos ESP32.
 
 -----
 

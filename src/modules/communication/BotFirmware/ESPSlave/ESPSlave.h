@@ -23,8 +23,6 @@ public:
     void begin();
     void loop();
 
-    // Funções de Hardware (Robô Diferencial)
-    // Recebe velocidade esquerda e direita (int16: -32768 a 32767)
     void setMotors(int16_t leftSpeed, int16_t rightSpeed);
     void stopMotors();
 
@@ -45,9 +43,14 @@ private:
 
     RobotControl robotCtrl;
 
-    static constexpr uint8_t LED_PIN = 2; // Pino do LED interno (geralmente GPIO 2 no ESP32)
-    unsigned long blinkEndTime = 0;       // Até quando o LED deve ficar piscando
-    uint32_t lastPacketTime = 0; // Para o Watchdog
-    unsigned long lastBlinkToggle = 0;    // Controle da cadência do pisca
+    static constexpr uint8_t LED_PIN = 2; 
+    unsigned long blinkEndTime = 0;       
+    uint32_t lastPacketTime = 0; 
     bool ledState = false;
+
+    // --- NOVAS VARIÁVEIS PARA O DESACOPLAMENTO ---
+    int16_t _targetL = 0, _targetR = 0;
+    int16_t _currentL = 0, _currentR = 0;
+    uint32_t _lastControlCycle = 0;
+    const uint32_t CONTROL_INTERVAL_MS = 10; // Ciclo de 100Hz
 };
