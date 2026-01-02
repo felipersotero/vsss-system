@@ -291,109 +291,87 @@ class VisionSystem:
     
     # Implementação da lógica de processamento para várias coisas
     def proc(self, img, currentTime, debug: bool, isT: bool = False):
-        """
-        Pipeline principal de processamento da imagem de visão.
-        Executa a detecção do campo, bola e jogadores, e gera a visualização final.
-        """
-        # ===========================
-        # RESET ESTADO E TEMPOS
-        # ===========================
-        self.resetExecutionState()
+            """
+            Executa a detecção OBRIGATÓRIA do campo e robôs.
+            Otimização: Removemos apenas a renderização visual quando não é necessária.
+            """
+            # ===========================
+            # RESET ESTADO E TEMPOS
+            # ===========================
+            self.resetExecutionState()
+            
+            if not hasattr(self, 'lastMajorTime') or self.lastMajorTime == 0:
+                self.lastMajorTime = self.timer.getElapsedTime()
+            self._firstTimeExec = (currentTime - self.lastMajorTime) / 1000.0
+            self.debug = debug
 
-        # marca tempo de início do processamento maior (primeiro ciclo)
-        if not hasattr(self, 'lastMajorTime') or self.lastMajorTime == 0:
-            self.lastMajorTime = self.timer.getElapsedTime()
+            if img is None:
+                # ... (retorno de imagem nula mantém igual) ...
+                return img
 
-        currentTime = currentTime
+            # =========================================================
+            # 1. DETECÇÃO DE CAMPO (OBRIGATÓRIA A CADA FRAME)
+            # =========================================================
+            # Isso vai atualizar o self.fieldReduce internamente
+            wbCmField = self.detect_field(img, debug)
 
-        # tempo desde o último processamento maior
-        self._firstTimeExec = (currentTime - self.lastMajorTime) / 1000.0
-        self.debug = debug
+            # Validação simples do campo
+            campo_valido = (
+                wbCmField != -1
+                and abs(wbCmField - self.fieldWidth) <= 20
+                and self.fieldReduce is not None
+                and self.fieldReduce.shape[1] >= 100
+            )
+            self.fieldDetectedFlag = campo_valido
 
-        # Zera imagem virtual
-        self.virtualImg = self.virtual.copy()
+            if not campo_valido:
+                # Se o campo não serve, não processamos o resto
+                try: self.lastMajorTime = self.timer.getElapsedTime()
+                except: self.lastMajorTime = currentTime
+                return img
 
-        # ===========================
-        # CASO 1 — IMAGEM INVÁLIDA
-        # ===========================
-        if img is None:
-            self.drawAllRobots()
+            # =========================================================
+            # 2. OTIMIZAÇÃO CRÍTICA: CACHE DE HSV
+            # =========================================================
+            # Como detect_field rodou, self.fieldReduce é a imagem recortada do frame ATUAL.
+            # Convertemos ela para HSV UMA VEZ AQUI.
+            self.hsv_fieldReduce = cv2.cvtColor(self.fieldReduce, cv2.COLOR_BGR2HSV)
 
-            # ---- Atualiza tempos ANTES do retorno ----
+            # =========================================================
+            # 3. DETECÇÃO DE OBJETOS (Usando o Cache)
+            # =========================================================
+            
+            # Passamos a imagem BGR normal E a versão HSV já pronta
+            self._safe_call(self.detect_ball, self.fieldReduce, currentTime, debug, 
+                            name="BALL", hsv_img=self.hsv_fieldReduce)
+                            
+            self._safe_call(self.detect_players, self.fieldReduce, currentTime, debug, isT=isT, 
+                            name="PLAYERS", hsv_img=self.hsv_fieldReduce)
+
+            # ===========================
+            # 3) RENDERIZAÇÃO / VISUALIZAÇÃO (O GARGALO REAL)
+            # ===========================
+            # AQUI está o segredo da performance. Só gastamos CPU desenhando se alguém for ver.
+            if debug:
+                # Agora sim criamos a cópia para desenhar em cima
+                if hasattr(self, 'virtual'):
+                    self.virtualImg = self.virtual.copy()
+
+                self._draw_field_debug()
+                self.colorTree.print_store()
+                
+                # Essa função é a mais pesada visualmente (loops de desenho)
+                self.drawAllRobots()
+
+            # ===========================
+            # ATUALIZA TEMPO FINAL
+            # ===========================
             try:
                 self.lastMajorTime = self.timer.getElapsedTime()
             except Exception:
-                self.lastMajorTime = self.currentTime
+                self.lastMajorTime = currentTime
 
-            return img
-
-        # reseta status robôs
-        for bot in self.enemyTeam:
-            bot.setStatus(False)
-        for bot in self.allyTeam:
-            bot.setStatus(False)
-
-        imgP = img
-
-        # ===========================
-        # 1) DETECTAR CAMPO
-        # ===========================
-        wbCmField = self.detect_field(imgP, debug)
-
-        campo_valido = (
-            wbCmField != -1
-            and abs(wbCmField - self.fieldWidth) <= 20
-            and self.fieldReduce is not None
-            and self.fieldReduce.shape[1] >= 100
-        )
-
-
-        if self.debug: print(f"[EMULATOR][DEBUG]: O campo é válido? wbField={wbCmField} | self.fieldWidth={self.fieldWidth} = {campo_valido} ")
-
-        self.fieldDetectedFlag = campo_valido 
-
-        # ===========================
-        # CASO 2 — CAMPO INVÁLIDO
-        # ===========================
-        if not campo_valido:
-            self.drawAllRobots()
-
-            # ---- Atualiza tempos ANTES do retorno ----
-            try:
-                self.lastMajorTime = self.timer.getElapsedTime()
-            except Exception:
-                self.lastMajorTime = self.currentTime
-
-            return img
-
-        # ===========================
-        # 2) PROCESSA BOLA E JOGADORES
-        # ===========================
-        self._safe_call(self.detect_ball, self.fieldReduce, currentTime, debug, name="BALL")
-        self._safe_call(self.detect_players, self.fieldReduce, currentTime, debug, isT=isT, name="PLAYERS")
-
-        # ===========================
-        # DEPURAÇÃO VISUAL
-        # ===========================
-        if debug:
-            self._draw_field_debug()
-            self.colorTree.print_store()
-
-        # ===========================
-        # RENDERIZAÇÃO FINAL
-        # ===========================
-        self.drawAllRobots()
-
-        # ===========================
-        # ATUALIZA TEMPO FINAL (OBRIGATÓRIO)
-        # ===========================
-        try:
-            self.lastMajorTime = self.timer.getElapsedTime()
-        except Exception:
-            self.lastMajorTime = currentTime
-
-        return self.frameResult
-
+            return self.frameResult
 
     # Funções auxiliares
     def _safe_call(self, func, *args, name="", **kwargs):
@@ -1683,22 +1661,29 @@ class VisionSystem:
                             if self.fieldReduce is not None
                             else img.copy())
 
+        # ---------------------------------------------------------
+        
         return resultado_dp_cm if campo_detectado else -1
 
 
     #Detectar a imagem da bola na imagem
-    def detect_ball(self, img, timestamp, debug:bool):
+    def detect_ball(self, img, timestamp, dbg=False, isT=False, hsv_img=None):
         '''
             Função responsável por detectar a bola na imagem
 
             Necessário informar a imagem que irá ser processada para encontrar a bola. A cor da bola e se irá querer exibir ela na imagem, que tem que ser informada em HSV
         '''
-        #copiando imagem inicial
+        # 1. Usa o HSV Global
+        if hsv_img is not None:
+            imgHSV = hsv_img
+        else:
+            imgHSV = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
+        
+
         self.ballImg = self.fieldReduce.copy()
         if self.fieldReduce is None:
             print("FIELDREDUCE É NONE")
 
-        imgHSV = cv2.cvtColor(self.ballImg, cv2.COLOR_BGR2HSV)
 
         self.binaryBall = cv2.inRange(imgHSV, self.ball_lower_bound, self.ball_upper_bound)
 
@@ -1747,12 +1732,18 @@ class VisionSystem:
             cv2.arrowedLine(self.virtualImg, (xv, yv), ((xv + int(self.ball.direction[0])), (yv + int(self.ball.direction[1]))), (0, 255, 255), 2)
 
 
-    def detect_players(self, img, timestamp, dbg=False, isT=False):
+    def detect_players(self, img, timestamp, dbg=False, isT=False, hsv_img=None):
         """
         Detecta robôs na imagem com distinção por dominância de cor
         (comparando proporção de área entre cor de aliado e inimigo).
         Em modo debug, gera máscaras binárias de aliados e de todos os robôs.
         """
+        # 1. Usa o HSV Global
+        if hsv_img is not None:
+            imgHSV = hsv_img
+        else:
+            imgHSV = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
+
         debug = dbg
         # Reset de contadores e status
         self.playersCount = self.enemiesCount = self.alliesCount = 0
@@ -1766,8 +1757,6 @@ class VisionSystem:
         elif self.binaryBall.shape != img.shape[:2]:
             self.binaryBall = cv2.resize(self.binaryBall, (img.shape[1], img.shape[0]))
 
-        # Conversão e máscaras
-        imgHSV = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
         Objects = cv2.inRange(imgHSV, self.objectsDarkColor, self.objectsLightColor)
         self.binaryPlayers = cv2.subtract(Objects, self.binaryBall)
 
@@ -1818,7 +1807,7 @@ class VisionSystem:
             windowActual = img[y1:y2, x1:x2]
 
             # converte a região para HSV
-            hsv = cv2.cvtColor(windowActual, cv2.COLOR_BGR2HSV)
+            hsv = imgHSV[y1:y2, x1:x2]
 
             # Máscaras de cor
             mask_ally = cv2.inRange(hsv, self.ally_lower_bound, self.ally_upper_bound)
@@ -3010,7 +2999,12 @@ class VisionSystem:
                     self._safe_call(self._handle_robot_loss, bot, team, currentTime)
 
             return self.frameResult
-
+    # Adicione este método dentro da classe VisionSystem
+    def _get_shape(self, img):
+        """Retorna (altura, largura) independente se é CPU (numpy) ou GPU (UMat)."""
+        if isinstance(img, cv2.UMat):
+            return img.get().shape[:2]
+        return img.shape[:2]
 # Testar função principal e nova lógica
 if __name__ =='__main__':
     print("Utilizada em função de main")
