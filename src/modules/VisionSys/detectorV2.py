@@ -2325,11 +2325,7 @@ class VisionSystem:
             if img is None:
                 return []
 
-            shape = img.shape[:2]
-            H, W = shape
-            
-            # Atualiza a imagem HSV GLOBAL para usos de fallback/amostragem de cor
-            self.imgHSV = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
+            H, W = img.shape[:2]
             
             detected_list = []
 
@@ -2379,7 +2375,9 @@ class VisionSystem:
             # --------------------------------------------------------
             # 1. Pré-processamento no ROI (igual ao antigo search_bot, mas no ROI)
             # --------------------------------------------------------
-            roi_hsv = cv2.cvtColor(roi_img, cv2.COLOR_BGR2HSV)
+            # Usamos as coordenadas do roi_rect para cortar a matriz global
+            roi_hsv = self.imgHSV[y0 : y0 + h0, x0 : x0 + w0]
+
             obj_mask = cv2.inRange(roi_hsv, self.objectsDarkColor, self.objectsLightColor)
 
             # Remover Bola e Jogadores (Subtração das máscaras globais recortadas)
@@ -2442,7 +2440,7 @@ class VisionSystem:
                 if bot_win.size == 0: continue
 
                 # HSV dessa pequena janela
-                hsv_win = cv2.cvtColor(bot_win, cv2.COLOR_BGR2HSV)
+                hsv_win = roi_hsv[y1_local:y2_local, x1_local:x2_local]
 
                 # --------------------------------------------------------
                 # 4. Análise de Cores (Time) dentro de bot_win
@@ -2781,7 +2779,8 @@ class VisionSystem:
             
             # 1. Processamento na imagem recortada (rápido)
             # Não precisa recriar wnd, roi_img JÁ É a janela
-            hsv = cv2.cvtColor(roi_img, cv2.COLOR_BGR2HSV)
+            hsv = self.imgHSV[y0 : y0 + h0, x0 : x0 + w0]
+            
             mask = cv2.inRange(hsv, self.ball_lower_bound, self.ball_upper_bound)
 
             mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, self.struct_ellipse5)
