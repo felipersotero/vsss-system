@@ -138,10 +138,10 @@ class CardInfos:
         self.texts = {
             "FPS:": tk.StringVar(),                     # quadros por segundo
             "Vision. (ms):": tk.StringVar(),            # tempo para processar imagem
+            "(F/B/P).(ms):": tk.StringVar(),            # tempos de campo / bola / players
             "Proc. (ms):": tk.StringVar(),               # Tempo total para processar e imprimir
             "Envio (ms):": tk.StringVar(),              # tempo para enviar
             "Timer (s):": tk.StringVar(),               # timer de alta precisão do emulador
-            "Error Code:": tk.StringVar(),              # código de erro
             "Modo:": tk.StringVar()                     # modo de emulação atual
         }
 
@@ -203,12 +203,12 @@ class CardInfos:
 
         # Atualiza restantes com suas médias
         self.updateInfo("Vision. (ms):", self.emulator.avg(self.emulator.deque_vision))
+        self.updateInfo("(F/B/P).(ms):", self.emulator.tproc_string)
         self.updateInfo("Proc. (ms):", self.emulator.avg(self.emulator.deque_proc))
         self.updateInfo("Envio (ms):", self.emulator.avg(self.emulator.deque_send))
 
         # Valores diretos
         self.updateInfo("Timer (s):", self.emulator.realTime)
-        self.updateInfo("Error Code:", self.emulator.errorCode)
         self.updateInfo("Modo:", self.conversionMode(self.emulator.Mode))
 
         

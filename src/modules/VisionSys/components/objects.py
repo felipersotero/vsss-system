@@ -17,7 +17,7 @@ from ui.viewer import MyViewer
 import threading
 import queue
 import tkinter 
-from collections import deque
+from collections import deque, defaultdict
 from ui.settingsMenu import *
 
 from tkinter import *
@@ -713,6 +713,33 @@ class HighPrecisionTimer:
         '''
         return self._isRunning
 
+class Benchmark:
+    def __init__(self):
+        self.start_times = {}
+        self.times = defaultdict(list)
+    
+    def tic(self):
+        self.start = time.perf_counter()
+        
+    def toc(self, label="Tempo"):
+        elapsed = (time.perf_counter() - self.start) * 1000
+        self.times[label].append(elapsed)
+        # Removido print para não atrasar processamento
+        return elapsed
+    
+    def get_last(self, label):
+        if label in self.times and self.times[label]:
+            return self.times[label][-1]
+        return 0.0
+    
+    def get_avg(self, label):
+        if label in self.times and self.times[label]:
+            return sum(self.times[label]) / len(self.times[label])
+        return 0.0
+    
+    def reset(self):
+        self.times.clear()
+    
 #========================= /// CLASSE BÁSICA DE EXECUÇÃO // =====================
 '''
  @GNOMIO: Essa estrutura deveria representar de forma simples a forma de captura de imagens, sendo elas tanto por câmera, ou por arquivos. E funcionará de forma a simplificar a parte semâtica do código, contudo, ainda está em fase de estruturar

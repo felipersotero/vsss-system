@@ -98,6 +98,7 @@ class Emulator:
         self.captureThread = None
         self.frame = None
         self.errorCode = 0
+        self.tproc_string = ""
 
         # Classe de controle da comunicação
         self.comm = None
@@ -164,6 +165,12 @@ class Emulator:
                 #print("[EMULADOR]: Tempo total em segundos ", self.realTime)
           
                 self.fill_deques_time()
+
+                # Atualizar string de tempos de processamento
+                campo = self.vs.bmk.get_avg("Campo")
+                bola = self.vs.bmk.get_avg("Bola")
+                players = self.vs.bmk.get_avg("Players")
+                self.tproc_string = f"{campo:.2f} / {bola:.2f} / {players:.2f}"
 
                 # --- Atualiza objetos detectados ---
                 self.field = objects.get(ID_Objects.FIELD, self.field)
@@ -990,6 +997,12 @@ class Emulator:
         #Método de RUN para imagem
         result = self.vs.processImg(self.debugFrame, debug=self.DEBUGA)
 
+        # Calcular médias de processamento para exibir
+        campo_avg = self.vs.bmk.get_avg("Campo")
+        bola_avg = self.vs.bmk.get_avg("Bola")
+        players_avg = self.vs.bmk.get_avg("Players")
+        self.tproc_string = f"{campo_avg:.2f} / {bola_avg:.2f} / {players_avg:.2f}"
+
         #retornando valores
         St2i = self.Timer.getElapsedTime()
 
@@ -1034,6 +1047,7 @@ class Emulator:
         #atualizo informações na interface
         self.fill_deques_time()
         self.infoCards.update()
+        self.vs.bmk.reset()
         self.erase_deques_times()
     
     

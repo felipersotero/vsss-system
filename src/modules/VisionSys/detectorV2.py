@@ -57,6 +57,8 @@ class VisionSystem:
 
         self._countProcess = 0
 
+        self.bmk = Benchmark()
+
         # ===============================================================================
         # WATCHDOG CONFIG
         self.MAX_MISSED_FRAMES_BALL = 10  # ~0.3s a 30fps
@@ -273,7 +275,7 @@ class VisionSystem:
         self._threads           = []
 
         #Variável importante para ditar quanto tempo até a próxima atualização de dados
-        self.newProcTime        = 10
+        self.newProcTime        = 10000
         
         # Variável da identificação de cores
         self.colorTree = TreeColors()
@@ -286,14 +288,30 @@ class VisionSystem:
         #Extrai os dados do objeto de configuração 
         self.toMineData()
 
+        # CACHE
+        # [OTIMIZAÇÃO] Cache de estruturas para detect_field
+        # Evita recriar matrizes a cada frame
+        self.kernel_blur = (5, 5) 
+        self.kernel_morph = cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3)) 
+        
+        self.ptsSource_buffer = np.zeros((4, 2), dtype=np.float32)
+        # Cache para evitar alocação de numpy arrays no loop
+        self.ptsSource_cache = np.zeros((4, 2), dtype=np.float32)
+        self.ptsFinal_cache = np.array([
+                self.fieldP1v, self.fieldP2v,
+                self.fieldP3v, self.fieldP4v
+            ], dtype=np.float32)
+    
         #construir o campo
         self.buildField()
     
     # Implementação da lógica de processamento para várias coisas
-    def proc(self, img, currentTime, debug: bool, isT: bool = False):
+    def proc(self, img, currentTime, debug: bool, isT: bool = False, force_field_detect: bool = True):
             """
-            Executa a detecção OBRIGATÓRIA do campo e robôs.
-            Otimização: Removemos apenas a renderização visual quando não é necessária.
+            Executa a detecção do campo (sob demanda) e robôs.
+            Arg:
+                force_field_detect: Se True, força a execução pesada do detect_field.
+                                    Se False, tenta reutilizar o ROI anterior (cooVetor).
             """
             # ===========================
             # RESET ESTADO E TEMPOS
@@ -306,47 +324,73 @@ class VisionSystem:
             self.debug = debug
 
             if img is None:
-                # ... (retorno de imagem nula mantém igual) ...
                 return img
 
             # =========================================================
             # 1. DETECÇÃO DE CAMPO (OBRIGATÓRIA A CADA FRAME)
             # =========================================================
-            # Isso vai atualizar o self.fieldReduce internamente
-            wbCmField = self.detect_field(img, debug)
 
-            # Validação simples do campo
+            # Decide se roda a detecção pesada ou usa o cache
+            # Só usamos o cache se: NÃO forçado E o campo já foi detectado antes E temos o vetor salvo
+            use_cache = (not force_field_detect) and self.fieldDetectedFlag and (self.viewCapture.cooVetor is not None)
+
+            wbCmField = 0 
+
+            if use_cache:
+                try:
+                    # OTIMIZAÇÃO: Recorta a imagem baseada no último ROI válido
+                    # O cooVetor geralmente é [x, y, w, h] ou [j, i, w, h]
+                    x, y, w, h = self.viewCapture.cooVetor
+                    
+                    # Validação de limites para evitar crash do numpy
+                    if x < 0 or y < 0 or (x+w) > img.shape[1] or (y+h) > img.shape[0]:
+                        raise ValueError("ROI fora dos limites da imagem")
+
+                    # Gera o fieldReduce manualmente (Processamento < 0.1ms)
+                    self.fieldReduce = img[y : y + h, x : x + w]
+                    wbCmField = w # Assume a largura do recorte
+                    
+                except Exception as e:
+                    if debug: print(f"[VS][PROC] Falha ao usar cache do campo: {e}. Forçando detecção.")
+                    use_cache = False # Falha no cache, força detecção abaixo
+
+            # Se não pode usar cache (ou falhou), roda a pesada detect_field (~10ms)
+            if not use_cache:
+                self.bmk.tic()
+                wbCmField = self.detect_field(img, debug)
+                self.bmk.toc("Campo")
+
+            # Validação simples do campo (Crítico para garantir que o recorte ou detecção funcionou)
             campo_valido = (
                 wbCmField != -1
-                and abs(wbCmField - self.fieldWidth) <= 20
                 and self.fieldReduce is not None
-                and self.fieldReduce.shape[1] >= 100
+                and self.fieldReduce.shape[0] > 10 
+                and self.fieldReduce.shape[1] > 10
             )
             self.fieldDetectedFlag = campo_valido
 
             if not campo_valido:
-                # Se o campo não serve, não processamos o resto
                 try: self.lastMajorTime = self.timer.getElapsedTime()
                 except: self.lastMajorTime = currentTime
                 return img
-
+                
             # =========================================================
             # 2. OTIMIZAÇÃO CRÍTICA: CACHE DE HSV
             # =========================================================
-            # Como detect_field rodou, self.fieldReduce é a imagem recortada do frame ATUAL.
-            # Convertemos ela para HSV UMA VEZ AQUI.
             self.hsv_fieldReduce = cv2.cvtColor(self.fieldReduce, cv2.COLOR_BGR2HSV)
 
             # =========================================================
             # 3. DETECÇÃO DE OBJETOS (Usando o Cache)
             # =========================================================
-            
-            # Passamos a imagem BGR normal E a versão HSV já pronta
+            self.bmk.tic()
             self._safe_call(self.detect_ball, self.fieldReduce, currentTime, debug, 
                             name="BALL", hsv_img=self.hsv_fieldReduce)
-                            
+            self.bmk.toc("Bola")
+
+            self.bmk.tic()
             self._safe_call(self.detect_players, self.fieldReduce, currentTime, debug, isT=isT, 
                             name="PLAYERS", hsv_img=self.hsv_fieldReduce)
+            self.bmk.toc("Players")
 
             # ===========================
             # 3) RENDERIZAÇÃO / VISUALIZAÇÃO (O GARGALO REAL)
@@ -357,12 +401,16 @@ class VisionSystem:
                 if hasattr(self, 'virtual'):
                     self.virtualImg = self.virtual.copy()
 
+                self.bmk.tic()
                 self._draw_field_debug()
+                self.bmk.toc("Draw Field Debug")
+
                 self.colorTree.print_store()
                 
                 # Essa função é a mais pesada visualmente (loops de desenho)
+                self.bmk.tic()
                 self.drawAllRobots()
-
+                self.bmk.toc("Draw Robots")
             # ===========================
             # ATUALIZA TEMPO FINAL
             # ===========================
@@ -467,91 +515,106 @@ class VisionSystem:
         self.colorTree.clear()
         self.setTreeColorDefault()
 
+    def _detect_field_once(self, img, debug):
+        '''
+            Método auxiliar para detectar o campo uma vez e retornar se foi válido.
+        '''
+        wb = self.detect_field(img, debug)
+
+        campo_valido = (
+            wb != -1 and
+            abs(wb - self.fieldWidth) < 20 and
+            self.fieldReduce is not None
+        )
+
+        self.fieldDetectedFlag = campo_valido
+        return campo_valido
+
+
     def processImg(self, img, debug: bool):
-            """
-            Orquestrador Principal:
-            - Gerencia timer.
-            - Alterna entre Detecção Completa (Proc) e Rastreamento (Filtered).
-            - Garante 'Warm-up' do Kalman.
-            """
-            self.debug = debug
-            self.frameOrigin = img
+        """
+        Orquestrador: Gerencia a troca entre Detecção (Proc) e Rastreamento (Filtered).
+        """
+        self.debug = debug
+        self.frameOrigin = img
+        if img is None: return img
+        if self.timer is None: self.timer = HighPrecisionTimer()
+        self.currentTime = self.timer.getElapsedTime()
 
-            # Inicializa timer se necessário
-            if self.timer is None:
-                self.timer = HighPrecisionTimer()
+        # =========================================================
+        # MODO IMAGEM (PROCESSAMENTO ÚNICO)
+        # =========================================================
+        if self.emulatorMode == MODE_IMAGE:
+            self._count = 0
+            self.lastMajorTime = 0
+            self.proc(img, self.currentTime, debug)
+            return self.frameResult
+        
+        # =========================================================
+        # MODO VÍDEO (PROCESSAMENTO CONTÍNUO)
+        # =========================================================
+        # 1) Campo ainda NÃO detectado → Detecta aqui e avisa o proc para NÃO detectar de novo
+        if not self.fieldDetectedFlag:
+            wb = self.detect_field(img, debug)
+            # ... validação ...
+            campo_valido = (wb != -1 and self.fieldReduce is not None) # Simplificado para leitura
+            self.fieldDetectedFlag = campo_valido
+            self._count = 0
+            self.lastMajorTime = self.currentTime
 
-            self.currentTime = self.timer.getElapsedTime()
+            if not campo_valido: return img
 
-            # ==========================================================
-            # MODO EMULADOR (Imagem Estática)
-            # ==========================================================
-            if self.emulatorMode == MODE_IMAGE:
-                self._count = 0
-                self.lastMajorTime = 0
-                self.proc(img, self.currentTime, debug)
-                return self.frameResult
-
-            # ==========================================================
-            # MODO VÍDEO (Processamento Contínuo)
-            # ==========================================================
-
-            # Verifica tempo para reset periódico (Recalibração global)
-            if hasattr(self, "lastMajorTime") and self.lastMajorTime > 0:
-                elapsed = self.currentTime - self.lastMajorTime
-            else:
-                elapsed = float("inf")
-
-            # Se o campo ainda não foi detectado, força o proc
-            if not self.fieldDetectedFlag:
-                self.proc(img, self.currentTime, debug)
-                self._count = 0 # Reinicia contagem
-                return getattr(self, "frameResult", img)
-
-            # --- Lógica de Decisão ---
-            
-            # 1. Devemos fazer uma varredura completa (Reset periódico)?
-            force_full_scan = (elapsed >= self.newProcTime)
-            
-            if not force_full_scan:
-                self._count += 1
-                
-                # 2. Fase de AQUECIMENTO DO KALMAN (Warm-up)
-                # Roda detecção pesada nos primeiros frames para estabilizar velocidade/covariância
-                WARMUP_FRAMES = 30 # 30 a 60 frames costuma ser suficiente
-                
-                if self._count <= WARMUP_FRAMES:
-                    # [Fase 1] Alimentando o filtro
-                    self.proc(img, self.currentTime, debug)
-                
-                else:
-                    # [Fase 2] Rastreamento Otimizado (Filtered)
-                    # O filtered_detection já possui lógica interna para lidar com robôs perdidos
-                    try:
-                        self.filtered_detection(img, self.currentTime, debug)
-                    except Exception as e:
-                        if debug: print(f"[processImg] Erro no filtered: {e}")
-                        # Fallback de segurança se o filtered quebrar
-                        self.proc(img, self.currentTime, debug)
-                        self._count = 0 # Reinicia aquecimento
-
-            else:
-                # [Fase 3] Recalibração Periódica (Reset do Timer)
-                # Nota: Não zeramos self._count para não entrar em warm-up desnecessário,
-                # apenas corrigimos posições globais.
-                self.lastMajorTime = self.currentTime
-                
-                if hasattr(self, "virtual"):
-                    self.virtualImg = self.virtual.copy()
-
-                self.proc(img, self.currentTime, debug)
-
-            # Cálculo do dT do frame
-            tmf = self.timer.getElapsedTime()
-            self.dT = tmf - self.currentTime
-
+            # OTIMIZAÇÃO AQUI: Passamos False porque ACABAMOS de detectar acima
+            self.proc(img, self.currentTime, debug, force_field_detect=False)
             return getattr(self, "frameResult", img)
+        
+        # 2) Verifica tempo para recalibração periódica
+        elapsed = self.currentTime - self.lastMajorTime
+        should_recalibrate = elapsed >= self.newProcTime
 
+        if should_recalibrate:
+            wb = self.detect_field(img, debug)
+            campo_valido = (wb != -1 and self.fieldReduce is not None)
+            self.fieldDetectedFlag = campo_valido
+            self.lastMajorTime = self.currentTime
+            self._count = 0
+
+            if campo_valido:
+                # OTIMIZAÇÃO AQUI: Passamos False, pois detect_field já rodou acima
+                self.proc(img, self.currentTime, debug, force_field_detect=False)
+                return getattr(self, "frameResult", img)
+            else:
+                return img
+        
+        # 3) Warm-up do Kalman (frames iniciais)
+        WARMUP_FRAMES = 120
+        if self._count < WARMUP_FRAMES:
+            self._count += 1
+
+            self.proc(img, self.currentTime, debug, force_field_detect=False)
+            return getattr(self, "frameResult", img)
+        
+        #4) Rastreamento rápido (Filtered Detection)
+        try:
+            self.filtered_detection(img, self.currentTime, debug)
+        except Exception as e:
+            if debug: print(f"[VisionSystem] Erro no Tracking: {e}. Reiniciando detecção.")
+            
+            # 1. Marca que perdemos a garantia de onde está o campo
+            self.fieldDetectedFlag = False
+            self._count = 0
+
+            # 2. Chama a proc() forçando a redetecção completa para recuperar o sistema
+            # Como o padrão já é True, chamar self.proc(img, ...) funciona, 
+            # mas explicitar ajuda na leitura:
+            self.proc(img, self.currentTime, debug, force_field_detect=True)
+
+
+        # Cálculo de dT para física/predição
+        tmf = self.timer.getElapsedTime()
+        self.dT = tmf - self.currentTime
+        return getattr(self, "frameResult", img)
+    
 
     #Puxando as imagens de debug
     def getDebugImages(self):
@@ -982,7 +1045,7 @@ class VisionSystem:
                 binImg = cv2.convertScaleAbs(binImg)
 
             # Estrutura cruzada pequena remove ruídos pontuais sem deformar objetos
-            kernel = cv2.getStructuringElement(cv2.MORPH_CROSS, (3, 3))
+            kernel = self.kernel_morph
 
             # Erosão seguida de dilatação = abertura morfológica (remove ruídos brancos)
             binImgProc = cv2.morphologyEx(binImg, cv2.MORPH_OPEN, kernel, iterations=it)
@@ -1534,6 +1597,7 @@ class VisionSystem:
             if self.debug:
                 print("[FIELD_RESET] Sistema resetado devido a falhas persistentes na detecção do campo")
                 
+
     def detect_field(self, img, debug):
         """
         Detecta o campo com no máximo DUAS tentativas.
@@ -1665,7 +1729,6 @@ class VisionSystem:
         
         return resultado_dp_cm if campo_detectado else -1
 
-
     #Detectar a imagem da bola na imagem
     def detect_ball(self, img, timestamp, dbg=False, isT=False, hsv_img=None):
         '''
@@ -1713,15 +1776,17 @@ class VisionSystem:
             #atualizando posição do objeto bola
             self.ball.setPosition(xcm, ycm, rb, time)
             self.ball.setImgPosition(xb,yb,rb)
+            self.ball.status = True 
 
             rb = int(rb/self.prop_px_cm)
             xb = int(xb)
             yb = int(yb)
 
             # Circulando bola
-            cv2.circle(self.frameResult, (xb, yb), (rb + 2), (0, 0, 255), 2)
-            cv2.putText(self.frameResult, "B", (xb,yb-rb-10), cv2.FONT_HERSHEY_SIMPLEX,0.4,(0,0,255), 1)
-            
+            if self.debug:
+                cv2.circle(self.frameResult, (xb, yb), (rb + 2), (0, 0, 255), 2)
+                cv2.putText(self.frameResult, "B", (xb,yb-rb-10), cv2.FONT_HERSHEY_SIMPLEX,0.4,(0,0,255), 1)
+                
             #parte plotando na imagem virtual
             xv = int(xv)
             yv = int(yv)
@@ -1730,7 +1795,8 @@ class VisionSystem:
             cv2.circle(self.virtualImg, (xv, yv), 4, (0, 255,255), -1)
             cv2.putText(self.virtualImg, "B", (int(xv-5),int(yv-rb-10)), cv2.FONT_HERSHEY_SIMPLEX,0.4,(0,255,255), 1)
             cv2.arrowedLine(self.virtualImg, (xv, yv), ((xv + int(self.ball.direction[0])), (yv + int(self.ball.direction[1]))), (0, 255, 255), 2)
-
+        else:
+            self.ball.status = False
 
     def detect_players(self, img, timestamp, dbg=False, isT=False, hsv_img=None):
         """
@@ -1751,14 +1817,26 @@ class VisionSystem:
         for bot in (*self.enemyTeam, *self.allyTeam):
             bot.setStatus(False)
 
-        # Garante a forma da máscara da bola
-        if getattr(self, "binaryBall", None) is None or self.binaryBall.size == 0:
-            self.binaryBall = np.zeros(img.shape[:2], dtype=np.uint8)
-        elif self.binaryBall.shape != img.shape[:2]:
-            self.binaryBall = cv2.resize(self.binaryBall, (img.shape[1], img.shape[0]))
+        self.binaryPlayers = cv2.inRange(imgHSV, self.objectsDarkColor, self.objectsLightColor)
+       
+        # 2. Remoção cirúrgica da bola na máscara de objetos
+        if self.ball.status:
+            # Coordenadas inteiras da bola na imagem reduzida
+            xb, yb = int(self.ball.xb), int(self.ball.yb)
+            
+            # Define o raio da janela (ex: r=5 para uma janela 10x10)
+            r = 5 
+            
+            # Obtém as dimensões para evitar erro de índice fora da imagem
+            h, w = self.binaryPlayers.shape[:2]
+            
+            # Calcula os limites com clamp (garante que fiquem dentro da imagem)
+            y1, y2 = max(0, yb - r), min(h, yb + r)
+            x1, x2 = max(0, xb - r), min(w, xb + r)
+            
+            # OPERAÇÃO DIRETA: Zera os pixels onde a bola está
+            self.binaryPlayers[y1:y2, x1:x2] = 0
 
-        Objects = cv2.inRange(imgHSV, self.objectsDarkColor, self.objectsLightColor)
-        self.binaryPlayers = cv2.subtract(Objects, self.binaryBall)
 
         # Filtragem morfológica
         ellipse5 = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
@@ -1884,12 +1962,13 @@ class VisionSystem:
                         bot.setStatus(True)
                         bot.setRadius(rcm)
                         bot.setColor(colorT=self.allyColor, colorP=Color_p, colorS=Color_s)
-                        self.draw_player_circle(self.frameResult, bot)
                         self.draw_player_virtual(bot)
                         self.enemiesCount += 1
                         enemies_count +=1
 
                         if debug:
+                            self.draw_player_circle(self.frameResult, bot)
+
                             print(f"  ✅ Inimigo #{self.enemiesCount} confirmado.")
                            # --- C_p ---
                             cx, cy = int(C_p[0]), int(C_p[1])
@@ -1944,7 +2023,7 @@ class VisionSystem:
                                 bot.setStatus(True)
                                 bot.setRadius(rcm)
                                 bot.setColor(colorT=self.allyColor, colorP=c1, colorS=c2)
-                                self.draw_player_circle(self.frameResult, bot)
+                                if self.debug: self.draw_player_circle(self.frameResult, bot)
                                 self.draw_player_virtual(bot)
                                 if bot_id == ID_Robots.ROBOT_ALLY_GOAL:
                                     if debug:
@@ -2888,12 +2967,14 @@ class VisionSystem:
             roi_ball_img, roi_ball_rect = self.predictBall((H, W), currentTime)
             
             ball_found = False
+            self.bmk.tic()
             if roi_ball_img is not None:
                 ball_data = self._safe_call(
                     self.search_ball, roi_img=roi_ball_img, roi_rect=roi_ball_rect,
                     timestamp=currentTime, debug=debug, name="search_ball"
                 ) or {}
                 ball_found = ball_data.get("found", False)
+            self.bmk.toc("Bola")
             
             if ball_found:
                 xb, yb = int(ball_data["img_x"]), int(ball_data["img_y"])
@@ -2924,12 +3005,14 @@ class VisionSystem:
             # ==========================================================
             # 3) DETECÇÃO DOS ROBÔS
             # ==========================================================
+            self.bmk.tic()
             robots_found = self._safe_call(
                 self.search_bots,
                 img=self.fieldReduce, # search_bots recorta internamente via predictRobot
                 timestamp=currentTime,
                 debug=debug
             ) or []
+            self.bmk.toc("Players")
 
             updated_keys = set()
 
@@ -2999,12 +3082,14 @@ class VisionSystem:
                     self._safe_call(self._handle_robot_loss, bot, team, currentTime)
 
             return self.frameResult
+    
     # Adicione este método dentro da classe VisionSystem
     def _get_shape(self, img):
         """Retorna (altura, largura) independente se é CPU (numpy) ou GPU (UMat)."""
         if isinstance(img, cv2.UMat):
             return img.get().shape[:2]
         return img.shape[:2]
+    #=================================================================================
 # Testar função principal e nova lógica
 if __name__ =='__main__':
     print("Utilizada em função de main")
