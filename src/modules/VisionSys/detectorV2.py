@@ -405,7 +405,7 @@ class VisionSystem:
                 self._draw_field_debug()
                 self.bmk.toc("Draw Field Debug")
 
-                self.colorTree.print_store()
+                #self.colorTree.print_store()
                 
                 # Essa função é a mais pesada visualmente (loops de desenho)
                 self.bmk.tic()
@@ -1860,21 +1860,20 @@ class VisionSystem:
             binaryAllies = np.zeros(img.shape[:2], dtype=np.uint8)
             binaryAllTeam = np.zeros(img.shape[:2], dtype=np.uint8)
 
-            print("\n===============================")
-            print(f"🔍 [DEBUG] Detectando robôs na imagem...")
-            print(f"▪ Total de possíveis jogadores detectados: {len(players)}")
-            print("===============================")
+            #print("\n===============================")
+            #print(f"🔍 [DEBUG] Detectando robôs na imagem...")
+            #print(f"▪ Total de possíveis jogadores detectados: {len(players)}")
+            #print("===============================")
 
         for i, currentPlayer in enumerate(players):
             # Coordenada do centro do robô na imagem reduzida, já detectada.
             (xi, yi), ri = cv2.minEnclosingCircle(currentPlayer)
             
             if debug:
-                print(f"\n[🧩 Player {i+1}] Posição estimada: ({xi:.1f}, {yi:.1f}) | Raio: {ri:.2f}")
+                #print(f"\n[🧩 Player {i+1}] Posição estimada: ({xi:.1f}, {yi:.1f}) | Raio: {ri:.2f}")
                 cv2.circle(self.frameResult, (int(xi), int(yi)), int(ri) + 5, (0, 255, 0), 2)       
             if not (0.2 * playerRadius < ri < 2 * playerRadius and self.playersCount < 6):
-                if debug:
-                    print("  ⚠️ Ignorado (fora do range esperado ou excedeu limite).")
+                #if debug: print("  ⚠️ Ignorado (fora do range esperado ou excedeu limite).")
                 continue
 
 
@@ -1900,8 +1899,7 @@ class VisionSystem:
             ally_ratio = ally_area / total_area
             enemy_ratio = enemy_area / total_area
 
-            if debug:
-                print(f"  ▪ Proporção aliado: {ally_ratio:.2f} | inimigo: {enemy_ratio:.2f}")
+            #if debug:print(f"  ▪ Proporção aliado: {ally_ratio:.2f} | inimigo: {enemy_ratio:.2f}")
 
             # Decide dominância
             if ally_ratio > 0.55:
@@ -1925,8 +1923,7 @@ class VisionSystem:
                     x_m = x_m+x1
                     y_m = y_m+y1
 
-                    if debug:
-                        print(f"  🔴 Inimigo detectado | Raio cor: {rc:.2f}")
+                    #if debug: print(f"  🔴 Inimigo detectado | Raio cor: {rc:.2f}")
                     if rc >= 0.6 * mainColorRadius:
                         #Direção do robô nas coordenadas da imagem, apenas transformando corretamente
                         # como as coordenadas da imagem tem y negativo como padrão, inverte o sinal dele
@@ -1969,7 +1966,7 @@ class VisionSystem:
                         if debug:
                             self.draw_player_circle(self.frameResult, bot)
 
-                            print(f"  ✅ Inimigo #{self.enemiesCount} confirmado.")
+                            #print(f"  ✅ Inimigo #{self.enemiesCount} confirmado.")
                            # --- C_p ---
                             cx, cy = int(C_p[0]), int(C_p[1])
                             bgr_p = self.hsv2bgr(Color_p)
@@ -1996,8 +1993,7 @@ class VisionSystem:
                     x_m = x_m+x1
                     y_m = y_m+y1
 
-                    if debug:
-                        print(f"  🔵 Possível aliado detectado | Raio cor: {rc:.2f}")
+                    #if debug: print(f"  🔵 Possível aliado detectado | Raio cor: {rc:.2f}")
 
                     if rc >= 0.5 * mainColorRadius:
                         ally_checks = [
@@ -2026,18 +2022,15 @@ class VisionSystem:
                                 if self.debug: self.draw_player_circle(self.frameResult, bot)
                                 self.draw_player_virtual(bot)
                                 if bot_id == ID_Robots.ROBOT_ALLY_GOAL:
-                                    if debug:
-                                        print(f"  ✅ Goleiro Aliado Detectado")
+                                    #if debug: print(f"  ✅ Goleiro Aliado Detectado")
 
                                     AgoalFlag = True
                                 elif bot_id == ID_Robots.ROBOT_ALLY_1:
-                                    if debug:
-                                        print(f"  ✅ Atacante 1 Aliado Detectado")
+                                    #if debug: print(f"  ✅ Atacante 1 Aliado Detectado")
 
                                     Aatk1Flag = True
                                 else:
-                                    if debug:
-                                        print(f"  ✅ Atacante 2 Aliado Detectado")
+                                    #if debug: print(f"  ✅ Atacante 2 Aliado Detectado")
 
                                     Aatk2Flag = True
 
