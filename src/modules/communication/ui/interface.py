@@ -8,6 +8,8 @@ from typing import Optional, Callable, Dict, Any, Tuple, List
 import queue
 import logging
 
+from modules.communication.protocol.protocolHeader import MsgType, Address
+
 # =================================================================
 # CommunicationDebugWindow (Singleton)
 # =================================================================
@@ -164,30 +166,25 @@ class CommunicationDebugWindow(tk.Toplevel):
         btn_conn_frame = ttk.Frame(conn_frame)
         btn_conn_frame.pack(fill="x", padx=5, pady=5)
         
-        # NOVO: Botão Iniciar/Conectar
-        self.btn_comm_start = ttk.Button(btn_conn_frame, text="▶ Iniciar/Conectar", 
-                                       command=self._start_communication, style="Custom.TButton")
-        self.btn_comm_start.pack(fill="x", pady=2)
+        # Botão Conectar
+        self.btn_connect = ttk.Button(btn_conn_frame, text="🔗 Conectar", 
+                                       command=self._connect, style="Custom.TButton")
+        self.btn_connect.pack(fill="x", pady=2)
         
-        # NOVO: Botão Pausar Monitor
-        self.btn_comm_pause = ttk.Button(btn_conn_frame, text="⏸ Pausar Monitor", 
-                                       command=self._pause_communication, style="Custom.TButton")
-        self.btn_comm_pause.pack(fill="x", pady=2)
+        # Botão Disconectar
+        self.btn_disconnect = ttk.Button(btn_conn_frame, text="🔌 Disconectar", 
+                                       command=self._disconnect, style="Custom.TButton")
+        self.btn_disconnect.pack(fill="x", pady=2)
 
-        # NOVO: Botão Continuar Monitor
-        self.btn_comm_resume = ttk.Button(btn_conn_frame, text="⏯ Continuar Monitor", 
-                                       command=self._resume_communication, style="Custom.TButton")
-        self.btn_comm_resume.pack(fill="x", pady=2)
+        # Botão Iniciar
+        self.btn_iniciar = ttk.Button(btn_conn_frame, text="▶ Iniciar", 
+                                       command=self._iniciar, style="Custom.TButton")
+        self.btn_iniciar.pack(fill="x", pady=2)
 
-        # NOVO: Botão Resetar Conexão
-        self.btn_comm_reset_conn = ttk.Button(btn_conn_frame, text="🔄 Resetar Conexão", 
-                                      command=self._reset_connection_and_stats, style="Custom.TButton")
-        self.btn_comm_reset_conn.pack(fill="x", pady=2)
-
-        # Botão Parar/Encerrar (Stop)
-        self.btn_comm_stop = ttk.Button(btn_conn_frame, text="⏹ Parar e Encerrar", 
-                                      command=self._stop_communication, style="Custom.TButton")
-        self.btn_comm_stop.pack(fill="x", pady=2)
+        # Botão Pausar
+        self.btn_pausar = ttk.Button(btn_conn_frame, text="⏸ Pausar", 
+                                       command=self._pausar, style="Custom.TButton")
+        self.btn_pausar.pack(fill="x", pady=2)
 
         # 2. Estatísticas
         stats_frame = ttk.Labelframe(right_panel, text="Estatísticas PFOX", style="Header.TLabelframe")
@@ -247,14 +244,40 @@ class CommunicationDebugWindow(tk.Toplevel):
         # === BARRA INFERIOR: COMANDO MANUAL ===
         bottom = ttk.Frame(self)
         bottom.pack(fill="x", padx=pad, pady=(0, pad))
-        
-        ttk.Label(bottom, text="Enviar Raw:", style="Status.TLabel").pack(side="left")
-        
-        self.entry_send = ttk.Entry(bottom, font=('Consolas', 10))
-        self.entry_send.pack(side="left", fill="x", expand=True, padx=5)
-        self.entry_send.bind("<Return>", lambda e: self._on_send_debug())
-        
-        ttk.Button(bottom, text="Enviar", command=self._on_send_debug).pack(side="right")
+
+        # Tipo de mensagem
+        ttk.Label(bottom, text="Tipo:", style="Status.TLabel").grid(row=0, column=0, sticky="w", padx=5)
+        self.msg_type_var = tk.StringVar()
+        self.msg_type_combo = ttk.Combobox(bottom, textvariable=self.msg_type_var, state="readonly", width=15)
+        self.msg_type_combo['values'] = [t.name for t in MsgType]
+        self.msg_type_combo.current(0)  # Default to first
+        self.msg_type_combo.grid(row=0, column=1, padx=5)
+        self.msg_type_combo.bind("<<ComboboxSelected>>", self._on_msg_type_change)
+
+        # Para quem
+        ttk.Label(bottom, text="Para:", style="Status.TLabel").grid(row=0, column=2, sticky="w", padx=5)
+        self.address_var = tk.StringVar()
+        self.address_combo = ttk.Combobox(bottom, textvariable=self.address_var, state="readonly", width=10)
+        self.address_combo['values'] = [a.name for a in Address]
+        self.address_combo.current(0)
+        self.address_combo.grid(row=0, column=3, padx=5)
+
+        # O que fazer
+        ttk.Label(bottom, text="Ação:", style="Status.TLabel").grid(row=0, column=4, sticky="w", padx=5)
+        self.action_var = tk.StringVar()
+        self.action_combo = ttk.Combobox(bottom, textvariable=self.action_var, state="readonly", width=15)
+        self.action_combo.grid(row=0, column=5, padx=5)
+
+        # Checkbox Controle Dinâmico
+        self.dynamic_control_var = tk.BooleanVar()
+        self.dynamic_control_check = ttk.Checkbutton(bottom, text="Controle Dinâmico", variable=self.dynamic_control_var, command=self._on_dynamic_control_toggle)
+        self.dynamic_control_check.grid(row=0, column=6, padx=5)
+
+        # Botão Enviar
+        ttk.Button(bottom, text="Enviar", command=self._on_send_command).grid(row=0, column=7, padx=5)
+
+        # Inicializar ações
+        self._on_msg_type_change()
     # ===================== LÓGICA DE CONTROLE =====================
     def start(self) -> None:
         """Inicia loop de atualização da UI."""
@@ -349,59 +372,50 @@ class CommunicationDebugWindow(tk.Toplevel):
 
     # ===================== AÇÕES =====================
 # ===================== CONTROLE DE COMUNICAÇÃO =====================
-    def _start_communication(self):
-        """Inicia comunicação e monitoramento."""
+    def _connect(self):
+        """Estabelece a conexão sem iniciar o envio."""
+        try:
+            if hasattr(self.comm, 'connect'):
+                self.comm.connect()
+                self.print_message("Conexão estabelecida.")
+            else:
+                self.print_message("Método connect() não encontrado no backend.")
+        except Exception as e:
+            self.print_message(f"Erro ao conectar: {e}")
+
+    def _disconnect(self):
+        """Desconecta a instância de conexão atual."""
+        try:
+            if hasattr(self.comm, 'close'):
+                self.comm.close()
+                self.print_message("Desconectado.")
+            else:
+                self.print_message("Método close() não encontrado no backend.")
+        except Exception as e:
+            self.print_message(f"Erro ao desconectar: {e}")
+
+    def _iniciar(self):
+        """Inicia o ciclo de envio de informações."""
         try:
             if hasattr(self.comm, 'start'):
                 self.comm.start()
-                self.print_message("Comunicação iniciada.")
-                if not self.comm.client:
-                    self.print_message("Cliente não disponível. Tente novamente.")
+                self.comm.set_sending_enabled(True)
+                self.print_message("Envio de informações iniciado.")
             else:
                 self.print_message("Método start() não encontrado no backend.")
         except Exception as e:
-            self.print_message(f"Erro ao iniciar comunicação: {e}")
+            self.print_message(f"Erro ao iniciar envio: {e}")
 
-    def _pause_communication(self):
-        """Pausa monitoramento sem fechar conexão."""
+    def _pausar(self):
+        """Pausa o ciclo de envio de informações."""
         try:
-            if hasattr(self.comm, 'pause'):
-                self.comm.pause()
-                self.print_message("Monitoramento pausado.")
-        except Exception as e:
-            self.print_message(f"Erro ao pausar monitoramento: {e}")
-
-    def _resume_communication(self):
-        """Retoma monitoramento pausado."""
-        try:
-            if hasattr(self.comm, 'resume'):
-                self.comm.resume()
-                self.print_message("Monitoramento retomado.")
-        except Exception as e:
-            self.print_message(f"Erro ao retomar monitoramento: {e}")
-
-    def _stop_communication(self):
-        """Para monitoramento e encerra comunicação."""
-        try:
-            if hasattr(self.comm, 'stop'):
-                self.comm.stop()
-                self.print_message("Comunicação encerrada.")
+            if hasattr(self.comm, 'set_sending_enabled'):
+                self.comm.set_sending_enabled(False)
+                self.print_message("Envio de informações pausado.")
             else:
-                self.print_message("Método stop() não encontrado no backend.")
+                self.print_message("Método set_sending_enabled() não encontrado no backend.")
         except Exception as e:
-            self.print_message(f"Erro ao encerrar comunicação: {e}")
-
-    def _reset_connection_and_stats(self):
-        """Reinicia a conexão e limpa estatísticas (substituindo _reset_communication)."""
-        try:
-            if hasattr(self.comm, 'reset_connection'):
-                self.comm.reset_connection()
-                # Não é necessário resetar as estatísticas separadamente, pois reset_connection faz isso internamente
-                self.print_message("Conexão resetada e estatísticas zeradas.")
-            else:
-                self.print_message("Método reset_connection() não encontrado no backend.")
-        except Exception as e:
-            self.print_message(f"Erro ao resetar conexão: {e}")
+            self.print_message(f"Erro ao pausar envio: {e}")
 
     def _on_send_debug(self):
         text = self.entry_send.get().strip()
@@ -433,6 +447,89 @@ class CommunicationDebugWindow(tk.Toplevel):
     def print_message(self, msg):
         ts = datetime.now().strftime("%H:%M:%S")
         self._enqueue_log(f"[{ts}] {msg}")
+
+    def _on_msg_type_change(self, event=None):
+        msg_type = MsgType[self.msg_type_var.get()]
+        if msg_type == MsgType.CMD_SET_SPEED:
+            self.action_combo['values'] = ["Frente", "Trás", "Esquerda", "Direita"]
+            self.action_combo.current(0)
+            self.dynamic_control_check.grid()  # Show
+        elif msg_type == MsgType.CMD_FLOW_CTRL:
+            self.action_combo['values'] = ["STOP", "RUN", "PAUSE"]
+            self.action_combo.current(0)
+            self.dynamic_control_check.grid_remove()  # Hide
+        elif msg_type == MsgType.HEARTBEAT:
+            self.action_combo['values'] = ["Enviar"]
+            self.action_combo.current(0)
+            self.dynamic_control_check.grid_remove()
+        elif msg_type == MsgType.ACK:
+            self.action_combo['values'] = ["Enviar"]
+            self.action_combo.current(0)
+            self.dynamic_control_check.grid_remove()
+        else:
+            self.action_combo['values'] = ["Enviar"]
+            self.action_combo.current(0)
+            self.dynamic_control_check.grid_remove()
+
+    def _on_send_command(self):
+        msg_type = MsgType[self.msg_type_var.get()]
+        address = Address[self.address_var.get()]
+        action = self.action_var.get()
+
+        try:
+            if msg_type == MsgType.CMD_SET_SPEED:
+                if action == "Frente":
+                    self.comm.send_robot_velocity(address, 200, 200, 200, 200)
+                elif action == "Trás":
+                    self.comm.send_robot_velocity(address, -200, -200, -200, -200)
+                elif action == "Esquerda":
+                    self.comm.send_robot_velocity(address, -100, -100, 100, 100)
+                elif action == "Direita":
+                    self.comm.send_robot_velocity(address, 100, 100, -100, -100)
+            elif msg_type == MsgType.CMD_FLOW_CTRL:
+                if action == "STOP":
+                    self.comm.send_flow_control(address, 0x20)
+                elif action == "RUN":
+                    self.comm.send_flow_control(address, 0x10)
+                elif action == "PAUSE":
+                    self.comm.send_flow_control(address, 0x30)
+            elif msg_type == MsgType.HEARTBEAT:
+                self.comm.send_heartbeat(address)
+            elif msg_type == MsgType.ACK:
+                # Assuming send_ack method exists
+                if hasattr(self.comm, 'pfox_controller'):
+                    pkt = self.comm.pfox_controller.send_ack(address)
+                    self.comm.send(pkt.to_bytes())
+            else:
+                self.print_message("Tipo de mensagem não suportado para envio.")
+        except Exception as e:
+            self.print_message(f"Erro ao enviar comando: {e}")
+
+    def _on_dynamic_control_toggle(self):
+        if self.dynamic_control_var.get():
+            self.focus_set()  # Ensure window has focus
+            self.bind('<KeyPress-w>', lambda e: self._send_dynamic('Frente'))
+            self.bind('<KeyPress-s>', lambda e: self._send_dynamic('Trás'))
+            self.bind('<KeyPress-a>', lambda e: self._send_dynamic('Esquerda'))
+            self.bind('<KeyPress-d>', lambda e: self._send_dynamic('Direita'))
+            self.print_message("Controle dinâmico ativado. Use W/A/S/D.")
+        else:
+            self.unbind('<KeyPress-w>')
+            self.unbind('<KeyPress-s>')
+            self.unbind('<KeyPress-a>')
+            self.unbind('<KeyPress-d>')
+            self.print_message("Controle dinâmico desativado.")
+
+    def _send_dynamic(self, action):
+        address = Address[self.address_var.get()]
+        if action == "Frente":
+            self.comm.send_robot_velocity(address, 200, 200, 200, 200)
+        elif action == "Trás":
+            self.comm.send_robot_velocity(address, -200, -200, -200, -200)
+        elif action == "Esquerda":
+            self.comm.send_robot_velocity(address, -100, -100, 100, 100)
+        elif action == "Direita":
+            self.comm.send_robot_velocity(address, 100, 100, -100, -100)
 
     def clear_log(self):
         self.log_box.config(state="normal")

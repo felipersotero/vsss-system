@@ -190,7 +190,7 @@ class PFOXController:
         return self.create_packet(dst, MsgType.CMD_FLOW_CTRL, [value & 0xFF])
 
     def request_status(self, dst: Address):
-        return self.create_packet(dst,MsgType.STATUS,[])
+        return self.create_packet(dst,MsgType.HEARTBEAT,[])
     
     # =========================================
     # SPEED COMMAND (USO CORRETO DO PAYLOAD)

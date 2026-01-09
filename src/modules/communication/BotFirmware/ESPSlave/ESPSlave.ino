@@ -17,15 +17,11 @@ ESPSlave slave(MY_IDENTITY, HUB_MAC_ADDR);
 void setup() {
     Serial.begin(115200);
     
-    // Configurações de pinos (leds, motores) podem vir aqui
-    // pinMode(LED_BUILTIN, OUTPUT);
 
     slave.begin();
 }
 
 void loop() {
     slave.loop();
-    
-    // Aqui você pode adicionar leituras de sensores locais
-    // ou lógica de segurança adicional (failsafe)
+
 }

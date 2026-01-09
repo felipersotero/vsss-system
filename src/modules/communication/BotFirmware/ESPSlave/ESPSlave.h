@@ -23,8 +23,6 @@ public:
     void begin();
     void loop();
 
-    // Funções de Hardware (Robô Diferencial)
-    // Recebe velocidade esquerda e direita (int16: -32768 a 32767)
     void setMotors(int16_t leftSpeed, int16_t rightSpeed);
     void stopMotors();
 
@@ -44,4 +42,15 @@ private:
     void sendStatus(uint32_t seq);
 
     RobotControl robotCtrl;
+
+    static constexpr uint8_t LED_PIN = 2; 
+    unsigned long blinkEndTime = 0;       
+    uint32_t lastPacketTime = 0; 
+    bool ledState = false;
+
+    // --- NOVAS VARIÁVEIS PARA O DESACOPLAMENTO ---
+    int16_t _targetL = 0, _targetR = 0;
+    int16_t _currentL = 0, _currentR = 0;
+    uint32_t _lastControlCycle = 0;
+    const uint32_t CONTROL_INTERVAL_MS = 10; // Ciclo de 100Hz
 };

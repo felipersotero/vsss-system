@@ -17,7 +17,7 @@ from ui.viewer import MyViewer
 import threading
 import queue
 import tkinter 
-from collections import deque
+from collections import deque, defaultdict
 from ui.settingsMenu import *
 
 from tkinter import *
@@ -713,6 +713,33 @@ class HighPrecisionTimer:
         '''
         return self._isRunning
 
+class Benchmark:
+    def __init__(self):
+        self.start_times = {}
+        self.times = defaultdict(list)
+    
+    def tic(self):
+        self.start = time.perf_counter()
+        
+    def toc(self, label="Tempo"):
+        elapsed = (time.perf_counter() - self.start) * 1000
+        self.times[label].append(elapsed)
+        # Removido print para não atrasar processamento
+        return elapsed
+    
+    def get_last(self, label):
+        if label in self.times and self.times[label]:
+            return self.times[label][-1]
+        return 0.0
+    
+    def get_avg(self, label):
+        if label in self.times and self.times[label]:
+            return sum(self.times[label]) / len(self.times[label])
+        return 0.0
+    
+    def reset(self):
+        self.times.clear()
+    
 #========================= /// CLASSE BÁSICA DE EXECUÇÃO // =====================
 '''
  @GNOMIO: Essa estrutura deveria representar de forma simples a forma de captura de imagens, sendo elas tanto por câmera, ou por arquivos. E funcionará de forma a simplificar a parte semâtica do código, contudo, ainda está em fase de estruturar
@@ -737,113 +764,70 @@ class FocusMode:
     MANUAL: int =1 
 
 
-# PertenceAoEmulador
-class Capture:
-    '''
-        Classe responsável por ser o intermédio entre a forma de capturar informações
-        e o emulador.
-    '''
-    def __init__(self, mode: CaptureMode.DEFAULT, useGpu: bool = False): # type: ignore
-        '''
-            Inicializo o objeto informando o modo de captura: DEFAULT, CAM, IMG ou Video.
-            E também informo se vou ou não utilizar GPU (True ou False)
-        '''
-        self.mode = mode
-        self.image = None                               # Representa a imagem que foi capturada
-        self.isCamRunning = False                       # Para o caso de uma câmera de verdade
-        self.frameDelay = 14                            # Taxa de quadro (delay)
-        self._hasGPU = useGpu                           # utiliza a GPU para processar
-        self.cuda = None                                # Objeto para tratar o modo GPU
-        self.idCam = 0                                  # identificador da câmera que será utilizada
-        self.modeCam: FocusMode = FocusMode.AUTO        # ela é inicialmente feita no modo automático
-        self.focusManual = 155                          # aqui eu guardo o valor 
 
-        self._camHasFocusControl = False                # flag que indica se a câmera tem controle de foco
-        self._hasCamera = False                         # Flag interna para avisar que existe uma câmera criada
-        
-        # Endereços para imagem e vídeo
+class Capture:
+    def __init__(self, mode: CaptureMode.DEFAULT, useGpu: bool = False):
+        self.mode = mode
+        self.image = None
+        self.isCamRunning = False
+        self._hasGPU = useGpu
+        self.cuda = None
+        self.idCam = 0
+        self.modeCam: FocusMode = FocusMode.AUTO
+        self.focusManual = 155
+        self._camHasFocusControl = False
+        self._hasCamera = False
         self.imgPath = None
         self.videoPath = None
+        self.CAM = None
 
-        # Usa a câmera
-        self.CAM = None             # Armazena o objeto de captura do OpenCV
+        # --- VARIÁVEIS DE THREAD (Essenciais para corrigir o erro) ---
+        self.latest_frame = None
+        self.lock = threading.Lock()
+        self.running = False
+        self.thread = None
+        # -------------------------------------------------------------
 
-        #Verifica logo se o modo de configuração é o de GPU
         self.GPUMode(self._hasGPU)
 
-    # Mudar o modo de execução
     def setMode(self, mode: CaptureMode):
-        '''
-            Escolhe um modo de execução para captura da câmera.
-            Esse modo pode ser vídeo, camera ou imagem.
-        '''
         self.mode = mode
 
-    # define qual a forma que a câmera irá tratar o foco
     def setModeFocus(self, mode:FocusMode = FocusMode.AUTO):
-        '''
-            Função que seta um modo do controle automático de foco.
-            Ela retorna _True_ se a operação for possível e retorna _False_ em caso
-            que a câmera não suporta esse controle de foco.
-        '''
         if self.mode == CaptureMode.CAM and (self.CAM is not None):
             if mode == FocusMode.AUTO:
                 if not self.CAM.set(cv2.CAP_PROP_AUTOFOCUS, 0):
-                    #print("[CAPTURA]: Câmera não suporta controle de foco")
                     self.modeCam = FocusMode.AUTO
                     self._camHasFocusControl = False
                     return False
-                else: #suporta controle de foco
-                    #print("[CAPTURA]: Câmera configurada para foco automático")
+                else:
                     self.modeCam = mode
                     self._camHasFocusControl = True
-
                     return True
             elif mode == FocusMode.MANUAL:
                 if not self.CAM.set(cv2.CAP_PROP_FOCUS, self.focusManual):
-                    #print("[CAPTURA]: Câmera não suporta controle de foco")
                     self._camHasFocusControl = False
                     return False
-                else: #suporta controle de foco
-                    #print("[CAPTURA]: Câmera configurada para foco automático")
+                else:
                     self.modeCam = mode
                     self._camHasFocusControl = True
                     return True
             else:
-                #print("[CAPTURA]: Erro grave! Variável corrompida")
                 self._camHasFocusControl = False
                 self.modeCam = FocusMode.AUTO
                 return False 
         else:   
-            #print("[CAPTURA]: primeiro coloque no modo câmera!")
             self._camHasFocusControl = False
             self.modeCam = FocusMode.AUTO
             return False
 
-    #define qual o valor atribuído ao foco
     def setFocusManual(self, value:float):
-        '''
-            Seto um valor para o controle por software do foco da câmera
-        '''
         if self.mode == CaptureMode.CAM and self._camHasFocusControl:
-            if self.modeCam == FocusMode.AUTO and (self.CAM is not None):
-                #print("[CAPTURA]: Câmera em modo automático")
-                pass
-            elif self.modeCam == FocusMode.MANUAL and (self.CAM is not None):
+            if self.modeCam == FocusMode.MANUAL and (self.CAM is not None):
                 self.focusManual = np.clip(value, 0, 255)
-                self.CAM.set(cv2.CAP_PROP_FOCUS, self.focusManual)  # Altere este valor para ajustar o foco
-        else:
-            #print("[CAPTURA]: A câmera não tem suporte ao controle, ou não foi configurada para câmera")
-            pass 
-    
-    
-    #Seta a configura para o GPU
+                self.CAM.set(cv2.CAP_PROP_FOCUS, self.focusManual)
+
     def GPUMode(self, useGpu:bool):
-        '''
-            Função responsável por setar um modo da GPU.
-            UseGPU é um booleano que irá dizer se irá ou não utilizar
-            a GPU para agilizar os cálculos, nesse casso, ele carrega as funções pertinentes.
-        '''
         self._hasGPU = useGpu
         if(self._hasGPU):
             self.cuda = cv2.cuda.GpuMat()
@@ -852,152 +836,121 @@ class Capture:
         else:
             self.cuda = None
 
-    # Informar o identificador da câmera
     def setIdCam(self, id):
-        '''
-            Informa o identificador da câmera que será utilizada para o 
-            processamento.
-        '''
         self.idCam = int(id)
-        print("[CAPTURA]: Id da camera:", self.idCam)
+        # Se for mudar de câmera, reseta a anterior primeiro
+        if self.CAM is not None:
+            self.running = False
+            if self.thread is not None:
+                self.thread.join(timeout=1.0)
+            self.CAM.release()
+
         if(self.mode == CaptureMode.CAM):
             try:
                 self.CAM = cv2.VideoCapture(self.idCam)
-
-                #verifica se foi possível criar essa câmera
                 if not self.CAM.isOpened():
-                    print("[CAPTURA]: Ocorreu um erro ao abrir a câmera!")
-                    self.CAM.release()
                     return False
                 else:
                     self._hasCamera = True
-                    print("[CAPTURA]: Criou a câmera:")
+                    self.CAM.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+                    
+                    # Inicia Thread
+                    self.running = True
+                    self.thread = threading.Thread(target=self._update_cam_loop, daemon=True)
+                    self.thread.start()
                     return True
             except:
-                print("[CAPTURA]: Ocorreu um erro em abrir a câmera")
                 return False
-        else:
-            return False
-            
-    # Informar o endereço das imagens e dos vídeos
+        return False
+
+    def _update_cam_loop(self):
+        """ Thread loop para limpar buffer """
+        while self.running and self.CAM is not None and self.CAM.isOpened():
+            ret, frame = self.CAM.read()
+            if ret:
+                with self.lock:
+                    self.latest_frame = frame
+            else:
+                time.sleep(0.01)
+
     def setImagePath(self, pathImg):
-        '''
-        Informo o caminho para coletar a imagem
-        
-        '''
         self.imgPath = pathImg
 
-    # Informar o endereço dos vídeos
     def setVideoPath(self, pathVideo):
-        '''
-            Informo o caminho para coletar o vídeo
-        '''
         self.videoPath = pathVideo
 
-    '''
-    @GNOMIO: essa função "getImage" deve ser utilizada dentro dum loop quando em vídeo
-    '''
-    # Retorna a imagem da captura
     def getImageNoCuda(self):
-        ''' Função responsável por retornar a imagem do modo captura. 
-        Ele funciona dependendo se está ou não utilizando a GPU.
-        '''
-        #print("[CAPTURA]: \nModo:",self.mode, "\n:Id:",self.idCam)
         if(not self._hasGPU):
             if self.mode == CaptureMode.IMG:
-                self.image = cv2.imread(self.imgPath)
+                if self.imgPath:
+                    self.image = cv2.imread(self.imgPath)
                 return self.image
+            
             elif self.mode == CaptureMode.CAM:
-                ret, self.image = self.CAM.read()
-                
-                if ret:
-                    return self.image
-                else:
-                    print("[CAPTURA]: Algum problema em adquirir a imagem")
-                    return self.image
+                # Leitura Thread-Safe instantânea
+                with self.lock:
+                    if self.latest_frame is not None:
+                        self.image = self.latest_frame.copy()
+                return self.image
             else:
-                print("[CAPTURA]: Não está configurado corretamente.")
                 return None
-        else:
-            print("[CAPTURE]: Cuidado, vocÊ configurou para rodar com cuda!")
-            return self.image
+        return None
     
-    #retorna a imagem da captura quando não é com cuda
     def getImageCuda(self):
-        ''' Função responsável por retornar a imagem do modo captura. 
-        Ele funciona dependendo se está ou não utilizando a GPU.
-
-        Ela irá retornar um objeto para manipular a informação direto na GPU,
-        um endereço, que será necessário utilizar o download() no objeto para utiliza-lo
-        na CPU
-        '''
-        #print("[CAPTURA]: \nModo:",self.mode, "\n:Id:",self.idCam)
         if(self._hasGPU):
             if self.mode == CaptureMode.IMG:
                 self.image = cv2.imread(self.imgPath)
                 self.cuda.upload(self.image)
                 return self.cuda
             elif self.mode == CaptureMode.CAM:
-                ret, self.image = self.CAM.read()
-                self.cuda.upload(self.image)
-                if ret:
+                # Para CUDA, ainda precisamos pegar o frame da thread e subir
+                with self.lock:
+                    if self.latest_frame is not None:
+                        self.image = self.latest_frame # Sem copy para ser rápido antes do upload? 
+                        # Melhor fazer copy se houver risco de tearing, mas upload é rápido.
+                
+                if self.image is not None:
+                    self.cuda.upload(self.image)
                     return self.cuda
-                else:
-                    print("[CAPTURA]: falha em recupera o endereço da GPU")
-                    return None
-            else:
-                print("[CAPTURA]: Ocorreu um erro com os valores para a GPU")
                 return None
-        else:
-            print("[CAPTURA]: Não configurado para rodar com CUDA")
-            return None
+        return None
     
-    #Função única do capture
     def getImage(self):
-        '''
-            Recupera a imagem capturada!
-        '''
         if self._hasGPU:
             return self.getImageCuda()
         else:
             return self.getImageNoCuda()
-    # Resetar objeto de captura
-    # Resetar objeto de captura
-    def reset(self):
-        '''
-        Reseta as configurações da captura.
-        '''
-        #print("[CAPTURA]: As informações foram resetadas")
-        self.mode = MODE_DEFAULT    # Modo que representa a imagem
-        self.image = None           # Representa a imagem que foi capturada
-        self.isCamRunning = False   # Para o caso de uma câmera de verdade
-        self.FPS = None             # Taxa de quadro
-        self.idCam = 0 
 
-        # Endereços para imagem e vídeo
+    def reset(self):
+        # 1. Para Thread
+        self.running = False
+        if hasattr(self, 'thread') and self.thread is not None:
+            self.thread.join(timeout=1.0)
+            self.thread = None
+
+        # 2. Reseta Variáveis
+        self.latest_frame = None
+        
+        # ... Seus resets originais ...
+        self.mode = CaptureMode.DEFAULT # Certifique-se que CaptureMode.DEFAULT existe
+        self.image = None
+        self.isCamRunning = False
+        self.idCam = 0 
         self.imgPath = None
         self.videoPath = None
         self._hasGPU = False
+        self._hasCamera = False
+        self._camHasFocusControl = False
 
-        # Fechar a captura da câmera
         if self.CAM is not None:
             self.CAM.release()
+            self.CAM = None
 
-        # Liberar memória da GPU
         if self.cuda is not None:
             self.cuda.release()
 
-        self.modeCam: FocusMode = FocusMode.AUTO        # ela é inicialmente feita no modo automático
-        self.focusManual = 155                          # aqui eu guardo o valor 
-        
-        self._hasCamera = False                         # Flag interna para avisar que existe uma câmera criada
-        self._camHasFocusControl = False                # flag que indica se a câmera tem controle de foco
-
-    # Destruindo o objeto de captura
     def __del__(self):
         self.reset()
-        del self
-
 #classe para gerenciar a thread de captura de dados
 class CameraCaptureThread(threading.Thread):
     '''
@@ -1013,6 +966,12 @@ class CameraCaptureThread(threading.Thread):
         self.deque = deque
         self.daemon = True
         self.menu = settingMenu
+
+        self.latest_frame = None # Variável que guardará sempre o frame mais novo
+        self.lock = threading.Lock() # Segurança para não ler enquanto escreve
+        self.running = False
+        self.thread = None
+
 
     def run(self):
         self._is_running = True

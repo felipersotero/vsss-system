@@ -3,7 +3,7 @@
     coordena threads de visão e comunicação, e mantém o estado global do sistema.
 
     Versão: v3.0.1
-    Última modificação: 14/02/2024
+    Última modificação: 15/11/2025
     Autor: Saulo (update)
 
     Patch Notes v3.0.1:
@@ -98,6 +98,7 @@ class Emulator:
         self.captureThread = None
         self.frame = None
         self.errorCode = 0
+        self.tproc_string = ""
 
         # Classe de controle da comunicação
         self.comm = None
@@ -112,7 +113,7 @@ class Emulator:
         self.CUDAselected = False
 
         # Tempo de comunicação
-        self.comm_send_interval = 0.030 #60 FPS
+        self.comm_send_interval = 0.100 #10 FPS - Ajustado para evitar sobrecarga na serial 115200 bps
 
     # ==============================================================
     #  2.1 Processamento paralelo
@@ -147,7 +148,7 @@ class Emulator:
                 frame = self.capture.getImage() #A câmera tem um FPS de 30, então fica travado a 30 FPS o sistema.
                 if frame is None:
                     # Meu FPS é limitado pela velocidade de aquisição de dados da câmera.
-                    time.sleep(0.002)
+                    time.sleep(0.001)
                     continue
 
                 # --- Processamento de visão ---
@@ -164,6 +165,12 @@ class Emulator:
                 #print("[EMULADOR]: Tempo total em segundos ", self.realTime)
           
                 self.fill_deques_time()
+
+                # Atualizar string de tempos de processamento
+                campo = self.vs.bmk.get_avg("Campo")
+                bola = self.vs.bmk.get_avg("Bola")
+                players = self.vs.bmk.get_avg("Players")
+                self.tproc_string = f"{campo:.2f} / {bola:.2f} / {players:.2f}"
 
                 # --- Atualiza objetos detectados ---
                 self.field = objects.get(ID_Objects.FIELD, self.field)
@@ -206,7 +213,7 @@ class Emulator:
             except Exception as e:
                 print("[VISION THREAD] Erro:", e)
                 traceback.print_exc()
-                time.sleep(0.003)
+                time.sleep(0.001)
                 continue
 
         print("[VISION THREAD] Finalizada.")
@@ -279,7 +286,8 @@ class Emulator:
         Envia comandos, solicita status periódico e processa respostas.
         """
 
-        STATUS_INTERVAL = getattr(self, "comm_send_interval", 3)
+        STATUS_INTERVAL = getattr(self, "comm_send_interval", 3)  # em segundos
+        STATUS_INTERVAL_MS = STATUS_INTERVAL * 1000  # converter para ms
 
         last_status_request = self.Timer.getElapsedTime()
 
@@ -299,29 +307,29 @@ class Emulator:
             # ---------------------------------------------------------
             # 1) Enviar comandos pendentes
             # ---------------------------------------------------------
-            try:
-                while not self.commands_queue.empty():
-                    cmd = self.commands_queue.get_nowait()
-                    self.comm.send_data("espfox/cmd", cmd)
+            if self.comm.is_sending_enabled():
+                try:
+                    while not self.commands_queue.empty():
+                        cmd = self.commands_queue.get_nowait()
+                        self.comm.send_data("espfox/cmd", cmd)
 
+                except Exception as e:
+                    print(f"[Emulator] ❌ Erro ao enviar comando: {e}")
 
-                #Aqui faço o envio dos comandos para testar.
+                # ---------------------------------------------------------
+                # 2) Envio periódico de heartbeat
+                # ---------------------------------------------------------
+                try:
+                    now = self.Timer.getElapsedTime()
+                    if now - last_status_request >= 3000:
+                        self.comm.send_heartbeat()
+                        last_status_request = now
 
-
-            except Exception as e:
-                print(f"[Emulator] ❌ Erro ao enviar comando: {e}")
-
-            # ---------------------------------------------------------
-            # 2) Envio periódico de request_robot_status()
-            # ---------------------------------------------------------
-            try:
-                now = self.Timer.getElapsedTime()
-                if now - last_status_request >= STATUS_INTERVAL:
-                    self.comm.request_robot_status()
-                    last_status_request = now
-
-            except Exception as e:
-                print(f"[Emulator] ❌ Erro ao solicitar status: {e}")
+                except Exception as e:
+                    print(f"[Emulator] ❌ Erro ao enviar heartbeat: {e}")
+            else:
+                # Se envio desabilitado, ainda processar RX
+                pass
 
             # ---------------------------------------------------------
             # 3) Processar RX
@@ -344,7 +352,9 @@ class Emulator:
             # ---------------------------------------------------------
             # 4) Fechamento do loop
             # ---------------------------------------------------------
-            time.sleep(STATUS_INTERVAL)
+            elapsed = self.Timer.getElapsedTime() - loop_start
+            sleep_time = max(0, STATUS_INTERVAL - elapsed / 1000)
+            time.sleep(sleep_time)
             
             loop_end = self.Timer.getElapsedTime()
             self.deque_send.append(loop_end - loop_start)
@@ -987,6 +997,12 @@ class Emulator:
         #Método de RUN para imagem
         result = self.vs.processImg(self.debugFrame, debug=self.DEBUGA)
 
+        # Calcular médias de processamento para exibir
+        campo_avg = self.vs.bmk.get_avg("Campo")
+        bola_avg = self.vs.bmk.get_avg("Bola")
+        players_avg = self.vs.bmk.get_avg("Players")
+        self.tproc_string = f"{campo_avg:.2f} / {bola_avg:.2f} / {players_avg:.2f}"
+
         #retornando valores
         St2i = self.Timer.getElapsedTime()
 
@@ -1031,6 +1047,7 @@ class Emulator:
         #atualizo informações na interface
         self.fill_deques_time()
         self.infoCards.update()
+        self.vs.bmk.reset()
         self.erase_deques_times()
     
     

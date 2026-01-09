@@ -113,21 +113,26 @@ class Field:
     def drawPointsField(self):
         #desenhar extremos
         pts = self.extrems.getPoint()
+        
+        # Desenhar linhas ligando os pontos do campo
+        cv2.line(self.master.frameResult, (int(pts[0][0]), int(pts[0][1])), (int(pts[1][0]), int(pts[1][1])), (255, 0, 0), 2)
+        cv2.line(self.master.frameResult, (int(pts[1][0]), int(pts[1][1])), (int(pts[2][0]), int(pts[2][1])), (255, 0, 0), 2)
+        cv2.line(self.master.frameResult, (int(pts[2][0]), int(pts[2][1])), (int(pts[3][0]), int(pts[3][1])), (255, 0, 0), 2)
+        cv2.line(self.master.frameResult, (int(pts[3][0]), int(pts[3][1])), (int(pts[0][0]), int(pts[0][1])), (255, 0, 0), 2)
 
         for pt in pts:
             if isinstance(pt, Point2D):
                 x,y = pt.getPos()
                 x = int(x)
-                y = int(x)
+                y = int(y)
             else:
                 x,y = pt[0], pt[1]
                 x = int(x)
-                y = int(x)
+                y = int(y)
 
             w,h, _ = self.master.frameResult.shape 
             cv2.circle(self.master.frameResult, (x,y),6,(0,0,255),-1)
 
         #desenhar centro
-        #cv2.circle(self.master.frameResult, self.center,6,(0,0,255),-1)
+        cv2.circle(self.master.frameResult, self.center,6,(0,0,255),-1)
         
-        #desenhar pivots
