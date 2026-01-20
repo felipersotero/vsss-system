@@ -222,7 +222,7 @@ class EConfig:
     def __init__(self, offSetWindow =10, offSetErode = 0 ,dimMatrix = 25, Trashhold = 235
                  ,FieldWidth = 0, FieldHeight=0, allyColor=[0,0,0], enemyColor=[0,0,0],ballColor = [0,0,0]
                  , goalAllyColor1=[0,0,0], goalAllyColor2=[0,0,0], atk1AllyColor1=[0,0,0],atk1AllyColor2=[0,0,0], atk2AllyColor1=[0,0,0]
-                 , atk2AllyColor2=[0,0,0], emulatorMode = MODE_IMAGE, timer=None):
+                 , atk2AllyColor2=[0,0,0], emulatorMode = MODE_IMAGE, timer=None,ip_send = "127.0.0.1", port_send = 0, ip_receive = "127.0.0.1", port_receive = 0):
         '''
             Essas são as variáveis base que o sistema de visão utiliza para realizar seu processamento
             são elas as cores dos times, e offsets do cálculo
@@ -248,13 +248,27 @@ class EConfig:
 
         self.emulatorMode       = emulatorMode          # modo da emulação
         self.timer              = timer                 # objeto timer
-    
+
+        self.ip_send            = ip_send               # IP de envio protobuff
+        self.port_send          = port_send             # Porta de envio protobuff
+        self.ip_receive         = ip_receive            # IP de recebimento protobuff
+        self.port_receive       = port_receive          # Porta de recebimento protobuff
+
     #métodos para setar uma variável não precisando ser na inicialização do objeto
     def setOffSetValues(self, ofsWindow, ofsErode, ofsMatrix, ofsTrashhold):
         self.offSetWindow       = ofsWindow          # valor mínimo da borda da janela
         self.offSetErode        = ofsErode           # quantidade mínima de erosão
         self.dimMatrix          = ofsMatrix             # dimensão da matrix de convolução
         self.Trashhold          = ofsTrashhold             # limiar de binarização do sistema
+
+    def setProtobuffConfigs(self, ip_send = "127.0.0.1", port_send = 0, ip_receive = "127.0.0.1", port_receive = 0):
+        '''
+            Método para setar as configurações de comunicação via protobuff
+        '''
+        self.ip_send        = ip_send
+        self.port_send      = port_send
+        self.ip_receive     = ip_receive
+        self.port_receive   = port_receive
 
     #setando as cores pin
     def setMainColors(self, allyColor, EnemyColor, ballColor):

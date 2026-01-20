@@ -22,7 +22,6 @@ from ui.viewer import MyViewer, WindowsViewer
 from ui.cards import *
 
 from modules.VisionSys.components.objects import *
-from modules.control.control import Control
 from modules.communication.communication import *
 from modules.communication.ui.interface import *
 
@@ -272,13 +271,21 @@ class Emulator:
             self.infoCards.updateInfo("Error Code:", self.errorCode)
             self.infoCards.update()
 
-            self.control.updateObjectsValues(self.field, self.ball, self.allies, self.enemies)
-
         except queue.Empty:
             pass
 
         # Loop contínuo (~60 FPS)
         self.viewer.window.after(16, self.updateUI)
+
+    # ========================================================================================================
+    def InitProtobuff(self):
+        """
+        Método responsável por inicializar a comunicação do protobuff via UDP que é utilizado pelo modo de controle 
+        do sistema.
+        """
+        pass 
+    # ========================================================================================================
+
 
     def communicationThread(self):
         """
@@ -417,7 +424,7 @@ class Emulator:
     def _init_control_system(self):
         """Inicializa o sistema de controle e define conteúdo dos robôs."""
         self.setContentRobots()
-        self.control = Control(self)
+
 
     # ==============================================================
     #  6. Timer de alta precisão
@@ -620,6 +627,14 @@ class Emulator:
         self._focusMode = focus_map.get(self.FocusMode, FocusMode.AUTO)
 
         # -------------------------
+        # 🔹 Comunicação protobuff 
+        # -------------------------
+        self.ip_send = get('I022')
+        self.port_send = int(get('I023'))
+        self.ip_receive = get('I024')
+        self.port_receive = int(get('I025'))
+
+        # -------------------------
         # 🔹 Atualização do card
         # -------------------------
         self.infoCards.updateFuncs()
@@ -659,6 +674,17 @@ class Emulator:
         
         debug_view      : {self.debug_view}
         EXECMode        : {self.EXECMode}
+
+        ComMode         : {self.comMode}
+        SerialPort      : {self.serialPort}
+
+        FocusMode       : {self.FocusMode}
+        FocusValue      : {self.FocusValue}
+
+        CUDAService     : {self.CUDAService}
+        Mode            : {self.Mode}
+
+        =================
         """.encode('utf-8')
 
         print(msg.decode('utf-8', errors='replace'))
@@ -714,7 +740,11 @@ class Emulator:
             atk2AllyColor1=self.player3Colors[0],
             atk2AllyColor2=self.player3Colors[1],
             emulatorMode=self.Mode,
-            timer=self.Timer
+            timer=self.Timer,
+            ip_receive=self.ip_receive,
+            port_receive=self.port_receive,
+            ip_send=self.ip_send,
+            port_send=self.port_send
         )
         self.vs.setConfigEmulator(self.EConfig)
 

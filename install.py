@@ -16,35 +16,69 @@ PACKAGE_MODULE_MAP = {
     "colorama": "colorama",
     "distro": "distro",
     "h11": "h11",
+
+    # Ferramentas de análise / lint (presentes no requirements)
+    "astroid": "astroid",
+    "isort": "isort",
+    "lazy-object-proxy": "lazy_object_proxy",
+    "mccabe": "mccabe",
+    "pylint": "pylint",
+    "six": "six",
+    "toml": "toml",
+    "wrapt": "wrapt",
+
+    # Serialização / comunicação
+    "protobuf": "google.protobuf",
+
+    # HTTP / async
     "httpcore": "httpcore",
     "httpx": "httpx",
     "idna": "idna",
-    "jiter": "jiter",
+    "sniffio": "sniffio",
+
+    # Core numérico / científico
+    "numpy": "numpy",
     "llvmlite": "llvmlite",
+
+    # Templates / utils
     "Mako": "mako",
     "MarkupSafe": "markupsafe",
-    "numpy": "numpy",
+
+    # APIs / SDKs
     "openai": "openai",
-    "paho-mqtt": "paho.mqtt",
-    "pillow": "PIL",
-    "platformdirs": "platformdirs",
+    "jiter": "jiter",
     "pydantic": "pydantic",
     "pydantic_core": "pydantic_core",
-    "pyglet": "pyglet",
-    "pyserial": "serial",
-    "pytools": "pytools",
-    "pytube": "pytube",
-    "pywin32": "win32api",
-    "setuptools": "setuptools",
-    "sniffio": "sniffio",
-    "tk": "tkinter",
-    "tqdm": "tqdm",
-    "ttkthemes": "ttkthemes",
     "typing_extensions": "typing_extensions",
+
+    # Comunicação / IO
+    "paho-mqtt": "paho.mqtt",
+    "pyserial": "serial",
+
+    # Multimídia / GUI
+    "pillow": "PIL",
+    "pyglet": "pyglet",
+    "ttkthemes": "ttkthemes",
+    "tk": "tkinter",  # OBS: tkinter não é instalado via pip
+
+    # Utilidades
+    "platformdirs": "platformdirs",
+    "pytools": "pytools",
+    "tqdm": "tqdm",
     "Unidecode": "unidecode",
-    "WMI": "wmi",
+
+    # Download / mídia
+    "pytube": "pytube",
     "yt-dlp": "yt_dlp",
+
+    # Sistema / Windows
+    "pywin32": "win32api",
+    "WMI": "wmi",
+
+    # Build
+    "setuptools": "setuptools",
 }
+
 
 class InstallerApp(tk.Tk):
     def __init__(self):

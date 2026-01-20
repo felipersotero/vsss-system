@@ -130,8 +130,9 @@ class Field:
                 x = int(x)
                 y = int(y)
 
-            w,h, _ = self.master.frameResult.shape 
-            cv2.circle(self.master.frameResult, (x,y),6,(0,0,255),-1)
+            if self.master.frameResult.shape is not None:
+                w,h, _ = self.master.frameResult.shape 
+                cv2.circle(self.master.frameResult, (x,y),6,(0,0,255),-1)
 
         #desenhar centro
         cv2.circle(self.master.frameResult, self.center,6,(0,0,255),-1)
