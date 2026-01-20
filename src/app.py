@@ -21,7 +21,6 @@ from ui.settingsMenu import settingsMenu
 from ui.viewer import MyViewer, WindowsViewer
 from modules.emulator.emulator import Emulator
 from ui.cards import *
-from modules.control.control import *
 from modules.communication.communication import *
 from modules.VisionSys.components.objects import *
 
@@ -262,6 +261,12 @@ class App:
         self.menu.add_node(ConfigEmulator,'Porta Serial','Porta Serial',value = ' ')
         self.menu.add_node(ConfigEmulator,'CUDA','CUDA', value='False')
         self.menu.add_node(ConfigEmulator,'ExectState','Estado de Execução', value='Parado')
+
+        protobuffConfig = self.menu.add_node(SysVision,'ProtobuffConfig','Configurações Protobuff', value='')
+        self.menu.add_node(protobuffConfig,'I022','IP de Envio', value='127.0.0.1')
+        self.menu.add_node(protobuffConfig,'I023','Porta de Envio', value='54321')
+        self.menu.add_node(protobuffConfig,'I024','IP de Recebimento', value='127.0.0.1')
+        self.menu.add_node(protobuffConfig,'I025','Porta de Recebimento', value='54322')
 
     def save_config(self):
         self.data = self.menu.get_tree_data()

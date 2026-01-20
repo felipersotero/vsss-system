@@ -31,6 +31,8 @@ from modules.VisionSys.components.ball import *
 from modules.VisionSys.components.robot import *
 from modules.VisionSys.components.combination import *
 
+from lib.VSSProtoComm.comm import receiver
+
 import traceback
 
 # ====================== DEFINIÇÕES DAS CLASSES DE OBJETO DO SISTEMA ==================
@@ -280,14 +282,11 @@ class VisionSystem:
         # Variável da identificação de cores
         self.colorTree = TreeColors()
 
-        # Objetos utilizados para estrutura do código.
-        self.struct_ellipse5 = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5,5))
-        self.struct_rect11   = cv2.getStructuringElement(cv2.MORPH_RECT,   (11,11))
-
-        
         #Extrai os dados do objeto de configuração 
         self.toMineData()
 
+
+        # ===========================================================================
         # CACHE
         # [OTIMIZAÇÃO] Cache de estruturas para detect_field
         # Evita recriar matrizes a cada frame
@@ -302,6 +301,11 @@ class VisionSystem:
                 self.fieldP3v, self.fieldP4v
             ], dtype=np.float32)
     
+    
+        # Objetos utilizados para estrutura do código.
+        self.struct_ellipse5 = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5,5))
+        self.struct_rect11   = cv2.getStructuringElement(cv2.MORPH_RECT,   (11,11))
+
         #construir o campo
         self.buildField()
     
@@ -786,6 +790,12 @@ class VisionSystem:
         self.ball_lower_bound = np.array([h - hue_tolerance, max(0, s - saturation_tolerance), max(0, v - value_tolerance)])
         self.ball_upper_bound = np.array([h + hue_tolerance, min(255, s + saturation_tolerance), min(255, v + value_tolerance)])
 
+        #puxando endereços de comunicação protobuff
+        self.iPPbReceive  = self.config.ip_send
+        self.portPbReceive = self.config.port_send
+        self.iPPbSend     = self.config.ip_receive
+        self.portPbSend   = self.config.port_receive
+
         #Setando
         self.setTreeColorDefault()
         # Atribuindo cores a arvore da decisão
@@ -994,6 +1004,90 @@ class VisionSystem:
         }
 
         return objects 
+    
+    def getFrameProtobuff(self):
+        """
+        Retorna os dados do Frame em formato protobuff (common_pb2.Frame).
+        
+        Este método popula a estrutura protobuff com os dados atuais da visão:
+        - Posição e velocidade da bola
+        - Posição e orientação dos robôs aliados (allyTeam → robots_blue)
+        - Posição e orientação dos robôs inimigos (enemyTeam → robots_yellow)
+        
+        Returns:
+            common_pb2.Frame: Frame protobuff preenchido com os dados de visão
+        
+        Nota: Converte de centímetros (cm) para metros (m) conforme necessário.
+              A atribuição de cores é apenas por convenção - as cores reais podem variar.
+        """
+        from lib.VSSProtoComm.comm.protocols import common_pb2
+        
+        frame = common_pb2.Frame()
+        
+        # ====== BOLA ======
+        if self.ball is not None and hasattr(self.ball, 'position_filtered'):
+            try:
+                ball_x_cm, ball_y_cm = self.ball.position_filtered
+                ball_vx, ball_vy = self.ball.velocity_filtered if hasattr(self.ball, 'velocity_filtered') else (0.0, 0.0)
+                
+                # Cria o objeto Ball no frame
+                frame.ball.x = ball_x_cm / 100.0  # cm -> m
+                frame.ball.y = ball_y_cm / 100.0  # cm -> m
+                frame.ball.z = 0.0  # VSS não tem movimento em Z
+                frame.ball.vx = ball_vx / 100.0
+                frame.ball.vy = ball_vy / 100.0
+                frame.ball.vz = 0.0
+            except Exception as e:
+                if self.debug:
+                    print(f"[VS] Erro ao popular bola no protobuff: {e}")
+        
+        # ====== ROBÔS ALIADOS (allyTeam → robots_blue) ======
+        if self.allyTeam is not None and isinstance(self.allyTeam, list):
+            for robot in self.allyTeam:
+                if robot is not None:
+                    try:
+                        robot_x_cm, robot_y_cm = robot.position_filtered
+                        robot_theta = robot.theta_filtered if hasattr(robot, 'theta_filtered') else robot.theta
+                        robot_vx, robot_vy = robot.velocity_filtered if hasattr(robot, 'velocity_filtered') else (0.0, 0.0)
+                        robot_vtheta = robot.omega_filtered if hasattr(robot, 'omega_filtered') else 0.0
+                        
+                        robot_pb = frame.robots_blue.add()
+                        robot_pb.robot_id = int(robot.id)
+                        robot_pb.x = robot_x_cm / 100.0  # cm -> m
+                        robot_pb.y = robot_y_cm / 100.0  # cm -> m
+                        robot_pb.orientation = float(robot_theta)
+                        robot_pb.vx = robot_vx / 100.0
+                        robot_pb.vy = robot_vy / 100.0
+                        robot_pb.vorientation = float(robot_vtheta)
+                    except Exception as e:
+                        if self.debug:
+                            print(f"[VS] Erro ao processar robô aliado no protobuff: {e}")
+                        continue
+        
+        # ====== ROBÔS INIMIGOS (enemyTeam → robots_yellow) ======
+        if self.enemyTeam is not None and isinstance(self.enemyTeam, list):
+            for robot in self.enemyTeam:
+                if robot is not None:
+                    try:
+                        robot_x_cm, robot_y_cm = robot.position_filtered
+                        robot_theta = robot.theta_filtered if hasattr(robot, 'theta_filtered') else robot.theta
+                        robot_vx, robot_vy = robot.velocity_filtered if hasattr(robot, 'velocity_filtered') else (0.0, 0.0)
+                        robot_vtheta = robot.omega_filtered if hasattr(robot, 'omega_filtered') else 0.0
+                        
+                        robot_pb = frame.robots_yellow.add()
+                        robot_pb.robot_id = int(robot.id)
+                        robot_pb.x = robot_x_cm / 100.0  # cm -> m
+                        robot_pb.y = robot_y_cm / 100.0  # cm -> m
+                        robot_pb.orientation = float(robot_theta)
+                        robot_pb.vx = robot_vx / 100.0
+                        robot_pb.vy = robot_vy / 100.0
+                        robot_pb.vorientation = float(robot_vtheta)
+                    except Exception as e:
+                        if self.debug:
+                            print(f"[VS] Erro ao processar robô inimigo no protobuff: {e}")
+                        continue
+        
+        return frame
     
     #===============| Definindo funções básicas|==============================
     #puxando imagem
