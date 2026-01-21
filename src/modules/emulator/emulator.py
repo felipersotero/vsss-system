@@ -25,6 +25,10 @@ from modules.VisionSys.components.objects import *
 from modules.communication.communication import *
 from modules.communication.ui.interface import *
 
+from modules.control.comm.public.state_tx import StatesTransmissor
+from modules.control.comm.public.commands_rx import CommandsReceiver
+from modules.control.comm.protocols import command_pb2 # Importante para tipagem se necessário
+
 import threading
 import queue
 import time
@@ -94,6 +98,9 @@ class Emulator:
         self.clientSerial = None
         self.commands = None
 
+        # Variável interna para controle da comunicação de control
+        self.comm_running = False 
+
         self.captureThread = None
         self.frame = None
         self.errorCode = 0
@@ -125,11 +132,17 @@ class Emulator:
         # Filas separadas — independentes para UI e comunicação
         self.ui_queue = queue.Queue(maxsize=1)
         self.comm_queue = queue.Queue(maxsize=1)
-        self.control_queue = queue.Queue(maxsize=1)
+
+        # filas para controle de envio do UDP
+        self.udp_send_queue = queue.Queue(maxsize=1)    # Visão -> UDP
+        self.udp_recv_queue = queue.Queue(maxsize=1)    # UDP -> Comunicação
 
         # Threads
         self.vision_thread = None
         self.comm_thread = None
+
+        # Thread do monitoramento da UDP
+        self.udp_thread = None 
 
 
     # ==============================================================
@@ -193,6 +206,16 @@ class Emulator:
                     'timestamp': self.realTime
                 }
 
+                # 1 Gera o frame no formato Protobuf usando seu novo método
+                pb_frame = self.vs.getFrameProtobuff()
+                                
+
+                # 2. Envia para a Thread UDP (sem bloquear a visão)
+                try:
+                    self.udp_send_queue.put(pb_frame, block=False)
+                except queue.Full:
+                    pass # Se a fila encheu, descartamos o frame antigo, priorizando o atual
+                        
                 # --- Envia para fila da UI ---
                 if self.ui_queue.full():
                     try:
@@ -285,6 +308,43 @@ class Emulator:
         """
         pass 
     # ========================================================================================================
+    def strategyUDPThread(self):
+        # Configura IPs (Defina self.ip_send/recv no __init__ ou use hardcoded para teste)
+        self.tx = StatesTransmissor(ip=self.ip_send, port=self.port_send)
+        self.rx = CommandsReceiver(ip=self.ip_receive, port=self.port_receive)
+        self.rx.receiver_socket.setblocking(False) 
+
+        print("[UDP THREAD] Iniciada.")
+        while self.comm_running:
+            # 1) --- ENVIAR ESTADO (StateTransmitter) ---
+            try:
+                frame_to_send = self.udp_send_queue.get(timeout=0.005) # Timeout curto
+                self.tx.transmit(frame_to_send)
+            except queue.Empty:
+                pass
+
+            # 2) --- RECEBER COMANDOS (CommandsReceiver) ---
+            try:
+                # O receive_and_convert agora deve retornar o objeto Protobuf 'Commands' cru
+                # ou você adapta o CommandsReceiver para retornar a estrutura desserializada
+                raw_data = self.rx.receiver_socket.recv(1024) 
+                
+                if raw_data:
+                    # Desserializa
+                    cmd_packet = command_pb2.Commands()
+                    cmd_packet.ParseFromString(raw_data)
+                    
+                    # Coloca o PACOTE INTEIRO na fila da comunicação
+                    if not self.udp_recv_queue.full():
+                        self.udp_recv_queue.put(cmd_packet)
+                        
+            except BlockingIOError:
+                pass # Nada chegou
+            except Exception as e:
+                print(f"[UDP Error] {e}")
+
+            # Pequeno sleep para não fritar a CPU nessa thread de I/O
+            time.sleep(0.001)
 
 
     def communicationThread(self):
@@ -292,6 +352,8 @@ class Emulator:
         Thread de comunicação do Emulador.
         Envia comandos, solicita status periódico e processa respostas.
         """
+        # Import necessário para mapear o ID numérico (0,1,2) para o Address do PFOX
+        from modules.communication.protocol.protocolHeader import Address
 
         STATUS_INTERVAL = getattr(self, "comm_send_interval", 3)  # em segundos
         STATUS_INTERVAL_MS = STATUS_INTERVAL * 1000  # converter para ms
@@ -314,30 +376,50 @@ class Emulator:
             # ---------------------------------------------------------
             # 1) Enviar comandos pendentes
             # ---------------------------------------------------------
-            if self.comm.is_sending_enabled():
+            if self.comm and self.comm.is_connected() and self.comm.is_sending_enabled():
                 try:
-                    while not self.commands_queue.empty():
-                        cmd = self.commands_queue.get_nowait()
-                        self.comm.send_data("espfox/cmd", cmd)
+                    # Verifica a fila (se você usou 'udp_recv_queue' antes, ajuste o nome aqui)
+                    while not self.udp_recv_queue.empty():
+                        
+                        # Pega o objeto 'Commands' (Protobuf) que veio da UDP Thread
+                        proto_cmds = self.udp_recv_queue.get_nowait()
+                        
+                        # Verifica se é o objeto esperado (tem o campo robot_commands)
+                        if hasattr(proto_cmds, 'robot_commands'):
+                            for cmd in proto_cmds.robot_commands:
+                                # cmd possui: id, yellowteam, wheel_left, wheel_right
+                                
+                                # Filtro de Time (Opcional: descomente se quiser filtrar por cor)
+                                # if cmd.yellowteam != self.my_team_color_bool: continue
 
+                                # Mapeamento: Protobuf ID (0, 1, 2) -> PFOX Address (ROBOT1, ROBOT2...)
+                                target_id = Address(cmd.id + 1)
+
+                                # Usa sua classe Communication para montar e enviar o pacote PFOX
+                                self.comm.send_speed_command(
+                                    robot_id=target_id,
+                                    left_real=0,   # Sem feedback real por enquanto
+                                    left_des=int(cmd.wheel_left),
+                                    right_real=0,  # Sem feedback real por enquanto
+                                    right_des=int(cmd.wheel_right)
+                                )
+                        
                 except Exception as e:
                     print(f"[Emulator] ❌ Erro ao enviar comando: {e}")
+                    # traceback.print_exc() # Descomente para debug profundo
 
-                # ---------------------------------------------------------
-                # 2) Envio periódico de heartbeat
-                # ---------------------------------------------------------
-                try:
-                    now = self.Timer.getElapsedTime()
-                    if now - last_status_request >= 3000:
-                        self.comm.send_heartbeat()
-                        last_status_request = now
+            # ---------------------------------------------------------
+            # 2) Envio periódico de heartbeat
+            # ---------------------------------------------------------
+            try:
+                now = self.Timer.getElapsedTime()
+                if now - last_status_request >= 3000:
+                    self.comm.send_heartbeat()
+                    last_status_request = now
 
-                except Exception as e:
-                    print(f"[Emulator] ❌ Erro ao enviar heartbeat: {e}")
-            else:
-                # Se envio desabilitado, ainda processar RX
-                pass
-
+            except Exception as e:
+                print(f"[Emulator] ❌ Erro ao enviar heartbeat: {e}")
+            
             # ---------------------------------------------------------
             # 3) Processar RX
             # ---------------------------------------------------------
@@ -347,12 +429,6 @@ class Emulator:
                     if self.DEBUGA:
                         print(f"[Emulator RX] {resp}")
 
-                    if hasattr(self, "control_module") and self.control_module:
-                        try:
-                            self.control_module.update(resp)
-                        except Exception as e2:
-                            print(f"[ControlModule] ❌ Erro no update(): {e2}")
-
             except Exception as e:
                 print(f"[Emulator] ❌ Erro ao processar RX: {e}")
 
@@ -361,21 +437,25 @@ class Emulator:
             # ---------------------------------------------------------
             elapsed = self.Timer.getElapsedTime() - loop_start
             sleep_time = max(0, STATUS_INTERVAL - elapsed / 1000)
-            time.sleep(sleep_time)
+            
+            # Sleep curto para garantir que não trave a thread, mas não consuma 100% CPU
+            # Se STATUS_INTERVAL for muito longo, usamos um sleep menor fixo para manter responsividade
+            if sleep_time > 0.01: 
+                time.sleep(0.01) 
+            else:
+                time.sleep(sleep_time)
             
             loop_end = self.Timer.getElapsedTime()
             self.deque_send.append(loop_end - loop_start)
             
 
         print("[Emulator] 🔴 Communication Thread finalizada")
-
     # ==============================================================
     #  3. Filas, buffers e coleções
     # ==============================================================
     def _init_collections(self):
         """Configura filas e coleções auxiliares usadas no sistema."""
         self.commands_queue = queue.Queue(maxsize=1)
-        self.sent_data_queue = queue.Queue(maxsize=10)
         self.received_data_queue = queue.Queue(maxsize=10)
 
         self.maxDeque = 4
@@ -388,7 +468,6 @@ class Emulator:
         self.deque_proc = deque(maxlen=self.avg_window)
         self.deque_send = deque(maxlen=self.avg_window)
         self.deque_fps  = deque(maxlen=self.avg_window)
-
 
         # Entidades controladas
         self.field = None
@@ -516,6 +595,10 @@ class Emulator:
         # Inicializo a thread de comunicação
         self.comm_thread = threading.Thread(target=self.communicationThread, daemon=True)
         self.comm_thread.start()
+
+        # Inicializo a thread de comunicação com a API de controle
+        self.udp_thread = threading.Thread(target=self.strategyUDPThread, daemon=True)
+        self.udp_thread.start()
 
         # 🔹 ABRE JANELA DE COMUNICAÇÃO (se necessário)
         if self.should_open_comm_window:
@@ -924,10 +1007,16 @@ class Emulator:
             print("[EMULATOR] Aguardando thread de visão encerrar...")
             self.vision_thread.join(timeout=1.0)
 
+        # --- Encerra a thread de comunicação com a API de controle, se ativa ---
+        if hasattr(self, "udp_thread") and self.udp_thread and self.udp_thread.is_alive():
+            print("[EMULATOR] Aguardando thread de comunicação encerrar...")
+            self.udp_thread.join(timeout=1.0)
+
         # --- encerra thread de comunicação ---
         if hasattr(self, "comm_thread") and self.comm_thread and self.comm_thread.is_alive():
             print("[EMULATOR] Aguardando thread de comunicação encerrar...")
             self.comm_thread.join(timeout=1.0)
+
 
         # --- para captura de câmera ---
         try:
