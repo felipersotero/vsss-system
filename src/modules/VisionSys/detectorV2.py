@@ -31,7 +31,7 @@ from modules.VisionSys.components.ball import *
 from modules.VisionSys.components.robot import *
 from modules.VisionSys.components.combination import *
 
-from lib.VSSProtoComm.comm import receiver
+from modules.control.comm.protocols import common_pb2
 
 import traceback
 
@@ -127,10 +127,18 @@ class VisionSystem:
         self.debug:bool   = debug                                  # verifica se o processamento usará ou não o debug
 
         # Coordenada do ponto de origem do novo sistema de coordenadas
-        self.xnv     = 67                    
+        self.xnv     = 67                     
         self.ynv     = 402        
 
-        self.coordOrigin = np.array([67,402])
+        '''
+        @GNOMIO: Caso queira utilizar esses dados no FiraSIM, utilize esses
+        valores abaixo. Eles são do centro exato na imagem virtual (EM PIXELS!)
+        '''
+        #self.xnv = int(10*3+67+(150*3)/2)
+        #self.ynv = int(402 - 130*3/2)
+
+        #self.coordOrigin = np.array([67,402])
+        self.coordOrigin = np.array([self.xnv,self.ynv])
 
         #variáveis de controle de tempo de execução
         self.lastMajorTime = 0 
@@ -401,20 +409,11 @@ class VisionSystem:
             # ===========================
             # AQUI está o segredo da performance. Só gastamos CPU desenhando se alguém for ver.
             if debug:
-                # Agora sim criamos a cópia para desenhar em cima
-                if hasattr(self, 'virtual'):
-                    self.virtualImg = self.virtual.copy()
-
                 self.bmk.tic()
                 self._draw_field_debug()
                 self.bmk.toc("Draw Field Debug")
 
-                #self.colorTree.print_store()
-                
-                # Essa função é a mais pesada visualmente (loops de desenho)
-                self.bmk.tic()
-                self.drawAllRobots()
-                self.bmk.toc("Draw Robots")
+
             # ===========================
             # ATUALIZA TEMPO FINAL
             # ===========================
@@ -1007,88 +1006,103 @@ class VisionSystem:
     
     def getFrameProtobuff(self):
         """
-        Retorna os dados do Frame em formato protobuff (common_pb2.Frame).
-        
-        Este método popula a estrutura protobuff com os dados atuais da visão:
-        - Posição e velocidade da bola
-        - Posição e orientação dos robôs aliados (allyTeam → robots_blue)
-        - Posição e orientação dos robôs inimigos (enemyTeam → robots_yellow)
-        
-        Returns:
-            common_pb2.Frame: Frame protobuff preenchido com os dados de visão
-        
-        Nota: Converte de centímetros (cm) para metros (m) conforme necessário.
-              A atribuição de cores é apenas por convenção - as cores reais podem variar.
+        Gera o pacote Protobuf (Frame) com dados filtrados pelo Kalman.
+        Realiza a conversão de unidades (cm -> m) e de cinemática (Rodas -> Global).
         """
-        from lib.VSSProtoComm.comm.protocols import common_pb2
-        
         frame = common_pb2.Frame()
-        
-        # ====== BOLA ======
-        if self.ball is not None and hasattr(self.ball, 'position_filtered'):
+
+        # =========================================================================
+        # 1. BOLA (Estado: x, y, theta, vx, vy)
+        # =========================================================================
+        if self.ball is not None:
             try:
-                ball_x_cm, ball_y_cm = self.ball.position_filtered
-                ball_vx, ball_vy = self.ball.velocity_filtered if hasattr(self.ball, 'velocity_filtered') else (0.0, 0.0)
+                # --- Posição ---
+                # Prioriza o valor filtrado se disponível
+                if hasattr(self.ball, 'position_filtered') and self.ball.position_filtered is not None:
+                    bx, by = self.ball.position_filtered
+                else:
+                    bx, by = self.ball.position
                 
-                # Cria o objeto Ball no frame
-                frame.ball.x = ball_x_cm / 100.0  # cm -> m
-                frame.ball.y = ball_y_cm / 100.0  # cm -> m
-                frame.ball.z = 0.0  # VSS não tem movimento em Z
-                frame.ball.vx = ball_vx / 100.0
-                frame.ball.vy = ball_vy / 100.0
+                # --- Velocidade ---
+                # Se a bola tem Kalman, o estado já é [vx, vy]
+                bvx, bvy = 0.0, 0.0
+                if hasattr(self.ball, 'velocity_filtered') and self.ball.velocity_filtered is not None:
+                    # Assume que o filtro da bola retorna [vx, vy] diretamente
+                    vel = self.ball.velocity_filtered
+                    bvx, bvy = vel[0], vel[1]
+                
+                # Preenchimento (Convertendo cm -> metros)
+                frame.ball.x = float(bx) / 100.0
+                frame.ball.y = float(by) / 100.0
+                frame.ball.z = 0.0
+                frame.ball.vx = float(bvx) / 100.0
+                frame.ball.vy = float(bvy) / 100.0
                 frame.ball.vz = 0.0
             except Exception as e:
-                if self.debug:
-                    print(f"[VS] Erro ao popular bola no protobuff: {e}")
+                if self.debug: print(f"[VS] Erro Bola Protobuff: {e}")
+
+        # =========================================================================
+        # 2. HELPER: ROBÔS (Estado: x, y, theta, vL, vR, omega)
+        # =========================================================================
+        def fill_robot_proto(source_bot, proto_bot):
+            # --- Posição e Orientação ---
+            # O @property position_filtered já trata se o Kalman está init ou não
+            rx, ry = source_bot.position_filtered
+            r_theta = source_bot.theta_filtered # Radianos
+
+            # --- Velocidade (O Pulo do Gato) ---
+            # O estado do seu Kalman é [x, y, th, vL, vR, w]
+            # O Protobuf quer [vx, vy] (Global)
+            
+            v_wheels = source_bot.velocity_filtered # Retorna np.array([vL, vR])
+            vL = v_wheels[0]
+            vR = v_wheels[1]
+            r_omega = source_bot.omega_filtered
+
+            # Conversão: Cinemática Diferencial -> Velocidade Linear Global
+            # V_linear_robô = (vR + vL) / 2
+            v_lin = (vR + vL) / 2.0
+
+            # Projeção no eixo global (X, Y)
+            r_vx = v_lin * np.cos(r_theta)
+            r_vy = v_lin * np.sin(r_theta)
+
+            # --- Preenchimento do Pacote (cm -> m) ---
+            proto_bot.robot_id = int(source_bot.id.value) if hasattr(source_bot.id, 'value') else int(source_bot.id)
+            proto_bot.x = float(rx) / 100.0
+            proto_bot.y = float(ry) / 100.0
+            proto_bot.orientation = float(r_theta)
+            
+            # Velocidades convertidas
+            proto_bot.vx = float(r_vx) / 100.0
+            proto_bot.vy = float(r_vy) / 100.0
+            proto_bot.vorientation = float(r_omega)
+
+        # =========================================================================
+        # 3. POPULANDO OS ROBÔS
+        # =========================================================================
         
-        # ====== ROBÔS ALIADOS (allyTeam → robots_blue) ======
-        if self.allyTeam is not None and isinstance(self.allyTeam, list):
+        # Time Aliado -> Yellow (Seguindo sua convenção)
+        if self.allyTeam:
             for robot in self.allyTeam:
-                if robot is not None:
+                if robot is not None and robot.detected:
                     try:
-                        robot_x_cm, robot_y_cm = robot.position_filtered
-                        robot_theta = robot.theta_filtered if hasattr(robot, 'theta_filtered') else robot.theta
-                        robot_vx, robot_vy = robot.velocity_filtered if hasattr(robot, 'velocity_filtered') else (0.0, 0.0)
-                        robot_vtheta = robot.omega_filtered if hasattr(robot, 'omega_filtered') else 0.0
-                        
-                        robot_pb = frame.robots_blue.add()
-                        robot_pb.robot_id = int(robot.id)
-                        robot_pb.x = robot_x_cm / 100.0  # cm -> m
-                        robot_pb.y = robot_y_cm / 100.0  # cm -> m
-                        robot_pb.orientation = float(robot_theta)
-                        robot_pb.vx = robot_vx / 100.0
-                        robot_pb.vy = robot_vy / 100.0
-                        robot_pb.vorientation = float(robot_vtheta)
-                    except Exception as e:
-                        if self.debug:
-                            print(f"[VS] Erro ao processar robô aliado no protobuff: {e}")
-                        continue
-        
-        # ====== ROBÔS INIMIGOS (enemyTeam → robots_yellow) ======
-        if self.enemyTeam is not None and isinstance(self.enemyTeam, list):
-            for robot in self.enemyTeam:
-                if robot is not None:
-                    try:
-                        robot_x_cm, robot_y_cm = robot.position_filtered
-                        robot_theta = robot.theta_filtered if hasattr(robot, 'theta_filtered') else robot.theta
-                        robot_vx, robot_vy = robot.velocity_filtered if hasattr(robot, 'velocity_filtered') else (0.0, 0.0)
-                        robot_vtheta = robot.omega_filtered if hasattr(robot, 'omega_filtered') else 0.0
-                        
                         robot_pb = frame.robots_yellow.add()
-                        robot_pb.robot_id = int(robot.id)
-                        robot_pb.x = robot_x_cm / 100.0  # cm -> m
-                        robot_pb.y = robot_y_cm / 100.0  # cm -> m
-                        robot_pb.orientation = float(robot_theta)
-                        robot_pb.vx = robot_vx / 100.0
-                        robot_pb.vy = robot_vy / 100.0
-                        robot_pb.vorientation = float(robot_vtheta)
+                        fill_robot_proto(robot, robot_pb)
                     except Exception as e:
-                        if self.debug:
-                            print(f"[VS] Erro ao processar robô inimigo no protobuff: {e}")
-                        continue
-        
+                        if self.debug: print(f"[VS] Erro Robot Ally ID {robot.id}: {e}")
+
+        # Time Inimigo -> Blue
+        if self.enemyTeam:
+            for robot in self.enemyTeam:
+                if robot is not None and robot.detected:
+                    try:
+                        robot_pb = frame.robots_blue.add()
+                        fill_robot_proto(robot, robot_pb)
+                    except Exception as e:
+                        if self.debug: print(f"[VS] Erro Robot Enemy ID {robot.id}: {e}")
+
         return frame
-    
     #===============| Definindo funções básicas|==============================
     #puxando imagem
     def load_image(self, imgPath):
@@ -1886,7 +1900,7 @@ class VisionSystem:
             yv = int(yv)
             
             #desenhando na imagem virtual
-            cv2.circle(self.virtualImg, (xv, yv), 4, (0, 255,255), -1)
+            cv2.circle(self.virtualImg, (xv, yv), 4, (255, 255,255), -1)
             cv2.putText(self.virtualImg, "B", (int(xv-5),int(yv-rb-10)), cv2.FONT_HERSHEY_SIMPLEX,0.4,(0,255,255), 1)
             cv2.arrowedLine(self.virtualImg, (xv, yv), ((xv + int(self.ball.direction[0])), (yv + int(self.ball.direction[1]))), (0, 255, 255), 2)
         else:

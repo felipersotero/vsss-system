@@ -188,7 +188,7 @@ class CardInfos:
         if variable in self.texts:
             self.texts[variable].set(strValue)
         else:
-            print("Variável não encontrada.")
+            print("[CARD]: Variável não encontrada: [",variable,"]","[",value,"]")
         
     #Atualiza contínuamente as informações acessando o objeto emulador
     def update(self):
