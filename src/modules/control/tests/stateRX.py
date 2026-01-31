@@ -5,8 +5,8 @@ from pathlib import Path
 # --- Bloco de Importação Robusto ---
 try:
     # Tenta importação relativa (caso esteja rodando como módulo)
-    from ..protocols import common_pb2
-    from ..receiver import Receiver
+    from ..comm.protocols import common_pb2
+    from ..comm.receiver import Receiver
 except Exception:
     # Fallback para execução direta (ex: python stateRX.py)
     # Adiciona a raiz 'src' ao path

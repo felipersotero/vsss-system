@@ -6,8 +6,8 @@ from pathlib import Path
 
 # --- Bloco de Importação Robusto ---
 try:
-    from ..protocols import common_pb2
-    from ..transmitter import Transmitter
+    from ..comm.protocols import common_pb2
+    from ..comm.transmitter import Transmitter
 except Exception:
     sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
     from modules.control.comm.protocols import common_pb2

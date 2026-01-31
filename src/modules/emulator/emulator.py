@@ -291,7 +291,6 @@ class Emulator:
             self.infoCards.updateInfo("Envio (ms):", f"{self.avg(self.deque_send):.2f}")
 
             self.infoCards.updateInfo("Timer (s):", f"{self.realTime / 1000:.2f}")
-            self.infoCards.updateInfo("Error Code:", self.errorCode)
             self.infoCards.update()
 
         except queue.Empty:
