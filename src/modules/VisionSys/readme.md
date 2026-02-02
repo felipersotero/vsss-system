@@ -1,5 +1,3 @@
-Com base nas atualizações do código, aqui está o README.md revisado:
-
 # Sistema de Visão VSS (Vision System Soccer) v2.3.2
 
 ## 📋 Visão Geral
