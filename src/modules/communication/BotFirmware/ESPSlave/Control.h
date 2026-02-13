@@ -41,10 +41,9 @@ private:
     unsigned long _lastTime;
 };
 
-// ================= CLASSE MOTOR (L298N - 3 PINOS) =================
+// ================= CLASSE MOTOR (L298N) =================
 class Motor {
 public:
-    // CORREÇÃO: Construtor agora aceita 3 argumentos (IN1, IN2, ENABLE)
     Motor(MotorPins pins);
     
     void begin();
@@ -59,22 +58,23 @@ private:
 // ================= CLASSE ROBOT (Main) =================
 class RobotControl {
 public:
-    /**
-     * @brief Construtor que recebe configurações de hardware e software.
-     */
     RobotControl(MotorPins pinsLeft, MotorPins pinsRight, PIDConfig pidCfg);
 
-    // Inicializa Pinos e PWM
     void begin();
 
     /**
-     * @brief Atualiza o controle dos motores baseado no erro de velocidade.
-     * @param leftReal Velocidade atual lida pelos encoders (Esquerda)
-     * @param leftDes Velocidade desejada (Setpoint Esquerda)
+     * @brief Define se o robô deve usar o PID ou controle direto (PWM).
+     * @param usePID true = Usa PID (Malha Fechada), false = PWM Direto (Malha Aberta)
+     */
+    void setControlMode(bool usePID);
+
+    /**
+     * @brief Atualiza os motores.
+     * Se PID estiver ATIVO: Usa (Des - Real) para calcular erro.
+     * Se PID estiver INATIVO: Usa apenas (Des) como PWM direto e ignora (Real).
      */
     void update(int16_t leftReal, int16_t leftDes, int16_t rightReal, int16_t rightDes);
 
-    // Parada de emergência
     void stop();
 
 private:
@@ -82,4 +82,6 @@ private:
     Motor _motorRight;
     PID _pidLeft;
     PID _pidRight;
+    
+    bool _usePID; // Nova flag de controle
 };

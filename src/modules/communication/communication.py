@@ -277,6 +277,8 @@ class Communication:
         # Flag para controle de envio de informações
         self.sending_enabled = False
 
+        self._pending_acks: Dict[int, float] = {}  # {seq_id: timestamp_envio}
+
 
     # ============================================================
     # SISTEMA DE LOG
@@ -461,6 +463,10 @@ class Communication:
 
     def _process_incoming_data(self, new_bytes: bytes):
         """Processa bytes recebidos, delegando para métodos específicos por tipo."""
+        # --- DEBUG VISUAL (Opcional: Mostra bytes brutos chegando) ---
+        # Útil para saber se o Arduino está enviando algo, mesmo que o protocolo falhe
+        # self._emit_log(f"⚡ RAW: {new_bytes.hex(' ').upper()}")
+        
         with self._rx_lock:
             self._incoming_buffer.extend(new_bytes)
 
@@ -541,46 +547,108 @@ class Communication:
         """Remove byte inválido (lixo)."""
         del self._incoming_buffer[0]
 
-    def _handle_decoded_packet(self, decoded_pkt, used_len):
-        """Lógica auxiliar para processar o pacote já decodificado."""
-        self.stats.total_received += 1
+    def _handle_decoded_packet(self, decoded_pkt: Any, used_len: int):
+        """
+        Trata o pacote já decodificado (PFOXPacket), atualiza stats e
+        distribui para a lógica correta (Status, Ack, RTT).
+        """
+        current_time = time.time()
 
-        # Atualiza status de presença
-        if decoded_pkt.msg_type == MsgType.STATUS:
-            self._update_network_status(decoded_pkt.payload)
+        # RX Real: Incrementa apenas quando um pacote PFOX válido chega
+        with self._stats_lock:
+            self.stats.total_received += 1
+            self.stats.last_activity = current_time
+
+        # --- LOG PARA A INTERFACE ---
+        # Formata: [RX] Source -> PC | Tipo
+        log_msg = f"[RX] {decoded_pkt.src.name} -> PC | {decoded_pkt.msg_type.name}"
         
-        # Se veio de um robô, atualiza o last_seen dele
-        if 1 <= decoded_pkt.src.value <= 3:
+        # Adiciona detalhes do payload se houver (Hexadecimal bonito)
+        if decoded_pkt.payload and len(decoded_pkt.payload) > 0:
+            log_msg += f" | Pay: {decoded_pkt.payload.hex().upper()}"
+            
+        self._emit_log(log_msg)
+
+        # ---------------------------------------------------------------------
+        # 1. ATUALIZAÇÃO DE PRESENÇA (PROVA DE VIDA)
+        # ---------------------------------------------------------------------
+        # Se a mensagem veio de um Robô (R1, R2, R3), independente do tipo (ACK, STATUS, ERRO),
+        # significa que o rádio dele está funcionando. Atualizamos o Watchdog.
+        if decoded_pkt.src.value in [Address.ROBOT1.value, Address.ROBOT2.value, Address.ROBOT3.value]:
             rid = decoded_pkt.src.value
-            self.robot_last_seen[rid] = time.time()
             with self._robot_status_lock:
-                self.robot_status[rid] = "OK"
-                #self._emit_log(f"🔄 Robô {rid} Online (pacote recebido: {decoded_pkt.msg_type.name})")
+                self.robot_last_seen[rid] = current_time
+                if self.robot_status[rid] != "OK":
+                    self._emit_log(f"✅ [RX] Robô {rid} voltou Online (Msg Direta)")
+                    self.robot_status[rid] = "OK"
+
+        # ---------------------------------------------------------------------
+        # 2. TRATAMENTO POR TIPO DE MENSAGEM
+        # ---------------------------------------------------------------------
         
-        # Log e envia para a fila de consumo da aplicação
-        self._log_pfox_packet(decoded_pkt, self._incoming_buffer[:used_len])
-        try:
-            self._rx_queue.put(decoded_pkt, timeout=0.1)  # Timeout para evitar bloqueio
-        except queue.Full:
-            self._emit_log("⚠️ Fila RX cheia, pacote descartado")
+        # --- A. STATUS (0x30) ---
+        if decoded_pkt.msg_type == MsgType.STATUS:
+            # Caso HUB: O Hub envia vetor de presença [StatusR1, StatusR2, StatusR3]
+            if decoded_pkt.src == Address.ESPMAIN:
+                self._update_network_status(decoded_pkt.payload)
+            
+            # Caso Robô: Telemetria (Bateria, Sensores, etc - Implementar decoding futuro)
+            # A presença já foi atualizada no bloco 1 acima.
+            elif decoded_pkt.src != Address.ESPMAIN:
+                pass 
+
+        # --- B. ACK (0x20) - CÁLCULO DE RTT ---
+        elif decoded_pkt.msg_type == MsgType.ACK:
+            # Calcula o tempo de ida e volta baseado no Sequence ID
+            seq_id = decoded_pkt.seq24
+            if seq_id in self._pending_acks:
+                rtt = (current_time - self._pending_acks[seq_id]) * 1000 # ms
+                self._update_stats(is_tx=False, success=True, latency=rtt)
+                # Opcional: Logar latência se for alta
+                # if rtt > 100: self._emit_log(f"⚠️ High Latency: {rtt:.0f}ms")
+                del self._pending_acks[seq_id]
+
+        # --- C. ERROR (0x50) ---
+        elif decoded_pkt.msg_type == MsgType.ERROR:
+             self._emit_log(f"❌ Erro reportado por {decoded_pkt.src.name}")
 
     def _update_network_status(self, payload: bytes):
-        """Atualiza status da rede baseado no payload do pacote STATUS."""
-        with self._robot_status_lock:
-            if len(payload) >= 3:
-                # Assume que payload[0] = status robô 1, payload[1] = robô 2, etc.
-                for i in range(1, 4):
-                    status = "OK" if payload[i-1] == 1 else "FAIL"
-                    if self.robot_status[i] != status:
-                        self.robot_status[i] = status
-                        self._emit_log(f"📡 Status Robô {i}: {status} (via STATUS packet)")
-            else:
-                # Payload vazio ou curto: assume nenhum robô conectado
-                for i in range(1, 4):
-                    if self.robot_status[i] != "FAIL":
-                        self.robot_status[i] = "FAIL"
-                        self._emit_log(f"📡 Status Robô {i}: FAIL (nenhum conectado)")
+        """
+        Processa o relatório de presença enviado pelo HUB (ESPMAIN).
+        Payload esperado: [R1_Status, R2_Status, R3_Status] onde 1=ON, 0=OFF.
+        """
+        # Proteção básica
+        if not payload or len(payload) < 3:
+            return
+
+        current_time = time.time()
         
+        with self._robot_status_lock:
+            # O payload do Hub é posicional: índice 0 = Robô 1, índice 1 = Robô 2...
+            for i in range(1, 4):
+                status_byte = payload[i-1]
+                
+                # Se o Hub diz que o robô está Online (1)
+                if status_byte == 1:
+                    # O PULO DO GATO: Atualizamos 'last_seen' com o tempo ATUAL do PC.
+                    # Isso impede que o método '_check_robot_timeout' (watchdog) 
+                    # marque o robô como FAIL.
+                    self.robot_last_seen[i] = current_time
+                    new_status = "OK"
+                else:
+                    # Se o Hub diz que está Offline, podemos marcar FAIL imediatamente
+                    # ou deixar o watchdog expirar. Vamos confiar no Hub:
+                    new_status = "FAIL"
+
+                # Atualiza a string de status apenas se mudou (para não poluir o log)
+                if self.robot_status[i] != new_status:
+                    self.robot_status[i] = new_status
+                    
+                    if new_status == "OK":
+                        self._emit_log(f"✅ Rede: Robô {i} Online (Confirmado pelo Hub)")
+                    else:
+                        self._emit_log(f"⚠️ Rede: Robô {i} Offline (Confirmado pelo Hub)")
+                        
     def _log_pfox_packet(self, pkt, raw_bytes):
             """Log simplificado para pacotes recebidos (RX)."""
             

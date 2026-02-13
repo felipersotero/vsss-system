@@ -550,7 +550,7 @@ class VisionSystem:
         if self.emulatorMode == MODE_IMAGE:
             self._count = 0
             self.lastMajorTime = 0
-            self.proc(img, self.currentTime, debug)
+            self.proc(img, self.currentTime, debug, force_field_detect=True)
             return self.frameResult
         
         # =========================================================
@@ -599,7 +599,8 @@ class VisionSystem:
         
         #4) Rastreamento rápido (Filtered Detection)
         try:
-            self.filtered_detection(img, self.currentTime, debug)
+            #self.filtered_detection(img, self.currentTime, debug)
+            self.proc(img, self.currentTime, debug, force_field_detect=False)
         except Exception as e:
             if debug: print(f"[VisionSystem] Erro no Tracking: {e}. Reiniciando detecção.")
             
@@ -2032,7 +2033,7 @@ class VisionSystem:
                     y_m = y_m+y1
 
                     #if debug: print(f"  🔴 Inimigo detectado | Raio cor: {rc:.2f}")
-                    if rc >= 0.6 * mainColorRadius:
+                    if rc >= 0.75* mainColorRadius:
                         #Direção do robô nas coordenadas da imagem, apenas transformando corretamente
                         # como as coordenadas da imagem tem y negativo como padrão, inverte o sinal dele
                         direction = np.array([xi,-yi]) - np.array([x_m,-y_m]) 
@@ -2162,12 +2163,12 @@ class VisionSystem:
         if debug:
             self.binaryAllies = binaryAllies
             self.binaryAllTeam = binaryAllTeam
-            print("\n===============================")
-            print(f"🏁 [DEBUG] Resumo da detecção:")
-            print(f"    ▪ Total: {self.playersCount}")
-            print(f"    ▪ Aliados: {self.alliesCount}")
-            print(f"    ▪ Inimigos: {self.enemiesCount}")
-            print("===============================")
+            #print("\n===============================")
+            #print(f"🏁 [DEBUG] Resumo da detecção:")
+            #print(f"    ▪ Total: {self.playersCount}")
+            #print(f"    ▪ Aliados: {self.alliesCount}")
+            #print(f"    ▪ Inimigos: {self.enemiesCount}")
+            #print("===============================")
 
         self._countProcess += 1
 
@@ -2505,7 +2506,7 @@ class VisionSystem:
             winSize = int(18 * self.prop_px_cm)
             half_win = winSize // 2
             playerRadius = (7.5 / 2) * np.sqrt(2) * self.prop_px_cm
-            mainColorRadius = (7.5 / 4) * np.sqrt(5) * self.prop_px_cm
+            mainColorRadius = (7.5 / 4) * np.sqrt(5) * self.prop_px_cm*1.3
 
             # --------------------------------------------------------
             # 2. Loop pelos Candidatos
@@ -2584,7 +2585,7 @@ class VisionSystem:
                 xm_global = xm_win + x1_local + x0
                 ym_global = ym_win + y1_local + y0
 
-                if rc < 0.6 * mainColorRadius:
+                if rc < 0.5 * mainColorRadius:
                     continue
 
                 # Cálculo da Direção: (Centro Robô - Centro Cor)
