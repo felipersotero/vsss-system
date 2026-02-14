@@ -2,7 +2,7 @@
 
 ESPSlave* ESPSlave::instance = nullptr;
 
-// Defina as configurações padrão aqui ou no .h
+// Defina as configurações padrão
 MotorPins leftP = {2, 4, 15};
 MotorPins rightP = {25, 26, 32};
 PIDConfig pidC = {2.0f, 0.5f, 0.1f};
@@ -18,14 +18,20 @@ ESPSlave::ESPSlave(PFOXAddress id, uint8_t* hubAddress)
 }
 
 void ESPSlave::begin() {
-    // Configura o LED como saída e inicia desligado
+    // Configura o LED
     pinMode(LED_PIN, OUTPUT); 
     digitalWrite(LED_PIN, LOW);
 
     WiFi.mode(WIFI_MODE_STA);
     delay(100);
 
+    // Inicializa o controle dos motores
     robotCtrl.begin();
+    
+    // CONFIGURAÇÃO INICIAL DO MODO DE CONTROLE
+    // true = Usa PID (Malha fechada com sensor externo)
+    // false = Usa PWM Direto (Malha aberta, ignora _currentL/R)
+    robotCtrl.setControlMode(false); 
 
     if (esp_now_init() != ESP_OK) {
         Serial.println("[SLAVE] Erro ESP-NOW");
@@ -65,17 +71,18 @@ void ESPSlave::loop() {
     }
 
     // 2. CICLO DE CONTROLE FIXO (100Hz)
-    // Executa o PID a cada 10ms usando os últimos valores salvos
     if (now - _lastControlCycle >= CONTROL_INTERVAL_MS) {
         _lastControlCycle = now;
         
         if (running) {
+            // A mágica acontece aqui dentro do robotCtrl agora:
+            // Se setControlMode(true): Usa _currentL (sensor externo) e _targetL para calcular erro PID.
+            // Se setControlMode(false): Ignora _currentL e usa _targetL direto como força PWM.
             robotCtrl.update(_currentL, _targetL, _currentR, _targetR);
         }
     }
 
-    // 3. LÓGICA DO LED (Indicador de Recebimento)
-    // O LED fica aceso enquanto o tempo atual for menor que o tempo de fim do "blink"
+    // 3. LÓGICA DO LED
     if (now < blinkEndTime) {
         digitalWrite(LED_PIN, HIGH);
     } else {
@@ -83,15 +90,12 @@ void ESPSlave::loop() {
     }
 
     // 4. WATCHDOG DE SEGURANÇA
-    // Se ficar mais de 1 segundo sem receber pacotes, para os motores por segurança
     if (running && (now - lastPacketTime > 1000)) { 
         stopMotors();
     }
 }
 
 void ESPSlave::processPacket(const PFOXPacket& pkt) {
-    // Toda vez que entra aqui, atualizamos o tempo para manter o LED aceso por 20ms
-    // Isso cria o efeito de "piscar" conforme os pacotes chegam
     lastPacketTime = millis();
     blinkEndTime = lastPacketTime + 20; 
 
@@ -100,7 +104,8 @@ void ESPSlave::processPacket(const PFOXPacket& pkt) {
             if (pkt.payload.size() >= 9) {
                 const uint8_t* p = pkt.payload.data();
                 
-                // Apenas guarda os valores para o ciclo de controle do loop()
+                // Recebe dados do Mestre (Sensor Externo + Setpoint)
+                // Se estiver em modo PWM puro, _currentL/_currentR serão ignorados no loop, mas continuamos lendo.
                 _currentL = (int16_t)((p[1] << 8) | p[2]);
                 _targetL  = (int16_t)((p[3] << 8) | p[4]);
                 _currentR = (int16_t)((p[5] << 8) | p[6]);
@@ -112,10 +117,20 @@ void ESPSlave::processPacket(const PFOXPacket& pkt) {
         case PFOXMsgType::CMD_FLOW_CTRL: {
             if (!pkt.payload.empty()) {
                 uint8_t cmd = pkt.payload[0];
+                
+                // Comandos existentes
                 if (cmd == (uint8_t)PFOXFlowType::STOP) {
                     stopMotors();
                 } else if (cmd == (uint8_t)PFOXFlowType::RUN) {
                     running = true;
+                }
+                // --- NOVOS COMANDOS PARA ALTERAR MODO DINAMICAMENTE ---
+                // Você deve definir esses valores no protocolo do Mestre ou usar números mágicos
+                else if (cmd == 0x02) { // Exemplo: 2 = MODO PID ON
+                    robotCtrl.setControlMode(true);
+                } 
+                else if (cmd == 0x03) { // Exemplo: 3 = MODO PID OFF (PWM Direto)
+                    robotCtrl.setControlMode(false);
                 }
             }
             if (pkt.dst == myId) sendAck(pkt);
@@ -130,7 +145,6 @@ void ESPSlave::processPacket(const PFOXPacket& pkt) {
         default: break;
     }
     
-    // Envia confirmação para pacotes direcionados (unicast)
     if (pkt.dst == myId && pkt.type != PFOXMsgType::ACK && 
         pkt.type != PFOXMsgType::STATUS && pkt.type != PFOXMsgType::CMD_FLOW_CTRL) {
         sendAck(pkt);
@@ -148,17 +162,14 @@ void ESPSlave::onDataRecv(const esp_now_recv_info_t *info, const uint8_t *data, 
     if (!instance) return;
     try {
         PFOXPacket pkt(data, (size_t)len);
-        // Filtra se o pacote é para este robô ou para todos (Broadcast)
         if (pkt.dst == instance->myId || pkt.dst == PFOXAddress::BROADCAST) {
             instance->incomingQueue.push(pkt);
         }
-    } catch (...) {
-        // Ignora pacotes malformados
-    }
+    } catch (...) {}
 }
 
 void ESPSlave::onDataSent(const wifi_tx_info_t *info, esp_now_send_status_t status) {
-    // Callback opcional para monitorar sucesso de envio
+    // Callback
 }
 
 void ESPSlave::sendAck(const PFOXPacket& originalPkt) {
@@ -179,7 +190,7 @@ void ESPSlave::sendStatus(uint32_t seq) {
     statusPkt.type = PFOXMsgType::STATUS;
     statusPkt.seq24 = seq;
     
-    // Exemplo: Enviando nível de bateria fixo ou lido de um pino ADC
+    // Envia bateria ou telemetria
     float battery = 12.0f; 
     uint8_t* b = (uint8_t*)&battery;
     statusPkt.payload.insert(statusPkt.payload.end(), b, b + 4);
