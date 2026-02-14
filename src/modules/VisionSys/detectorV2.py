@@ -599,8 +599,8 @@ class VisionSystem:
         
         #4) Rastreamento rápido (Filtered Detection)
         try:
-            #self.filtered_detection(img, self.currentTime, debug)
-            self.proc(img, self.currentTime, debug, force_field_detect=False)
+            self.filtered_detection(img, self.currentTime, debug)
+            #self.proc(img, self.currentTime, debug, force_field_detect=False)
         except Exception as e:
             if debug: print(f"[VisionSystem] Erro no Tracking: {e}. Reiniciando detecção.")
             
@@ -1961,6 +1961,9 @@ class VisionSystem:
         playerRadius = (7.5 / 2) * np.sqrt(2) * self.prop_px_cm
         mainColorRadius = (7.5 / 4) * np.sqrt(5) * self.prop_px_cm
 
+        #print(winSize)
+        #print(img.shape[:2])
+        #print(self.frameOrigin.shape[:2])
         # Flags de controle
         AgoalFlag = Aatk1Flag = Aatk2Flag = False
 
