@@ -39,7 +39,9 @@ class Ball:
         self.velocity = np.array([0.0, 0.0], dtype=float)
         self.omega = 0.0  # Velocidade angular derivada (não observada)
 
-        # --- Kalman: estado [x, y, theta, vx, vy, omega] ---
+        # --- Kalman: estado [x, y, theta, vx, vy] (5D) ---
+        # OBS: omega NÃO faz parte do vetor de estado do filtro (theta é modelado
+        # como constante na transição). self.omega abaixo é apenas derivado/auxiliar.
         self.kalman_initialized = False
         self.kalman_last_time = None
 
@@ -176,11 +178,12 @@ class Ball:
 
     def update_kalman(self, meas_xyz, timestamp):
         """
-        Filtro de Kalman com estado:
-            [x, y, theta, vx, vy, omega]
+        Filtro de Kalman com estado (5D):
+            [x, y, theta, vx, vy]
         Medição:
             [x, y, theta]
-        θ NÃO é observado diretamente, é derivado.
+        θ é modelado como constante na transição (sem omega no estado)
+        e NÃO é observado diretamente — é derivado do movimento.
         """
 
         mx, my, mtheta = meas_xyz.reshape(3,)
@@ -317,7 +320,7 @@ class Ball:
 
         # Impor valores mínimos para impedir estrangulamento
         w_roi = max(w_roi, 12)
-        h_roi = max(w_roi, 14)
+        h_roi = max(h_roi, 14)
         
         # --- 4) Topo-esquerdo ---
         x = int(x_c - w_roi // 2)

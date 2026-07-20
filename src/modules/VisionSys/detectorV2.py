@@ -2,15 +2,14 @@
 # MÓDULO DE FUNÇÕES PARA ALGORÍTMO DE DETECÇÃO VSS (version v3.2)
 #==========================================================================================
 '''
-    @GNOMIO: Sismtea de detecção de objetos VSS (Vision System Soccer) versão 2.2.40    
+    @GNOMIO: Sismtea de detecção de objetos VSS (Vision System Soccer) versão 3.2.13   
     
-    Versão: v3.2.2
-    Última modificação: 22/11/2025
+    Versão: v3.2.13
+    Última modificação: 20/07/2026
     Autor: Saulo (update)
 
-    Patch Notes v3.2.2:
-    - Foi atualizado a função de detecção que utiliza filtro de Kalman
-    - Novo gerenciamento de cores dos jogadores
+    Patch Notes v3.2.13:
+    - Resolvido algumas incongruências no código que estavam afetando a eficiência
 
     Obs: Ainda está numa versão BETA, necessário testes para verificar se está
     corretamente funcionando!!!
@@ -20,9 +19,6 @@
 import cv2
 import numpy as np
 from timer import *
-import threading
-import queue
-import imports
 
 from modules.VisionSys.components.objects import *
 from modules.VisionSys.components.viewcapture import *
@@ -778,17 +774,9 @@ class VisionSystem:
         self.ally_lower_bound, self.ally_upper_bound = self.create_color_bounds(self.allyColor)
         self.enemy_lower_bound, self.enemy_upper_bound = self.create_color_bounds(self.enemyColor)
 
-        #Cor laranja da bola 
-        h = self.ballColor[0]
-        s = self.ballColor[1]
-        v = self.ballColor[2]
-
-        hue_tolerance = 6
-        saturation_tolerance = 50
-        value_tolerance = 50
-
-        self.ball_lower_bound = np.array([h - hue_tolerance, max(0, s - saturation_tolerance), max(0, v - value_tolerance)])
-        self.ball_upper_bound = np.array([h + hue_tolerance, min(255, s + saturation_tolerance), min(255, v + value_tolerance)])
+        #Cor laranja da bola (mesmo tratamento de wrap de Hue, com tolerância menor)
+        self.ball_lower_bound, self.ball_upper_bound = self.create_color_bounds(
+            self.ballColor, hue_tolerance=6, saturation_tolerance=50, value_tolerance=50)
 
         #puxando endereços de comunicação protobuff
         self.iPPbReceive  = self.config.ip_send
@@ -1383,23 +1371,55 @@ class VisionSystem:
         print("====================")
 
     #puxando intervalos de cores
-    def create_color_bounds(self, color_array):
+    def create_color_bounds(self, color_array, hue_tolerance=10,
+                            saturation_tolerance=50, value_tolerance=50):
         '''
             Cria as bandas inferior e superior em HSV por meio de um array
-            que passa a informação em HSV dada pelo usuário
+            que passa a informação em HSV dada pelo usuário.
+
+            O Hue é tratado com wrap circular (módulo 180, padrão do OpenCV): para
+            cores próximas do 0/179 (ex: vermelho) o limite inferior pode ficar MAIOR
+            que o superior, indicando um intervalo que cruza o 0°. Consumidores devem
+            tratar esse caso:
+              - color_in_range() já lida com o wrap (lower[0] > upper[0]).
+              - para cv2.inRange, use self.mask_in_range() (que divide em dois
+                intervalos e faz OR), pois cv2.inRange sozinho não suporta wrap.
         '''
-        h = color_array[0]
-        s = color_array[1]
-        v = color_array[2]
+        h = int(color_array[0]) % 180
+        s = int(color_array[1])
+        v = int(color_array[2])
 
-        hue_tolerance = 10
-        saturation_tolerance = 50
-        value_tolerance = 50
+        low_h = (h - hue_tolerance) % 180
+        high_h = (h + hue_tolerance) % 180
 
-        lower_bound = np.array([h - hue_tolerance, max(0, s - saturation_tolerance), max(0, v - value_tolerance)])
-        upper_bound = np.array([h + hue_tolerance, min(255, s + saturation_tolerance), min(255, v + value_tolerance)])
+        lower_bound = np.array([low_h,  max(0, s - saturation_tolerance), max(0, v - value_tolerance)])
+        upper_bound = np.array([high_h, min(255, s + saturation_tolerance), min(255, v + value_tolerance)])
 
         return lower_bound, upper_bound
+
+    def mask_in_range(self, hsv_img, lower, upper):
+        '''
+            Equivalente a cv2.inRange, mas tratando o wrap circular do Hue.
+            Se lower[0] > upper[0] (intervalo cruza o 0° do matiz), divide em
+            dois sub-intervalos [lower_h..179] e [0..upper_h] e retorna o OR.
+        '''
+        lower = np.asarray(lower)
+        upper = np.asarray(upper)
+
+        if lower[0] <= upper[0]:
+            return cv2.inRange(hsv_img,
+                               lower.astype(np.uint8),
+                               upper.astype(np.uint8))
+
+        # Caso wrap: une [lower_h..179] com [0..upper_h] (S e V inalterados)
+        lower1 = np.array([lower[0], lower[1], lower[2]], dtype=np.uint8)
+        upper1 = np.array([179,      upper[1], upper[2]], dtype=np.uint8)
+        lower2 = np.array([0,        lower[1], lower[2]], dtype=np.uint8)
+        upper2 = np.array([upper[0], upper[1], upper[2]], dtype=np.uint8)
+
+        m1 = cv2.inRange(hsv_img, lower1, upper1)
+        m2 = cv2.inRange(hsv_img, lower2, upper2)
+        return cv2.bitwise_or(m1, m2)
     
 
     #Desenhar circulos na imagem onde estão os jogadores
@@ -1642,8 +1662,9 @@ class VisionSystem:
             return [], None
         
         imageHSV = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
-        binaryImage = cv2.inRange(imageHSV, lower, upper)
-        
+        # mask_in_range trata o wrap circular do Hue (bounds vêm de create_color_bounds)
+        binaryImage = self.mask_in_range(imageHSV, lower, upper)
+
         structuringElement = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
         binaryImage = cv2.morphologyEx(binaryImage, cv2.MORPH_CLOSE, structuringElement)
         binaryImage = cv2.erode(binaryImage, structuringElement, iterations=1)
@@ -1857,10 +1878,10 @@ class VisionSystem:
             print("FIELDREDUCE É NONE")
 
 
-        self.binaryBall = cv2.inRange(imgHSV, self.ball_lower_bound, self.ball_upper_bound)
+        self.binaryBall = self.mask_in_range(imgHSV, self.ball_lower_bound, self.ball_upper_bound)
 
-        #Operações de erosão e fechamento
-        structuringElement = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5)) #(8,8)
+        #Operações de erosão e fechamento (reutiliza elemento estrutural em cache)
+        structuringElement = self.struct_ellipse5
         self.binaryBall = cv2.morphologyEx(self.binaryBall, cv2.MORPH_CLOSE, structuringElement)
         self.binaryBall = cv2.erode(self.binaryBall, structuringElement, iterations=1 )
         
@@ -1947,9 +1968,9 @@ class VisionSystem:
             self.binaryPlayers[y1:y2, x1:x2] = 0
 
 
-        # Filtragem morfológica
-        ellipse5 = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
-        rect11 = cv2.getStructuringElement(cv2.MORPH_RECT, (11, 11))
+        # Filtragem morfológica (reutiliza elementos estruturais em cache)
+        ellipse5 = self.struct_ellipse5
+        rect11 = self.struct_rect11
         self.binaryPlayers = cv2.erode(self.binaryPlayers, ellipse5, iterations=1)
         self.binaryPlayers = cv2.morphologyEx(self.binaryPlayers, cv2.MORPH_CLOSE, rect11)
 
@@ -1999,8 +2020,8 @@ class VisionSystem:
             hsv = imgHSV[y1:y2, x1:x2]
 
             # Máscaras de cor
-            mask_ally = cv2.inRange(hsv, self.ally_lower_bound, self.ally_upper_bound)
-            mask_enemy = cv2.inRange(hsv, self.enemy_lower_bound, self.enemy_upper_bound)
+            mask_ally = self.mask_in_range(hsv, self.ally_lower_bound, self.ally_upper_bound)
+            mask_enemy = self.mask_in_range(hsv, self.enemy_lower_bound, self.enemy_upper_bound)
 
             # Áreas detectadas
             ally_area = cv2.countNonZero(mask_ally)
@@ -2070,7 +2091,9 @@ class VisionSystem:
                         bot.updtPositionImg(xi, yi, ri)
                         bot.setStatus(True)
                         bot.setRadius(rcm)
-                        bot.setColor(colorT=self.allyColor, colorP=Color_p, colorS=Color_s)
+                        # Robô inimigo: cor de time correta é enemyColor (não allyColor),
+                        # senão matches_robot/colorTree buscariam com a cor principal errada.
+                        bot.setColor(colorT=self.enemyColor, colorP=Color_p, colorS=Color_s)
                         self.draw_player_virtual(bot)
                         self.enemiesCount += 1
                         enemies_count +=1
@@ -2204,8 +2227,15 @@ class VisionSystem:
         top_left_real = self.getImageRealIndice((x_cm, y_cm))
         bottom_right_real = self.getImageRealIndice((x_cm + w_cm, y_cm + h_cm))
 
-        tl_x, tl_y = int(top_left_real[0]), int(top_left_real[1])
-        br_x, br_y = int(bottom_right_real[0]), int(bottom_right_real[1])
+        # ATENÇÃO: getPointVirtual/getImageIndice inverte o eixo Y (mundo cm -> pixel)
+        # e a homografia inversa pode rotacionar/espelhar. Portanto NÃO se pode assumir
+        # que "top_left_real" continua sendo o canto superior-esquerdo em pixels.
+        # Usamos min/max dos dois cantos para obter o canto superior-esquerdo real.
+        cx0, cy0 = int(top_left_real[0]), int(top_left_real[1])
+        cx1, cy1 = int(bottom_right_real[0]), int(bottom_right_real[1])
+
+        tl_x, br_x = min(cx0, cx1), max(cx0, cx1)
+        tl_y, br_y = min(cy0, cy1), max(cy0, cy1)
 
         # Ajuste dentro da imagem
         H, W = img_shape[:2]
@@ -2215,8 +2245,8 @@ class VisionSystem:
         br_y = max(0, min(br_y, H))
 
         # Dimensões
-        w_img = max(abs(br_x - tl_x), min_size)
-        h_img = max(abs(br_y - tl_y), min_size)
+        w_img = max(br_x - tl_x, min_size)
+        h_img = max(br_y - tl_y, min_size)
 
         # Limite máximo relativo à imagem
         max_w = int(W * max_ratio)
@@ -2550,8 +2580,8 @@ class VisionSystem:
                 # --------------------------------------------------------
                 # 4. Análise de Cores (Time) dentro de bot_win
                 # --------------------------------------------------------
-                mask_ally = cv2.inRange(hsv_win, self.ally_lower_bound, self.ally_upper_bound)
-                mask_enemy = cv2.inRange(hsv_win, self.enemy_lower_bound, self.enemy_upper_bound)
+                mask_ally = self.mask_in_range(hsv_win, self.ally_lower_bound, self.ally_upper_bound)
+                mask_enemy = self.mask_in_range(hsv_win, self.enemy_lower_bound, self.enemy_upper_bound)
 
                 ally_area = cv2.countNonZero(mask_ally)
                 enemy_area = cv2.countNonZero(mask_enemy)
@@ -2757,8 +2787,8 @@ class VisionSystem:
             hsv_win = cv2.cvtColor(bot_win, cv2.COLOR_BGR2HSV)
 
             # Máscaras de cor
-            mask_ally = cv2.inRange(hsv_win, self.ally_lower_bound, self.ally_upper_bound)
-            mask_enemy = cv2.inRange(hsv_win, self.enemy_lower_bound, self.enemy_upper_bound)
+            mask_ally = self.mask_in_range(hsv_win, self.ally_lower_bound, self.ally_upper_bound)
+            mask_enemy = self.mask_in_range(hsv_win, self.enemy_lower_bound, self.enemy_upper_bound)
 
             ally_area = cv2.countNonZero(mask_ally)
             enemy_area = cv2.countNonZero(mask_enemy)
@@ -2886,7 +2916,7 @@ class VisionSystem:
             # Não precisa recriar wnd, roi_img JÁ É a janela
             hsv = self.imgHSV[y0 : y0 + h0, x0 : x0 + w0]
             
-            mask = cv2.inRange(hsv, self.ball_lower_bound, self.ball_upper_bound)
+            mask = self.mask_in_range(hsv, self.ball_lower_bound, self.ball_upper_bound)
 
             mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, self.struct_ellipse5)
             mask = cv2.erode(mask, self.struct_ellipse5, iterations=1)
@@ -3085,12 +3115,18 @@ class VisionSystem:
                 r_px = int(ball_data.get("img_r", 4))
                 xcm, ycm = float(ball_data["x"]), float(ball_data["y"])
 
-                # Bola geralmente não tem updatePosition complexo igual Robô,
-                # mas mantemos a consistência se houver update:
-                try:
-                    self.ball.update(xcm, ycm, currentTime)
-                except:
+                # Watchdog: se a bola ficou perdida tempo demais, o Kalman foi marcado
+                # para reset. Reinicializa antes de reatualizar para evitar um salto de
+                # inovação a partir de um estado obsoleto.
+                if getattr(self, "ball_kalman_reset_flag", False) or not self.ball.kalman_initialized:
+                    self.ball.reset()
+                    self.ball_kalman_reset_flag = False
+                    # Primeira medição após reset: inicializa o filtro.
                     self.ball.setPosition(xcm, ycm, self.ballRadiusP, currentTime)
+                else:
+                    # updatePosition deriva direção/theta do movimento e alimenta o Kalman
+                    # com o theta derivado (setPosition zeraria direção e theta a cada frame).
+                    self.ball.updatePosition(xcm, ycm, self.ballRadiusP, currentTime)
 
                 self.ball.setImgPosition(xb, yb, r_px)
                 self.ball.detected = True

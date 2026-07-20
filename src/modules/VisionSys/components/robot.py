@@ -26,7 +26,7 @@ class Robot:
     
         # Geometry
         self.radius = float(r)
-        self.objLimit = Circle(self.radius, Point2D(x, y))
+        self.objLimit = Circle(Point2D(x, y), self.radius)
         self.bbox = BorderBox(GeometryType.CIRCLE, self.objLimit)
         self.ObjType = ObjTypeMove.MOVING
         self.objTypeSystem = ObjTypeVision.ROBOT
@@ -157,7 +157,7 @@ class Robot:
             self.viewRect.setDimension(image.shape[1])
 
         # Geometry
-        self.objLimit = Circle(self.radius, Point2D(x, y))
+        self.objLimit = Circle(Point2D(x, y), self.radius)
         self.viewRect.updateViewBot(Point2D(x, y))
         self.updateBbox()
 
@@ -189,7 +189,7 @@ class Robot:
             self.image = image
             self.viewRect.setDimension(image.shape[1])
 
-        self.objLimit = Circle(self.radius, Point2D(x, y))
+        self.objLimit = Circle(Point2D(x, y), self.radius)
         self.updateBbox()
         self.viewRect.updateViewBot(Point2D(x, y))
 
