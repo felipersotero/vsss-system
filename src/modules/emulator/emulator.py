@@ -91,6 +91,11 @@ class Emulator:
         self.cameraIsRunning = False
         self.DEBUGA = False
 
+        # Para processamento do vídeo
+        self.video_active = False      # controla se o loop de vídeo está ativo
+        self.video_paused = False      # indica pausa
+        self.video_thread = None       # thread dedicada ao vídeo
+
         self.thread = None
         self.delay = 17  # ms
 
@@ -148,9 +153,9 @@ class Emulator:
     # ==============================================================
     # Processamento paralelo: thread de visão e loop da UI, comunicação e controle
     # ==============================================================
-    # Thread de captura e processamento das imagens
+    # Thread de captura e processamento das imagens (modo câmera)
     def visionThread(self):
-        """Thread separada que faz captura e processamento de visão."""
+        """Thread separada que faz captura e processamento de visão (modo câmera)."""
         print("[VISION THREAD] Iniciada.")
         while self.cameraIsRunning:
             loop_start = time.time()
@@ -240,12 +245,15 @@ class Emulator:
 
         print("[VISION THREAD] Finalizada.")
 
-    # Apenas para atualizar a UI
+    # Apenas para atualizar a UI (chamada pela thread principal via .after)
     def updateUI(self):
-        """Atualiza a interface com base nas informações da thread de visão."""
-        if not self.cameraIsRunning:
-            print("[UPDATE UI] Encerrado.")
-            self.Timer.stop()
+        """Atualiza a interface com base nas informações das threads (câmera ou vídeo)."""
+        # Se não houver processo ativo (nem câmera, nem vídeo), para o loop
+        if not self.cameraIsRunning and not self.video_active:
+            # Para o timer se estiver rodando
+            if self.Timer.is_running():
+                self.Timer.stop()
+            # Não agenda novamente, encerra o loop
             return
 
         try:
@@ -296,8 +304,9 @@ class Emulator:
         except queue.Empty:
             pass
 
-        # Loop contínuo (~60 FPS)
-        self.viewer.window.after(16, self.updateUI)
+        # Loop contínuo (~60 FPS) enquanto houver processo ativo
+        if self.cameraIsRunning or self.video_active:
+            self.viewer.window.after(16, self.updateUI)
 
     # ========================================================================================================
     def InitProtobuff(self):
@@ -944,14 +953,98 @@ class Emulator:
 
     def _init_video_mode(self):
         print('[EMULADOR] Modo: Vídeo')
-        self.btn_run.pack_forget()
+        # Não escondemos o btn_run, apenas ajustamos seu estado via App.update_control_buttons
+        # Mantemos o btn_stop visível
         self.btn_stop.pack(fill=BOTH, expand=1)
+
         self.capture.reset()
         self.capture.setMode(CaptureMode.VIDEO)
-        self.capture.setVideoPath(self.VideoPath)   # <-- ADICIONE ISTO
-        self.cameraIsRunning = False
+        self.capture.setVideoPath(self.VideoPath)
+
+        self.cameraIsRunning = False   # não usamos o mesmo flag da câmera
+        self.video_active = True
+        self.video_paused = False
         self.delay = 17
-        self.processVideo()
+
+        # Inicia a thread de processamento de vídeo
+        self.video_thread = threading.Thread(target=self.videoProcessingThread, daemon=True)
+        self.video_thread.start()
+
+        # Inicia o loop de atualização da UI (se já não estiver rodando)
+        self.viewer.window.after(0, self.updateUI)
+
+    # ==============================================================
+    # Thread de processamento de vídeo (separada da UI)
+    # ==============================================================
+    def videoProcessingThread(self):
+        """Thread dedicada ao processamento do vídeo."""
+        print("[VIDEO THREAD] Iniciada.")
+        while self.video_active:
+            if self.video_paused:
+                time.sleep(0.05)
+                continue
+
+            loop_start = time.time()
+
+            try:
+                frame = self.capture.getImage()
+                if frame is None:
+                    # Fim do vídeo — podemos reiniciar ou encerrar
+                    print("[VIDEO THREAD] Fim do vídeo.")
+                    self.video_active = False
+                    break
+
+                t_proc_start = time.time()
+                result = self.vs.processImg(frame, self.DEBUGA)
+                objects = self.vs.getObjects()
+                virtual = self.vs.virtualImg
+                t_proc_end = time.time()
+
+                self.frameTime = (t_proc_end - t_proc_start) * 1000.0
+                self.totalTime = (time.time() - loop_start) * 1000.0
+                self.realTime = self.Timer.getElapsedTime() / 1000.0
+
+                self.fill_deques_time()
+
+                # Atualiza objetos detectados
+                self.field = objects.get(ID_Objects.FIELD, self.field)
+                self.ball = objects.get(ID_Objects.BALL, self.ball)
+                self.allies = objects.get(ID_Objects.ALLIES, self.allies)
+                self.enemies = objects.get(ID_Objects.ENEMIES, self.enemies)
+
+                # Prepara dados para a UI
+                data = {
+                    'frame': frame,
+                    'result': result,
+                    'virtual': virtual,
+                    'field': self.field,
+                    'ball': self.ball,
+                    'allies': self.allies,
+                    'enemies': self.enemies,
+                    'vision_time': self.totalTime,
+                    'proc_time': self.frameTime,
+                    'real_time': self.realTime,
+                    'fps': self.FPStime,
+                    'timestamp': self.realTime
+                }
+
+                # Coloca na fila da UI (substitui se cheia)
+                if self.ui_queue.full():
+                    try:
+                        self.ui_queue.get_nowait()
+                    except queue.Empty:
+                        pass
+                self.ui_queue.put_nowait(data)
+
+                # Pequena pausa para evitar uso excessivo de CPU
+                time.sleep(0.001)
+
+            except Exception as e:
+                print("[VIDEO THREAD] Erro:", e)
+                traceback.print_exc()
+                time.sleep(0.01)
+
+        print("[VIDEO THREAD] Finalizada.")
 
     def _handle_camera_error(self):
         """Trata erro de inicialização da câmera."""
@@ -985,10 +1078,13 @@ class Emulator:
         Interrompe toda a execução do emulador, incluindo:
         - Loop da UI (updateUI)
         - Thread de visão (visionThread)
+        - Thread de vídeo (videoThread)
         - Captura de câmera
         - Temporizador (Timer)
         """
         print("[EMULATOR] Encerrando execução...")
+        self.video_active = False
+        self.video_paused = False
 
         # --- Fecha janela de comunicação ---
         if self.comm_debug_window is not None:
@@ -1002,10 +1098,16 @@ class Emulator:
         # --- sinaliza parada global ---
         self.cameraIsRunning = False
 
-        # --- encerra thread de visão, se ativa ---
+        # --- encerra thread de visão (câmera), se ativa ---
         if hasattr(self, "vision_thread") and self.vision_thread and self.vision_thread.is_alive():
             print("[EMULATOR] Aguardando thread de visão encerrar...")
             self.vision_thread.join(timeout=1.0)
+
+        # --- encerra thread de vídeo, se ativa ---
+        if hasattr(self, "video_thread") and self.video_thread and self.video_thread.is_alive():
+            print("[EMULATOR] Aguardando thread de vídeo encerrar...")
+            self.video_thread.join(timeout=1.0)
+            self.video_thread = None
 
         # --- Encerra a thread de comunicação com a API de controle, se ativa ---
         if hasattr(self, "udp_thread") and self.udp_thread and self.udp_thread.is_alive():
@@ -1101,7 +1203,7 @@ class Emulator:
 
 
 
-    # ============================ | Métodos de processamento | ==================
+    # ============================ | Métodos de processamento (imagem estática) | ==================
     # ========== // Trabalhar com um loop apenas // ==============
 
     #================================================================================
@@ -1176,82 +1278,24 @@ class Emulator:
         else:
             viewer.clear()
 
-    #Método para processar o vídeo
-    def processVideo(self):
-        # Encerra o loop se o modo de vídeo foi desativado externamente
-        if not self.VideoPath:
-            return
-
-        St1i = self.Timer.getElapsedTime()
-
-        # Captura o próximo frame do vídeo
-        self.frame = self.capture.getImage()
-
-        # Frame inválido (fim do vídeo ou erro de leitura): reagenda e aguarda
-        if self.frame is None:
-            self.viewer.window.after(self.delay, self.processVideo)
-            return
-
-        self.debugFrame = self.frame.copy()
-
-        # Processamento principal pelo sistema de visão
-        result = self.vs.processImg(self.debugFrame, debug=self.DEBUGA)
-
-        # Médias de benchmark para exibição
-        campo_avg   = self.vs.bmk.get_avg("Campo")
-        bola_avg    = self.vs.bmk.get_avg("Bola")
-        players_avg = self.vs.bmk.get_avg("Players")
-        self.tproc_string = f"{campo_avg:.2f} / {bola_avg:.2f} / {players_avg:.2f}"
-
-        St2i = self.Timer.getElapsedTime()
-
-        # ----- Exibição segura de todas as imagens -----
-        def safe_show(viewer, img):
-            """Exibe a imagem se for válida; caso contrário, limpa o viewer."""
-            if img is not None and isinstance(img, np.ndarray) and img.size > 0:
-                viewer.show(img)
-            else:
-                viewer.clear()
-
-        # Frame original
-        safe_show(self.viewer, self.frame)
-
-        # Imagens de debug
-        if self.DEBUGA:
-            binary_treat, binaryBall, binaryPlayers, binaryTeam = self.vs.getDebugImages()
-            safe_show(self.debugFieldViewer, binary_treat)
-            safe_show(self.debugObjectsViewer, binaryBall)
-            safe_show(self.debugPlayersViewer, binaryPlayers)
-            safe_show(self.debugTeamViewer, binaryTeam)
+    # ==============================================================
+    # Controle de pausa e retomada (para vídeo)
+    # ==============================================================
+    def pause(self):
+        """Pausa o loop de vídeo (se aplicável)."""
+        if self.Mode == MODE_VIDEO_CAM:
+            self.video_paused = True
+            print("[VIDEO] Pausado.")
         else:
-            self.debugFieldViewer.clear()
-            self.debugObjectsViewer.clear()
-            self.debugPlayersViewer.clear()
-            self.debugTeamViewer.clear()
+            # Para outros modos, implementar se necessário (ex.: pausar threads)
+            pass
 
-        # Imagens de resultado
-        safe_show(self.resultViewer, result)
-        safe_show(self.virtualResult, self.vs.virtualImg)
-
-        # Dados de rastreamento
-        self.allies  = self.vs.allyTeam
-        self.enemies = self.vs.enemyTeam
-        self.setContentRobots()
-
-        # Timing — igual ao processImageNew, sem _resetVs() (estado persiste no vídeo)
-        self.totalTime = St2i - St1i
-        self.frameTime = self.totalTime
-        self.realTime  = self.Timer.getElapsedTime() / 1000
-        self.FPStime   = int(1000 / self.totalTime) if self.totalTime > 0 else 0
-
-        # Atualização da interface
-        self.fill_deques_time()
-        self.infoCards.update()
-        self.vs.bmk.reset()
-        self.erase_deques_times()
-
-        # Reagenda o próximo frame
-        self.viewer.window.after(self.delay, self.processVideo)
+    def resume(self):
+        """Retoma o loop de vídeo após pausa."""
+        if self.Mode == MODE_VIDEO_CAM and self.video_paused:
+            self.video_paused = False
+            print("[VIDEO] Retomado.")
+            # A thread continuará naturalmente pois a flag foi desativada
 
     #Adicionar conteúdo dos robÔs
     def setContentRobots(self):

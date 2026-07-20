@@ -187,33 +187,34 @@ class App:
         self.label_run_emulate = Label(self.emulate_frame, text="Estado da Emulação")
         self.label_run_emulate.pack(fill=X, pady=2)
 
-        # Sub-frame para organizar os botões lado a lado confortavelmente
+        # Container para fixar os 3 botões sempre visíveis lado a lado
         self.btn_container = Frame(self.emulate_frame, bg="white")
-        self.btn_container.pack(fill=BOTH, expand=True)
+        self.btn_container.pack(fill=BOTH, expand=True, padx=5, pady=2)
 
         self.btn_run = Button(self.btn_container, text="Executar", bg="darkgray", command=self.init_emulate)
-        self.btn_pause = Button(self.btn_container, text="Pausar", bg="darkgray", command=self.pause_emulate)
-        self.btn_stop = Button(self.btn_container, text="Parar", bg="darkgray", command=self.stop_emulate)
+        self.btn_run.pack(side=LEFT, fill=BOTH, expand=True, padx=2)
 
-        # Inicializa a visualização com base no estado atual (Parado)
+        self.btn_pause = Button(self.btn_container, text="Pausar", bg="darkgray", command=self.pause_emulate)
+        self.btn_pause.pack(side=LEFT, fill=BOTH, expand=True, padx=2)
+
+        self.btn_stop = Button(self.btn_container, text="Parar", bg="darkgray", command=self.stop_emulate)
+        self.btn_stop.pack(side=LEFT, fill=BOTH, expand=True, padx=2)
+
+        # Inicializa as permissões de clique com base no estado "Parado"
         self.update_control_buttons("Parado")
 
     def update_control_buttons(self, state):
-        """Gerencia quais botões aparecem de acordo com o estado e o Modo de Uso (Vídeo)"""
-        # Remove os botões da tela temporariamente para reorganização
-        self.btn_run.pack_forget()
-        self.btn_pause.pack_forget()
-        self.btn_stop.pack_forget()
-
-        # Busca segura do modo selecionado na árvore de menu
+        """Gerencia quais botões podem ser clicados com base no Modo de Uso e Estado"""
+        
+        # Busca dinâmica e segura para saber o modo de uso selecionado na interface
         use_mode = "camera"
         try:
             tree_data = self.menu.get_tree_data()
             def find_mode(data):
                 if isinstance(data, dict):
                     if 'UseMode' in data: return data['UseMode']
-                    for value in data.values():
-                        res = find_mode(value)
+                    for v in data.values():
+                        res = find_mode(v)
                         if res: return res
                 elif isinstance(data, list):
                     for item in data:
@@ -225,22 +226,31 @@ class App:
         except:
             pass
 
-        # Verifica se o modo selecionado corresponde a vídeo
+        is_image_mode = "imagem" in use_mode or "image" in use_mode
         is_video_mode = "video" in use_mode or "vídeo" in use_mode
 
+        # --- REGRA PARA MODO IMAGEM ---
+        if is_image_mode:
+            self.btn_run.config(text="Executar", state=NORMAL)
+            self.btn_pause.config(state=DISABLED)
+            self.btn_stop.config(state=DISABLED)
+            return
+
+        # --- REGRAS PARA MODO VÍDEO OU WEBCAM ---
         if state == "Parado":
-            self.btn_run.config(text="Executar")
-            self.btn_run.pack(side=LEFT, fill=BOTH, expand=True, padx=2)
+            self.btn_run.config(text="Executar", state=NORMAL)
+            self.btn_pause.config(state=DISABLED)
+            self.btn_stop.config(state=DISABLED)
         
         elif state == "Em execução.":
-            if is_video_mode:
-                self.btn_pause.pack(side=LEFT, fill=BOTH, expand=True, padx=2)
-            self.btn_stop.pack(side=LEFT, fill=BOTH, expand=True, padx=2)
+            self.btn_run.config(text="Executar", state=DISABLED) # Bloqueia o executar se já está rodando
+            self.btn_pause.config(state=NORMAL if is_video_mode else DISABLED) # Pausar exclusivo para vídeo
+            self.btn_stop.config(state=NORMAL)
             
         elif state == "Pausado":
-            self.btn_run.config(text="Retomar")
-            self.btn_run.pack(side=LEFT, fill=BOTH, expand=True, padx=2)
-            self.btn_stop.pack(side=LEFT, fill=BOTH, expand=True, padx=2)
+            self.btn_run.config(text="Retomar", state=NORMAL) # Libera o executar (como Retomar)
+            self.btn_pause.config(state=DISABLED)
+            self.btn_stop.config(state=NORMAL)
 
     def widgets_images_frame(self):
         self.tabs = ttk.Notebook(self.images_frame)
@@ -309,7 +319,7 @@ class App:
         self.menu.add_node(ConfigEmulator,'Comunicação','Comunicação', value='nenhuma')
         self.menu.add_node(ConfigEmulator,'Porta Serial','Porta Serial',value = ' ')
         self.menu.add_node(ConfigEmulator,'CUDA','CUDA', value='False')
-        self.menu.add_node(ConfigEmulator,'ExectState','Estado de Execução', value='Parado')
+        self.menu.add_node(ConfigEmulator, 'ExectState', 'Estado de Execução', value='Parado')
 
         protobuffConfig = self.menu.add_node(SysVision,'ProtobuffConfig','Configurações Protobuff', value='')
         self.menu.add_node(protobuffConfig,'I022','IP de Envio', value='127.0.0.1')
@@ -329,10 +339,15 @@ class App:
         self.emulator.load_vars()
         self.menu.save_to_json('config')
 
-        self.emulator.init()
-        self.menu.att_node_id('I020','Em execução.')
+        # Se for modo vídeo e estiver pausado, apenas retoma
+        if self.emulator.Mode == MODE_VIDEO_CAM and self.emulator.video_paused:
+            self.emulator.resume()
+        else:
+            self.emulator.init()
+
+        # Atualiza estado e botões
+        self.menu.att_node_id('I020', 'Em execução.')
         self.menu.save_to_json('config')
-        
         self.update_control_buttons("Em execução.")
 
     def pause_emulate(self):
@@ -446,8 +461,6 @@ class App:
         self.helpMenu.add_command(label='Sequência de uso', command=None)
         self.helpMenu.add_separator()
 
-    #funções do menu para utilizar
-    
 
 if __name__ == "__main__":
     app = App()
