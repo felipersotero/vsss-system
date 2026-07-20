@@ -906,6 +906,14 @@ class Capture:
                     if self.latest_frame is not None:
                         self.image = self.latest_frame.copy()
                 return self.image
+            elif self.mode == CaptureMode.VIDEO:
+                if self.CAM is not None and self.CAM.isOpened():
+                    ret, frame = self.CAM.read()
+                    if ret: # <--- Quando o vídeo acabar, 'ret' será False
+                        self.image = frame
+                        return self.image
+                return None # <--- Vai ficar retornando None direto e não volta pro início
+
             else:
                 return None
         return None
@@ -963,8 +971,18 @@ class Capture:
         if self.cuda is not None:
             self.cuda.release()
 
+    def setVideoPath(self, pathVideo):
+        self.videoPath = pathVideo
+        if self.mode == CaptureMode.VIDEO:
+            if self.CAM is not None:
+                self.CAM.release()
+            self.CAM = cv2.VideoCapture(self.videoPath)
+            if not self.CAM.isOpened():
+                print("[Capture] Erro ao abrir vídeo:", self.videoPath)
+
     def __del__(self):
         self.reset()
+    
 #classe para gerenciar a thread de captura de dados
 class CameraCaptureThread(threading.Thread):
     '''

@@ -92,7 +92,7 @@ class Emulator:
         self.DEBUGA = False
 
         self.thread = None
-        self.delay = 8  # ms
+        self.delay = 17  # ms
 
         self.clientMQTT = None
         self.clientSerial = None
@@ -776,7 +776,7 @@ class Emulator:
         print("[EMULADOR] Configurando variáveis...")
 
         # -----------------------------
-        # 🔹 Inicialização base
+        # Inicialização base
         # -----------------------------
         self.Timer.run()
         self.viewer.config()
@@ -799,7 +799,7 @@ class Emulator:
         self.ballColor = str_to_int_array(self.ballColor)
 
         # -----------------------------
-        # 🔹 Criar e aplicar configuração do emulador
+        # Criar e aplicar configuração do emulador
         # -----------------------------
         #Reseto as configurações do sistema de visão
         self.vs._resetVs()
@@ -831,7 +831,7 @@ class Emulator:
         self.vs.setConfigEmulator(self.EConfig)
 
         # -----------------------------
-        # 🔹 Inicialização conforme o modo
+        # Inicialização conforme o modo
         # -----------------------------
         if self.Mode == MODE_USB_CAM:
             self._init_usb_mode()
@@ -948,8 +948,9 @@ class Emulator:
         self.btn_stop.pack(fill=BOTH, expand=1)
         self.capture.reset()
         self.capture.setMode(CaptureMode.VIDEO)
+        self.capture.setVideoPath(self.VideoPath)   # <-- ADICIONE ISTO
         self.cameraIsRunning = False
-        self.delay = 14
+        self.delay = 17
         self.processVideo()
 
     def _handle_camera_error(self):
@@ -1169,22 +1170,88 @@ class Emulator:
         self.erase_deques_times()
     
     
+    def _safe_show(self, viewer, image):
+        if image is not None and isinstance(image, np.ndarray) and image.size > 0:
+            viewer.show(image)
+        else:
+            viewer.clear()
 
     #Método para processar o vídeo
     def processVideo(self):
-        print(self.VideoPath)
-        print("[EMULADOR] Processando vídeo")
+        # Encerra o loop se o modo de vídeo foi desativado externamente
+        if not self.VideoPath:
+            return
 
-        self.capture.setMode(CaptureMode.DEFAULT)
+        St1i = self.Timer.getElapsedTime()
+
+        # Captura o próximo frame do vídeo
         self.frame = self.capture.getImage()
 
-        #if ret:
-        #    self.call_detection_system(self.sent_data_queue, self.received_data_queue)
+        # Frame inválido (fim do vídeo ou erro de leitura): reagenda e aguarda
+        if self.frame is None:
+            self.viewer.window.after(self.delay, self.processVideo)
+            return
 
-        #self.viewer.window.after(self.delay, self.processVideo)
+        self.debugFrame = self.frame.copy()
 
-        #atualizo informações na interface
+        # Processamento principal pelo sistema de visão
+        result = self.vs.processImg(self.debugFrame, debug=self.DEBUGA)
+
+        # Médias de benchmark para exibição
+        campo_avg   = self.vs.bmk.get_avg("Campo")
+        bola_avg    = self.vs.bmk.get_avg("Bola")
+        players_avg = self.vs.bmk.get_avg("Players")
+        self.tproc_string = f"{campo_avg:.2f} / {bola_avg:.2f} / {players_avg:.2f}"
+
+        St2i = self.Timer.getElapsedTime()
+
+        # ----- Exibição segura de todas as imagens -----
+        def safe_show(viewer, img):
+            """Exibe a imagem se for válida; caso contrário, limpa o viewer."""
+            if img is not None and isinstance(img, np.ndarray) and img.size > 0:
+                viewer.show(img)
+            else:
+                viewer.clear()
+
+        # Frame original
+        safe_show(self.viewer, self.frame)
+
+        # Imagens de debug
+        if self.DEBUGA:
+            binary_treat, binaryBall, binaryPlayers, binaryTeam = self.vs.getDebugImages()
+            safe_show(self.debugFieldViewer, binary_treat)
+            safe_show(self.debugObjectsViewer, binaryBall)
+            safe_show(self.debugPlayersViewer, binaryPlayers)
+            safe_show(self.debugTeamViewer, binaryTeam)
+        else:
+            self.debugFieldViewer.clear()
+            self.debugObjectsViewer.clear()
+            self.debugPlayersViewer.clear()
+            self.debugTeamViewer.clear()
+
+        # Imagens de resultado
+        safe_show(self.resultViewer, result)
+        safe_show(self.virtualResult, self.vs.virtualImg)
+
+        # Dados de rastreamento
+        self.allies  = self.vs.allyTeam
+        self.enemies = self.vs.enemyTeam
+        self.setContentRobots()
+
+        # Timing — igual ao processImageNew, sem _resetVs() (estado persiste no vídeo)
+        self.totalTime = St2i - St1i
+        self.frameTime = self.totalTime
+        self.realTime  = self.Timer.getElapsedTime() / 1000
+        self.FPStime   = int(1000 / self.totalTime) if self.totalTime > 0 else 0
+
+        # Atualização da interface
+        self.fill_deques_time()
         self.infoCards.update()
+        self.vs.bmk.reset()
+        self.erase_deques_times()
+
+        # Reagenda o próximo frame
+        self.viewer.window.after(self.delay, self.processVideo)
 
     #Adicionar conteúdo dos robÔs
     def setContentRobots(self):

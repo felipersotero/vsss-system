@@ -184,14 +184,63 @@ class App:
         self.save_button.place(relx=0.3, rely=0.90, relwidth=0.4, relheight=0.05)
 
     def widgets_emulate_frame(self):
-        self.label_run_emulate = Label(self.emulate_frame,text="Estado da Emulação")
-        self.label_run_emulate.pack(fill=BOTH, expand=1)
+        self.label_run_emulate = Label(self.emulate_frame, text="Estado da Emulação")
+        self.label_run_emulate.pack(fill=X, pady=2)
 
-        self.btn_run = Button(self.emulate_frame, text="Executar", width=2,height=1,bg="darkgray", command=self.init_emulate)
-        self.btn_run.pack(fill=BOTH, expand=1)
+        # Sub-frame para organizar os botões lado a lado confortavelmente
+        self.btn_container = Frame(self.emulate_frame, bg="white")
+        self.btn_container.pack(fill=BOTH, expand=True)
 
-        self.btn_stop= Button(self.emulate_frame, text="Parar", width=2,height=1,bg="darkgray", command=self.stop_emulate)
+        self.btn_run = Button(self.btn_container, text="Executar", bg="darkgray", command=self.init_emulate)
+        self.btn_pause = Button(self.btn_container, text="Pausar", bg="darkgray", command=self.pause_emulate)
+        self.btn_stop = Button(self.btn_container, text="Parar", bg="darkgray", command=self.stop_emulate)
+
+        # Inicializa a visualização com base no estado atual (Parado)
+        self.update_control_buttons("Parado")
+
+    def update_control_buttons(self, state):
+        """Gerencia quais botões aparecem de acordo com o estado e o Modo de Uso (Vídeo)"""
+        # Remove os botões da tela temporariamente para reorganização
+        self.btn_run.pack_forget()
+        self.btn_pause.pack_forget()
         self.btn_stop.pack_forget()
+
+        # Busca segura do modo selecionado na árvore de menu
+        use_mode = "camera"
+        try:
+            tree_data = self.menu.get_tree_data()
+            def find_mode(data):
+                if isinstance(data, dict):
+                    if 'UseMode' in data: return data['UseMode']
+                    for value in data.values():
+                        res = find_mode(value)
+                        if res: return res
+                elif isinstance(data, list):
+                    for item in data:
+                        res = find_mode(item)
+                        if res: return res
+                return None
+            found = find_mode(tree_data)
+            if found: use_mode = str(found).lower()
+        except:
+            pass
+
+        # Verifica se o modo selecionado corresponde a vídeo
+        is_video_mode = "video" in use_mode or "vídeo" in use_mode
+
+        if state == "Parado":
+            self.btn_run.config(text="Executar")
+            self.btn_run.pack(side=LEFT, fill=BOTH, expand=True, padx=2)
+        
+        elif state == "Em execução.":
+            if is_video_mode:
+                self.btn_pause.pack(side=LEFT, fill=BOTH, expand=True, padx=2)
+            self.btn_stop.pack(side=LEFT, fill=BOTH, expand=True, padx=2)
+            
+        elif state == "Pausado":
+            self.btn_run.config(text="Retomar")
+            self.btn_run.pack(side=LEFT, fill=BOTH, expand=True, padx=2)
+            self.btn_stop.pack(side=LEFT, fill=BOTH, expand=True, padx=2)
 
     def widgets_images_frame(self):
         self.tabs = ttk.Notebook(self.images_frame)
@@ -276,23 +325,34 @@ class App:
         self.emulator.load_vars()
 
     def init_emulate(self):
-        print("\n[APP] Emulação Iniciada")
+        print("\n[APP] Emulação Iniciada/Retomada")
         self.emulator.load_vars()
-        #self.emulator.show_variables()
-        
         self.menu.save_to_json('config')
 
         self.emulator.init()
         self.menu.att_node_id('I020','Em execução.')
         self.menu.save_to_json('config')
+        
+        self.update_control_buttons("Em execução.")
+
+    def pause_emulate(self):
+        print("\n[APP] Emulação Pausada")
+        if hasattr(self.emulator, 'pause'):
+            self.emulator.pause()
+        else:
+            print("[AVISO] Método 'pause' não implementado na classe Emulator do backend.")
+            
+        self.menu.att_node_id('I020','Pausado')
+        self.menu.save_to_json('config')
+        
+        self.update_control_buttons("Pausado")
 
     def stop_emulate(self): 
         self.emulator.stop()
-        self.btn_stop.pack_forget()
-        self.btn_run.pack(fill=BOTH, expand=1)
-        
         self.menu.att_node_id('I020','Parado')
         self.menu.save_to_json('config')
+        
+        self.update_control_buttons("Parado")
 
     #pegar as informações da tela
     def get_screen_resolution(self):

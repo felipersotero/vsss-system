@@ -8,6 +8,10 @@ import threading
 import platform
 
 # Pacotes e módulos correspondentes
+REQUIREMENTS_FILE = "src/data/requirements.txt"
+
+INSTALATOR_SCRIPT = "install.py"
+
 PACKAGE_MODULE_MAP = {
     "annotated-types": "annotated_types",
     "anyio": "anyio",
