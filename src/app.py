@@ -345,10 +345,16 @@ class App:
         else:
             self.emulator.init()
 
-        # Atualiza estado e botões
-        self.menu.att_node_id('I020', 'Em execução.')
-        self.menu.save_to_json('config')
-        self.update_control_buttons("Em execução.")
+        # ATUALIZAÇÃO: Só força "Em execução" se não for modo imagem
+        if self.emulator.Mode != MODE_IMAGE:  # MODE_IMAGE deve estar importado (ex: de imports)
+            self.menu.att_node_id('I020', 'Em execução.')
+            self.menu.save_to_json('config')
+            self.update_control_buttons("Em execução.")
+        else:
+            # Para modo imagem, o estado já foi definido como "Parado" pelo processImageNew
+            # Garantimos que os botões estejam no estado correto (já foi chamado lá)
+            # Mas se não foi, chamamos aqui também
+            self.update_control_buttons("Parado")
 
     def pause_emulate(self):
         print("\n[APP] Emulação Pausada")

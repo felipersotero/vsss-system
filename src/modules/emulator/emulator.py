@@ -77,6 +77,7 @@ class Emulator:
 
         self.IdCap = App.IdFrame
         self.btn_run = App.btn_run
+        self.btn_pause = App.btn_pause
         self.btn_stop = App.btn_stop
 
         # Salvando instância da aplicação original
@@ -170,8 +171,8 @@ class Emulator:
 
                 # --- Processamento de visão ---
                 t_proc_start = time.time()
-                result = self.vs.processImg(frame, self.DEBUGA)
-                objects = self.vs.getObjects()
+                result = self.vs.ProcessImg(frame, self.DEBUGA)
+                objects = self.vs.GetObjects()
                 virtual = self.vs.virtualImg
                 t_proc_end = time.time()
 
@@ -212,7 +213,7 @@ class Emulator:
                 }
 
                 # 1 Gera o frame no formato Protobuf usando seu novo método
-                pb_frame = self.vs.getFrameProtobuff()
+                pb_frame = self.vs.GetFrameProtobuff()
                                 
 
                 # 2. Envia para a Thread UDP (sem bloquear a visão)
@@ -250,10 +251,7 @@ class Emulator:
         """Atualiza a interface com base nas informações das threads (câmera ou vídeo)."""
         # Se não houver processo ativo (nem câmera, nem vídeo), para o loop
         if not self.cameraIsRunning and not self.video_active:
-            # Para o timer se estiver rodando
-            if self.Timer.is_running():
-                self.Timer.stop()
-            # Não agenda novamente, encerra o loop
+            self.Timer.stop()
             return
 
         try:
@@ -270,25 +268,44 @@ class Emulator:
             self.realTime = data['real_time']
             self.FPStime = data['fps']
 
-            # --- Exibição segura (Tkinter thread principal) ---
+            # --- Exibição segura ---
             if frame is not None:
                 self.viewer.show(frame)
             if result is not None:
-                self.resultViewer.show(result)
-            virtual = data.get('virtual', None)
+                # Garantir que result seja exibível
+                try:
+                    self.resultViewer.show(result)
+                except Exception as e:
+                    print(f"[UPDATE UI] Erro ao exibir result: {e}")
+            else:
+                # Se result for None, limpar a aba
+                self.resultViewer.clear()
+
             if virtual is not None:
                 self.virtualResult.show(virtual)
 
-
-            # Atualiza debug
+            # ============================================================
+            # CORREÇÃO: Exibição de todas as imagens de debug
+            # ============================================================
             if self.DEBUGA:
                 try:
-                    imgs = self.vs.getDebugImages()
-                    if imgs and len(imgs) > 0 and imgs[0] is not None:
-                        self.debugFieldViewer.show(imgs[0])
+                    imgs = self.vs.GetDebugImages()
+                    if imgs and len(imgs) >= 4:
+                        self.debugFieldViewer.show(imgs[0])      # Debug campo
+                        self.debugObjectsViewer.show(imgs[1])    # Debug bola
+                        self.debugPlayersViewer.show(imgs[2])    # Debug jogadores
+                        self.debugTeamViewer.show(imgs[3])       # Debug time
                 except Exception:
                     pass
+            else:
+                # Limpa todas as abas de debug quando desativado
+                self.debugFieldViewer.clear()
+                self.debugObjectsViewer.clear()
+                self.debugPlayersViewer.clear()
+                self.debugTeamViewer.clear()
 
+            self.setContentRobots()
+            
             # --- Atualiza UI (info cards e controle) ---
             avg_proc = self.avg(self.deque_proc)
             self.FPStime = int(1000/avg_proc) if avg_proc > 0 else 0
@@ -297,8 +314,9 @@ class Emulator:
             self.infoCards.updateInfo("Vision. (ms):", f"{avg_proc:.2f}")
             self.infoCards.updateInfo("Proc. (ms):", f"{self.avg(self.deque_proc):.2f}")
             self.infoCards.updateInfo("Envio (ms):", f"{self.avg(self.deque_send):.2f}")
-
             self.infoCards.updateInfo("Timer (s):", f"{self.realTime / 1000:.2f}")
+            self.infoCards.updateInfo("(F/B/P).(ms):", self.tproc_string)   # ← descomentado
+
             self.infoCards.update()
 
         except queue.Empty:
@@ -306,8 +324,8 @@ class Emulator:
 
         # Loop contínuo (~60 FPS) enquanto houver processo ativo
         if self.cameraIsRunning or self.video_active:
-            self.viewer.window.after(16, self.updateUI)
-
+            self.viewer.window.after(self.delay, self.updateUI)
+            
     # ========================================================================================================
     def InitProtobuff(self):
         """
@@ -782,7 +800,28 @@ class Emulator:
 
     # Método para inicializar o processo utilizar o sistema de visão os resultados
     def init(self):
-        print("[EMULADOR] Configurando variáveis...")
+        print("[EMULADOR] Resetando estado anterior e configurando variáveis...")
+
+        # 1. Reset completo do Vision System
+        self.vs.ResetVs()
+        if hasattr(self.vs, 'bmk'):
+            self.vs.bmk.reset()
+
+        # 2. Reset das entidades retidas no Emulador
+        self.field = None
+        self.ball = None
+        self.allies = [None, None, None]
+        self.enemies = [None, None, None]
+        self.tproc_string = ""
+        self.erase_deques_times()
+
+        # 3. Esvaziar todas as filas concorrentes para não processar frames antigos
+        for q in [self.ui_queue, self.comm_queue, self.udp_send_queue, self.udp_recv_queue, self.output_queue]:
+            while not q.empty():
+                try:
+                    q.get_nowait()
+                except queue.Empty:
+                    break
 
         # -----------------------------
         # Inicialização base
@@ -810,10 +849,6 @@ class Emulator:
         # -----------------------------
         # Criar e aplicar configuração do emulador
         # -----------------------------
-        #Reseto as configurações do sistema de visão
-        self.vs._resetVs()
-
-        #Recarrego as novas
         self.EConfig = EConfig(
             offSetWindow=self.OffSetBord,
             offSetErode=self.OffSetErode,
@@ -837,14 +872,13 @@ class Emulator:
             ip_send=self.ip_send,
             port_send=self.port_send
         )
-        self.vs.setConfigEmulator(self.EConfig)
+        self.vs.SetConfigEmulator(self.EConfig)
 
         # -----------------------------
         # Inicialização conforme o modo
         # -----------------------------
         if self.Mode == MODE_USB_CAM:
             self._init_usb_mode()
-
 
         elif self.Mode == MODE_IMAGE:
             self._init_image_mode()
@@ -859,10 +893,6 @@ class Emulator:
     #==== Métodos auxiliares da inicialização ====
     def _init_usb_mode(self):
         print('[EMULADOR] Modo: Câmera USB')
-
-        # Configura botões da UI
-        self.btn_run.pack_forget()
-        self.btn_stop.pack(fill=BOTH, expand=1)
 
         # Reset da captura
         self.capture.reset()
@@ -947,104 +977,149 @@ class Emulator:
         self.cameraIsRunning = False
         self.capture.reset()
         self.capture.setMode(CaptureMode.IMG)
-        self.btn_stop.pack_forget()
-        self.btn_run.pack(fill=BOTH, expand=1)
         self.processImageNew()
 
     def _init_video_mode(self):
         print('[EMULADOR] Modo: Vídeo')
-        # Não escondemos o btn_run, apenas ajustamos seu estado via App.update_control_buttons
-        # Mantemos o btn_stop visível
         self.btn_stop.pack(fill=BOTH, expand=1)
 
         self.capture.reset()
         self.capture.setMode(CaptureMode.VIDEO)
         self.capture.setVideoPath(self.VideoPath)
 
-        self.cameraIsRunning = False   # não usamos o mesmo flag da câmera
+        try:
+            # Puxa o FPS da câmera/vídeo
+            fps = self.capture.CAM.get(cv2.CAP_PROP_FPS)
+            if fps is None or fps <= 0:
+                fps = 30  # fallback
+
+            self.delay = int(1000 / fps)
+            
+            # Puxa o total de frames e a duração do vídeo
+            self.total_frames = int(self.capture.CAM.get(cv2.CAP_PROP_FRAME_COUNT))
+            self.video_duration = (self.total_frames / fps) if fps > 0 else 0.0
+
+            print(f"[VIDEO] FPS: {fps:.2f} | Delay: {self.delay} ms")
+            print(f"[VIDEO] Total de frames: {self.total_frames} | Duração estimada: {self.video_duration:.2f} s")
+
+        except Exception as e:
+            print(f"[VIDEO] Não foi possível obter dados do vídeo, usando padrões. Erro: {e}")
+            self.delay = 33  # ~30 FPS
+            self.total_frames = 0
+            self.video_duration = 0.0
+
+        self.cameraIsRunning = False
         self.video_active = True
         self.video_paused = False
-        self.delay = 17
 
         # Inicia a thread de processamento de vídeo
         self.video_thread = threading.Thread(target=self.videoProcessingThread, daemon=True)
         self.video_thread.start()
 
-        # Inicia o loop de atualização da UI (se já não estiver rodando)
+        # Inicia o loop de atualização da UI
         self.viewer.window.after(0, self.updateUI)
 
     # ==============================================================
     # Thread de processamento de vídeo (separada da UI)
     # ==============================================================
     def videoProcessingThread(self):
-        """Thread dedicada ao processamento do vídeo."""
         print("[VIDEO THREAD] Iniciada.")
-        while self.video_active:
-            if self.video_paused:
-                time.sleep(0.05)
-                continue
+        
+        try:
+            while self.video_active:
+                if self.video_paused:
+                    time.sleep(0.05)
+                    continue
 
-            loop_start = time.time()
+                loop_start = time.time()
 
-            try:
-                frame = self.capture.getImage()
-                if frame is None:
-                    # Fim do vídeo — podemos reiniciar ou encerrar
-                    print("[VIDEO THREAD] Fim do vídeo.")
-                    self.video_active = False
-                    break
+                try:
+                    frame = self.capture.getImage()
+                    
+                    # Se o frame for None, o vídeo encerrou
+                    if frame is None:
+                        print("[VIDEO THREAD] Fim do vídeo alcançado.")
+                        break
 
-                t_proc_start = time.time()
-                result = self.vs.processImg(frame, self.DEBUGA)
-                objects = self.vs.getObjects()
-                virtual = self.vs.virtualImg
-                t_proc_end = time.time()
+                    # --- Processamento ---
+                    t_proc_start = time.time()
+                    result = self.vs.ProcessImg(frame, self.DEBUGA)
+                    
+                    # Garantir que result seja uma imagem válida
+                    if result is None:
+                        print("[VIDEO THREAD] Aviso: result é None; usando o frame original para a UI.")
+                        result = frame.copy()
+                    elif isinstance(result, np.ndarray) and result.ndim == 2:
+                        # Converter escala de cinza para BGR
+                        result = cv2.cvtColor(result, cv2.COLOR_GRAY2BGR)
+                    elif not isinstance(result, np.ndarray):
+                        result = frame.copy()
 
-                self.frameTime = (t_proc_end - t_proc_start) * 1000.0
-                self.totalTime = (time.time() - loop_start) * 1000.0
-                self.realTime = self.Timer.getElapsedTime() / 1000.0
+                    # --- Atualizar string de tempos de processamento ---
+                    campo = self.vs.bmk.get_avg("Campo")
+                    bola = self.vs.bmk.get_avg("Bola")
+                    players = self.vs.bmk.get_avg("Players")
+                    self.tproc_string = f"{campo:.2f} / {bola:.2f} / {players:.2f}"
+                    
+                    objects = self.vs.GetObjects()
+                    virtual = self.vs.virtualImg
+                    t_proc_end = time.time()
 
-                self.fill_deques_time()
+                    self.frameTime = (t_proc_end - t_proc_start) * 1000.0
+                    self.totalTime = (time.time() - loop_start) * 1000.0
+                    self.realTime = self.Timer.getElapsedTime() / 1000.0
 
-                # Atualiza objetos detectados
-                self.field = objects.get(ID_Objects.FIELD, self.field)
-                self.ball = objects.get(ID_Objects.BALL, self.ball)
-                self.allies = objects.get(ID_Objects.ALLIES, self.allies)
-                self.enemies = objects.get(ID_Objects.ENEMIES, self.enemies)
+                    self.fill_deques_time()
 
-                # Prepara dados para a UI
-                data = {
-                    'frame': frame,
-                    'result': result,
-                    'virtual': virtual,
-                    'field': self.field,
-                    'ball': self.ball,
-                    'allies': self.allies,
-                    'enemies': self.enemies,
-                    'vision_time': self.totalTime,
-                    'proc_time': self.frameTime,
-                    'real_time': self.realTime,
-                    'fps': self.FPStime,
-                    'timestamp': self.realTime
-                }
+                    # Atualiza objetos detectados
+                    self.field = objects.get(ID_Objects.FIELD, self.field)
+                    self.ball = objects.get(ID_Objects.BALL, self.ball)
+                    self.allies = objects.get(ID_Objects.ALLIES, self.allies)
+                    self.enemies = objects.get(ID_Objects.ENEMIES, self.enemies)
 
-                # Coloca na fila da UI (substitui se cheia)
-                if self.ui_queue.full():
-                    try:
-                        self.ui_queue.get_nowait()
-                    except queue.Empty:
-                        pass
-                self.ui_queue.put_nowait(data)
+                    # Prepara dados para a UI
+                    data = {
+                        'frame': frame,
+                        'result': result,
+                        'virtual': virtual,
+                        'field': self.field,
+                        'ball': self.ball,
+                        'allies': self.allies,
+                        'enemies': self.enemies,
+                        'vision_time': self.totalTime,
+                        'proc_time': self.frameTime,
+                        'real_time': self.realTime,
+                        'fps': self.FPStime,
+                        'timestamp': self.realTime
+                    }
 
-                # Pequena pausa para evitar uso excessivo de CPU
-                time.sleep(0.001)
+                    # Coloca na fila da UI (substitui se cheia)
+                    if self.ui_queue.full():
+                        try:
+                            self.ui_queue.get_nowait()
+                        except queue.Empty:
+                            pass
+                    self.ui_queue.put_nowait(data)
 
-            except Exception as e:
-                print("[VIDEO THREAD] Erro:", e)
-                traceback.print_exc()
-                time.sleep(0.01)
+                except Exception as e:
+                    print("[VIDEO THREAD] Erro:", e)
+                    traceback.print_exc()
+                    time.sleep(0.01)
+                    continue
 
-        print("[VIDEO THREAD] Finalizada.")
+                # Controle de FPS
+                elapsed = (time.time() - loop_start) * 1000
+                sleep_time = self.delay - elapsed
+                if sleep_time > 0:
+                    time.sleep(sleep_time / 1000.0)
+
+        finally:
+            # Garantia de finalização limpa da thread
+            self.video_active = False
+            
+            self.viewer.window.after(0, self.stop)
+
+            print("[VIDEO THREAD] Finalizada.")
 
     def _handle_camera_error(self):
         """Trata erro de inicialização da câmera."""
@@ -1063,8 +1138,6 @@ class Emulator:
 
     def _reset_ui_and_stop(self):
         """Reseta a interface e interrompe a execução."""
-        self.btn_stop.pack_forget()
-        self.btn_run.pack(fill=BOTH, expand=1)
         self.Mode = MODE_DEFAULT
         self.viewer.default_mode()
         self.debugFieldViewer.default_mode()
@@ -1075,16 +1148,22 @@ class Emulator:
 
     def stop(self):
         """
-        Interrompe toda a execução do emulador, incluindo:
-        - Loop da UI (updateUI)
-        - Thread de visão (visionThread)
-        - Thread de vídeo (videoThread)
-        - Captura de câmera
-        - Temporizador (Timer)
+        Interrompe toda a execução do emulador...
         """
         print("[EMULATOR] Encerrando execução...")
         self.video_active = False
         self.video_paused = False
+
+        # --- Reset do Sistema de Visão e variáveis internas ---
+        if hasattr(self, "vs") and self.vs is not None:
+            self.vs.ResetVs()
+            if hasattr(self.vs, 'bmk'):
+                self.vs.bmk.reset()
+
+        self.field = None
+        self.ball = None
+        self.allies = [None, None, None]
+        self.enemies = [None, None, None]
 
         # --- Fecha janela de comunicação ---
         if self.comm_debug_window is not None:
@@ -1098,29 +1177,25 @@ class Emulator:
         # --- sinaliza parada global ---
         self.cameraIsRunning = False
 
-        # --- encerra thread de visão (câmera), se ativa ---
+        # --- encerra threads (visão, vídeo, UDP, comunicação) ---
         if hasattr(self, "vision_thread") and self.vision_thread and self.vision_thread.is_alive():
             print("[EMULATOR] Aguardando thread de visão encerrar...")
             self.vision_thread.join(timeout=1.0)
 
-        # --- encerra thread de vídeo, se ativa ---
         if hasattr(self, "video_thread") and self.video_thread and self.video_thread.is_alive():
             print("[EMULATOR] Aguardando thread de vídeo encerrar...")
             self.video_thread.join(timeout=1.0)
             self.video_thread = None
 
-        # --- Encerra a thread de comunicação com a API de controle, se ativa ---
         if hasattr(self, "udp_thread") and self.udp_thread and self.udp_thread.is_alive():
-            print("[EMULATOR] Aguardando thread de comunicação encerrar...")
+            print("[EMULATOR] Aguardando thread de comunicação (UDP) encerrar...")
             self.udp_thread.join(timeout=1.0)
 
-        # --- encerra thread de comunicação ---
         if hasattr(self, "comm_thread") and self.comm_thread and self.comm_thread.is_alive():
             print("[EMULATOR] Aguardando thread de comunicação encerrar...")
             self.comm_thread.join(timeout=1.0)
 
-
-        # --- para captura de câmera ---
+        # --- para captura ---
         try:
             if hasattr(self, "capture") and self.capture is not None:
                 self.capture.reset()
@@ -1134,27 +1209,28 @@ class Emulator:
         except Exception as e:
             print("[EMULATOR] Erro ao parar Timer:", e)
 
-        # --- limpa a fila de saída (evita referências antigas) ---
-        try:
-            if hasattr(self, "output_queue") and not self.output_queue.empty():
-                while not self.output_queue.empty():
-                    self.output_queue.get_nowait()
-        except Exception:
-            pass
+        # --- limpa filas ---
+        for q in [self.ui_queue, self.comm_queue, self.udp_send_queue, self.udp_recv_queue, self.output_queue]:
+            while not q.empty():
+                try:
+                    q.get_nowait()
+                except Exception:
+                    break
 
-        # --- zera tempos e status ---
+        # --- zera tempos ---
         self.totalTime = 0.0
         self.frameTime = 0.0
         self.sendTime = 0.0
         self.realTime = 0.0
         self.FPStime = 0
         self.errorCode = 0
-
         self.erase_deques_times()
 
         print("[EMULATOR] Execução finalizada com sucesso.")
-
-
+        self.app.menu.att_node_id('I020', 'Parado')
+        self.app.menu.save_to_json('config')
+        self.app.update_control_buttons("Parado")
+        
     # Métodos auxiliares do stop
     def _stop_capture_thread(self):
         """Para a thread de captura de forma segura."""
@@ -1197,8 +1273,6 @@ class Emulator:
         """Atualiza botões e estado visual conforme o modo atual."""
         print(f"[EMULADOR] Resetando UI para o modo: {self.Mode}")
 
-        self.btn_stop.pack_forget()
-        self.btn_run.pack(fill=BOTH, expand=1)
         self.cameraIsRunning = False
 
 
@@ -1216,7 +1290,7 @@ class Emulator:
         self.debugFrame = self.frame.copy()
 
         #Método de RUN para imagem
-        result = self.vs.processImg(self.debugFrame, debug=self.DEBUGA)
+        result = self.vs.ProcessImg(self.debugFrame, debug=self.DEBUGA)
 
         # Calcular médias de processamento para exibir
         campo_avg = self.vs.bmk.get_avg("Campo")
@@ -1232,7 +1306,7 @@ class Emulator:
 
         #imagens de debug
         if(self.DEBUGA == True):
-            binary_treat, binaryBall, binaryPlayers, binaryTeam = self.vs.getDebugImages()
+            binary_treat, binaryBall, binaryPlayers, binaryTeam = self.vs.GetDebugImages()
             self.debugFieldViewer.show(binary_treat)
             self.debugObjectsViewer.show(binaryBall)
             self.debugPlayersViewer.show(binaryPlayers)
@@ -1255,7 +1329,7 @@ class Emulator:
         self.setContentRobots()
 
         #resetando configurações já que é modo imagem
-        self.vs._resetVs()
+        self.vs.ResetVs()
 
         self.totalTime = (St2i - St1i)                       #tempo em mili 
         self.frameTime = self.totalTime
@@ -1270,6 +1344,10 @@ class Emulator:
         self.infoCards.update()
         self.vs.bmk.reset()
         self.erase_deques_times()
+
+        self.app.menu.att_node_id('I020', 'Parado')
+        self.app.menu.save_to_json('config')
+        self.app.update_control_buttons("Parado")
     
     
     def _safe_show(self, viewer, image):

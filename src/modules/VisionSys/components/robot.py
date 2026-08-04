@@ -7,7 +7,7 @@ from modules.VisionSys.components.objects import *
 
 class Robot:
     def __init__(self, id: ID_Robots, team: ID_Team, x=0, y=0, r=0,
-                 image=cv2.imread('src/images/dark_screen.png'),
+                 image=cv2.imread('src/data/images/dark_screen.png'),
                  colorTeam=None, colorCar1=None, colorCar2=None,
                  differential_filter=False):
         # Identifiers
